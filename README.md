@@ -1,4 +1,4 @@
-# interviewer
+# AI-Interviewer
 
 AI interview practice platform (IT314, DA-IICT). Bun workspace monorepo, TypeScript end to end.
 
