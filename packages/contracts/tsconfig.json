@@ -1,0 +1,5 @@
+{
+  // Contracts run in both the browser and Bun, so they get neither DOM nor Bun types.
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"]
+}

@@ -1,0 +1,25 @@
+{
+  // Shared settings for every package. Each package's tsconfig.json extends this
+  // and adds only what its environment needs (Bun types for the API, DOM + JSX for web).
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "types": [],
+
+    // Bun and Vite transpile each file on its own and never emit through tsc;
+    // tsc is only the typechecker.
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  }
+}
