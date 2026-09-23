@@ -1,0 +1,2 @@
+# Store text files with LF in git on every OS, so diffs don't fill with line-ending noise.
+* text=auto eol=lf
