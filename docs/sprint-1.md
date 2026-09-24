@@ -1,8 +1,7 @@
 # Sprint 1 — Thu 24 Sep to Wed 30 Sep 2026
 
 **Goal: a walking skeleton.** A candidate signs in, picks a role, holds a short voice
-interview, ends it, and sees feedback. The transcript is stored. Feedback is a `STUB` this
-sprint — the real evaluator comes after exams.
+interview, ends it, and sees feedback written by an LLM. The transcript is stored.
 
 **Hard stop: Wed 30 Sep.** Exams start 5 Oct. Thu 1 – Sun 4 Oct is for bug fixes only;
 nothing merges after Sun 4 Oct.
@@ -15,9 +14,9 @@ screenshots or a screen recording — see [CONTRIBUTING.md](../CONTRIBUTING.md).
 | Due | Lead | Live session | Feedback | Identity & profile |
 |---|---|---|---|---|
 | **Fri 25 Sep** | L1 contracts, L2 stub auth, L3 CI, L4 issues | | | |
-| **Sat 26 Sep** | | LS1 voice spike (go / no-go) | FB1 results screen | ID1 database setup |
+| **Sat 26 Sep** | L7 approve rubric | LS1 voice spike (go / no-go) | FB1 results screen, FB4 rubric draft | ID1 database setup |
 | **Mon 28 Sep** | L5 integration check | LS2 create session, LS3 voice token | FB2 jobs table + worker | ID2 sign-in screen |
-| **Tue 29 Sep** | | LS4 live screen, turns, end session | FB3 feedback job + endpoint | ID3 auth middleware |
+| **Tue 29 Sep** | | LS4 live screen, turns, end session | FB3 feedback job + endpoint, FB4 evaluator | ID3 auth middleware |
 | **Wed 30 Sep** | L6 integration and demo | | | |
 | **Sun 4 Oct** | Merge freeze | | | |
 
@@ -35,6 +34,8 @@ Tasks due the same day on one team can run in parallel — split them between te
 - **L5 — Integration check (Mon 28).** Everything so far is merged and runs together against
   the stubs. Anything blocked is re-planned the same day.
 - **L6 — Integration and demo (Wed 30).** The full flow runs end to end on one machine.
+- **L7 — Approve the rubric (Sat 26).** Sign off the generic rubric the Feedback team drafts
+  for FB4. Per-role rubrics (OI-3) come later.
 
 ## Live session
 
@@ -84,11 +85,25 @@ Tasks due the same day on one team can run in parallel — split them between te
 - Proof: terminal running two workers, job rows before and after.
 
 **FB3 — Feedback job and endpoint (Tue 29).**
-- Given a `session.ended` job, then the `STUB` evaluator writes feedback for that session.
+- Given a `session.ended` job, then the evaluator writes feedback for that session. Use a
+  `STUB` evaluator until FB4 is merged.
 - Given the candidate's own session, `GET` feedback returns pending until it's written, then
   the feedback.
 - Given another candidate's session, then 404 (FR-27).
 - Proof: browser recording from ending a session to seeing feedback.
+
+**FB4 — Evaluator (rubric draft Sat 26, evaluator Tue 29).** Can start Saturday; it only needs
+L1's contracts and a sample transcript, not the rest of the pipeline.
+- A generic rubric for every role — for example communication, technical depth, structure —
+  drafted by the team and approved by the lead (L7).
+- `feedback/evaluator.ts` is the only file that calls the text LLM. Given a transcript and a
+  role, it returns feedback matching the contract, scored against the rubric.
+- It finishes well inside the 15-second budget (NFR-03) for a short interview.
+- The LLM API key lives in `apps/api/.env` only and never reaches the browser.
+- Given the LLM call fails or times out, then the job is marked failed and the transcript
+  is untouched (NFR-04).
+- Tests run against a sample transcript with the LLM call mocked; no test hits the real API.
+- Proof: screenshot of real feedback for a sample transcript, terminal showing the tests.
 
 ## Identity & profile
 
@@ -113,6 +128,6 @@ Tasks due the same day on one team can run in parallel — split them between te
 
 ## Moved to Sprint 2 (after exams)
 
-Real LLM evaluation · feedback retry (NFR-04) · ESLint boundary rule and Prettier · profile
+Per-role rubrics (OI-3) · feedback retry (NFR-04) · ESLint boundary rule and Prettier · profile
 (resume, GitHub context) · deleting sessions (FR-28) · 30-day retention purge (NFR-11) ·
 latency measurement (NFR-01, NFR-03).
