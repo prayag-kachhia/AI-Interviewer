@@ -33,6 +33,9 @@ apps/web             React + Vite. src/features/{identity,profile,sessions,feedb
 
 ## Rules
 
+Full workflow, PR standard and review process: [CONTRIBUTING.md](CONTRIBUTING.md).
+Current sprint, tasks and deadlines: [docs/sprint-1.md](docs/sprint-1.md).
+
 - **Import a module only through its `index.ts`.** Inside a module, use relative imports.
   (`@/modules/*/*` and `@/features/*/*` imports will be blocked by ESLint once lint is set up.)
 - **Dependency direction:** `identity ← profile ← sessions ← feedback`. `sessions` never imports `feedback`.
