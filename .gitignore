@@ -34,4 +34,5 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 # Personal AI-assistant notes; never committed
+CLAUDE.md
 CLAUDE.personal.md

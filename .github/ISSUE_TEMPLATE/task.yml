@@ -1,0 +1,68 @@
+name: Task
+description: One task for one team, with the proof required to close it.
+title: "[team] short task name"
+labels: ["task"]
+body:
+  - type: dropdown
+    id: team
+    attributes:
+      label: Team
+      options:
+        - Live session
+        - Feedback
+        - Identity & profile
+        - Lead
+    validations:
+      required: true
+
+  - type: input
+    id: requirements
+    attributes:
+      label: Requirement IDs
+      placeholder: "FR-12, NFR-04 — or none"
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One or two sentences. What exists when this is done that doesn't exist now.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Written by whoever creates the task, not the builder. Each one becomes a test.
+      value: |
+        - [ ] Given …, when …, then …
+        - [ ] Given …, when …, then …
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: proof
+    attributes:
+      label: Proof required in the PR
+      description: Tick what the builder must attach. Screenshots or a short screen recording, not pasted text.
+      options:
+        - label: Screenshot or recording of the feature working in the browser
+        - label: Screenshot of the error or empty state (what the user sees when it fails)
+        - label: Screenshot of the browser Network tab showing the request and response
+        - label: Screenshot of the terminal running `bun run typecheck` and `bun run test` (until CI runs them)
+        - label: Screenshot of the database rows it creates or changes
+
+  - type: textarea
+    id: depends
+    attributes:
+      label: Depends on / unblocked by
+      description: Issue numbers, or the STUB to build against until they land.
+      placeholder: "#4 — until then, use the STUB auth middleware that returns a fixed user id"
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What not to touch, so the PR stays small.
