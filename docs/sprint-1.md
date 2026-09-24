@@ -9,6 +9,17 @@ nothing merges after Sun 4 Oct.
 Every task below becomes a GitHub issue (Task template) with one assignee. Proof in the PR is
 screenshots or a screen recording — see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
+## Teams and owners
+
+| Team | Members | Tasks |
+|---|---|---|
+| Lead | Prayag (@prayag-kachhia) | L1–L7 (#2–#8) |
+| Live session | Prayag, Vishwa (@Vishwa7399), Kishan (@kishan-savani-ops) | LS1, LS3: Vishwa · LS2, LS4: Kishan (#9–#12) |
+| Feedback | Pranil (@Praneel2309), Shaurya (@Shaurya9989), Ved (@Patel-Ved-702), Rahi | FB1: Pranil · FB2: Ved · FB3: Shaurya · FB4: Rahi (#13–#16) |
+| Identity & profile | Prakriti (@PrakritiPandey24), Raj (@Raj-PaTel-007), Vismay (@vismay0101) | ID1: Raj · ID2: Prakriti · ID3: Vismay (#17–#19) |
+
+Prakriti also owns documentation.
+
 ## Timeline
 
 | Due | Lead | Live session | Feedback | Identity & profile |
