@@ -1,3 +1,4 @@
+import { ResultsScreen } from "./features/feedback";
 import { useEffect, useState } from "react";
 import { RoleList } from "@interview/contracts";
 import { getJson } from "./lib/api";
@@ -28,13 +29,15 @@ export function App() {
       {state.status === "error" && <p role="alert">Could not load roles: {state.message}</p>}
       {state.status === "ready" && (
         <ul>
-          {state.roles.map((role) => (
+          {state.roles.map((role: RoleList[number]) => (
             <li key={role.id}>
               <strong>{role.title}</strong> — {role.description}
             </li>
           ))}
         </ul>
       )}
+
+      <ResultsScreen sessionId="test-123" />
     </main>
   );
 }
