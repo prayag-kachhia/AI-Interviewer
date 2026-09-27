@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { RoleList } from "@interview/contracts";
+import { createSessionsRouter } from "./modules/sessions";
 
 // STUB (content & research slice): hardcoded until roles and briefings are stored.
 const ROLES: RoleList = [
@@ -29,6 +30,8 @@ export function createApp(webOrigin: string) {
   app.get("/health", (c) => c.json({ status: "ok" }));
 
   app.get("/roles", (c) => c.json(RoleList.parse(ROLES)));
+
+  app.route("/sessions", createSessionsRouter());
 
   return app;
 }
