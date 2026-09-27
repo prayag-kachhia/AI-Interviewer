@@ -1,10 +1,35 @@
-import { createApp } from "./app";
+import express, { Express, Request, Response } from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import authRoutes from './routes/auth.routes';
+import resumeRoutes from './routes/resume.routes';
+import sessionRoutes from './routes/session.routes';
 
-const port = Number(process.env.PORT ?? 3000);
-const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:5173";
+// Load environment variables
+dotenv.config();
 
-const app = createApp(webOrigin);
+const app: Express = express();
+const PORT = process.env.PORT || 3000;
 
-console.log(`API listening on http://localhost:${port}`);
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-export default { port, fetch: app.fetch };
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/resume', resumeRoutes);
+app.use('/api/sessions', sessionRoutes);
+
+// Health check endpoint
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok', message: 'Backend is running' });
+});
+
+// Start server
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
