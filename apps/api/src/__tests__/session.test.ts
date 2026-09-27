@@ -2,12 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../utils/db';
-import { generateLocalToken } from '../utils/token';
 import { DeterministicQuestionProvider } from '../services/question.service';
 
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } })),
-}));
+vi.mock('@supabase/supabase-js', () => {
+  const getUserMock = vi.fn();
+  return {
+    createClient: vi.fn(() => ({ auth: { getUser: getUserMock } })),
+    __getUserMock: getUserMock,
+  };
+});
 
 vi.mock('../utils/db', () => ({
   default: {
@@ -31,24 +34,30 @@ vi.mock('../utils/db', () => ({
   },
 }));
 
+import * as supabase from '@supabase/supabase-js';
+const { __getUserMock } = supabase as any;
+
 const AUTH_USER = {
   id: 'user-1',
-  supabaseUserId: null,
+  supabaseUserId: 'supabase-user-1',
   email: 'kishan@example.com',
   name: 'Kishan',
 };
 
 function authHeader() {
-  const token = generateLocalToken(AUTH_USER.id, AUTH_USER.email);
-  return `Bearer ${token}`;
+  return 'Bearer valid-supabase-token';
 }
 
 describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __getUserMock.mockResolvedValue({
+      data: { user: { id: AUTH_USER.supabaseUserId, email: AUTH_USER.email } },
+      error: null,
+    });
     (prisma.user.findUnique as any).mockResolvedValue({
       id: AUTH_USER.id,
-      supabaseUserId: null,
+      supabaseUserId: AUTH_USER.supabaseUserId,
       name: AUTH_USER.name,
       email: AUTH_USER.email,
       passwordHash: 'x',

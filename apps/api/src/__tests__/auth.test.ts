@@ -2,18 +2,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../utils/db';
-import { generateLocalToken, hashPassword } from '../utils/token';
 
 vi.mock('@supabase/supabase-js', () => {
+  const getUserMock = vi.fn();
+  const deleteUserMock = vi.fn().mockResolvedValue({ error: null });
   return {
     createClient: vi.fn(() => ({
       auth: {
-        getUser: vi.fn(),
+        getUser: getUserMock,
         admin: {
-          deleteUser: vi.fn().mockResolvedValue({}),
+          deleteUser: deleteUserMock,
         },
       },
     })),
+    __getUserMock: getUserMock,
+    __deleteUserMock: deleteUserMock,
   };
 });
 
@@ -22,6 +25,7 @@ vi.mock('../utils/db', () => ({
     user: {
       findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
       delete: vi.fn(),
     },
     resume: {
@@ -30,120 +34,118 @@ vi.mock('../utils/db', () => ({
   },
 }));
 
-describe('Auth Endpoints & Account Management', () => {
+import * as supabase from '@supabase/supabase-js';
+const { __getUserMock, __deleteUserMock } = supabase as any;
+
+describe('Supabase Authentication & Account Management', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('POST /api/auth/check-user', () => {
-    it('returns exists: true when user is found', async () => {
-      (prisma.user.findUnique as any).mockResolvedValueOnce({
-        id: 'u1',
-        name: 'Jane Doe',
-        email: 'jane@example.com',
-      });
+  it('rejects protected requests without a Bearer token', async () => {
+    const res = await request(app).get('/api/auth/me');
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe('Authentication required');
+  });
 
-      const res = await request(app)
-        .post('/api/auth/check-user')
-        .send({ email: 'jane@example.com' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.exists).toBe(true);
-      expect(res.body.name).toBe('Jane Doe');
+  it('rejects an invalid Supabase access token', async () => {
+    __getUserMock.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: 'Invalid token' },
     });
 
-    it('returns exists: false when user is not found', async () => {
-      (prisma.user.findUnique as any).mockResolvedValueOnce(null);
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', 'Bearer invalid-token');
 
-      const res = await request(app)
-        .post('/api/auth/check-user')
-        .send({ email: 'unknown@example.com' });
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe('Invalid or expired token');
+  });
 
-      expect(res.status).toBe(200);
-      expect(res.body.exists).toBe(false);
+  it('links an authenticated Supabase user to the application database', async () => {
+    __getUserMock.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: 'supabase-1',
+          email: 'test@test.com',
+          user_metadata: { full_name: 'Test User' },
+        },
+      },
+      error: null,
+    });
+
+    (prisma.user.findUnique as any)
+      .mockResolvedValueOnce(null) // lookup by supabaseUserId
+      .mockResolvedValueOnce(null) // lookup by email
+      .mockResolvedValueOnce({
+        id: 'local-1',
+        supabaseUserId: 'supabase-1',
+        email: 'test@test.com',
+        name: 'Test User',
+      }); // getMe lookup by id
+
+    (prisma.user.create as any).mockResolvedValueOnce({
+      id: 'local-1',
+      supabaseUserId: 'supabase-1',
+      email: 'test@test.com',
+      name: 'Test User',
+    });
+
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', 'Bearer valid-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.email).toBe('test@test.com');
+    expect(prisma.user.create).toHaveBeenCalledWith({
+      data: {
+        supabaseUserId: 'supabase-1',
+        email: 'test@test.com',
+        name: 'Test User',
+        passwordHash: 'supabase-auth',
+      },
     });
   });
 
-  describe('POST /api/auth/register', () => {
-    it('registers a new user and returns a token', async () => {
-      (prisma.user.findUnique as any).mockResolvedValueOnce(null);
-      (prisma.user.create as any).mockResolvedValueOnce({
-        id: 'user-new',
-        name: 'New User',
-        email: 'new@example.com',
-      });
-
-      const res = await request(app)
-        .post('/api/auth/register')
-        .send({ name: 'New User', email: 'new@example.com', password: 'password123' });
-
-      expect(res.status).toBe(201);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.token).toBeDefined();
-      expect(res.body.data.user.email).toBe('new@example.com');
+  it('uses an existing application user when the Supabase identity is already linked', async () => {
+    __getUserMock.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: 'supabase-1',
+          email: 'test@test.com',
+        },
+      },
+      error: null,
     });
 
-    it('returns 400 if user already exists', async () => {
-      (prisma.user.findUnique as any).mockResolvedValueOnce({
-        id: 'existing-id',
-        email: 'existing@example.com',
-      });
+    const linkedUser = {
+      id: 'local-1',
+      supabaseUserId: 'supabase-1',
+      email: 'test@test.com',
+      name: 'Test User',
+    };
+    (prisma.user.findUnique as any)
+      .mockResolvedValueOnce(linkedUser) // middleware lookup by supabaseUserId
+      .mockResolvedValueOnce(linkedUser); // getMe lookup by id
 
-      const res = await request(app)
-        .post('/api/auth/register')
-        .send({ name: 'Existing', email: 'existing@example.com', password: 'password123' });
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', 'Bearer valid-token');
 
-      expect(res.status).toBe(400);
-      expect(res.body.exists).toBe(true);
-      expect(res.body.message).toContain('already exists');
-    });
-  });
-
-  describe('POST /api/auth/login', () => {
-    it('returns 404 isNewUser: true if email not found', async () => {
-      (prisma.user.findUnique as any).mockResolvedValueOnce(null);
-
-      const res = await request(app)
-        .post('/api/auth/login')
-        .send({ email: 'notfound@example.com', password: 'password123' });
-
-      expect(res.status).toBe(404);
-      expect(res.body.isNewUser).toBe(true);
-      expect(res.body.message).toContain('new user');
-    });
-
-    it('returns 200 and token when password matches', async () => {
-      const hashed = hashPassword('correctPassword');
-      (prisma.user.findUnique as any).mockResolvedValueOnce({
-        id: 'user-logged',
-        name: 'Logged User',
-        email: 'user@example.com',
-        passwordHash: hashed,
-      });
-
-      const res = await request(app)
-        .post('/api/auth/login')
-        .send({ email: 'user@example.com', password: 'correctPassword' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.token).toBeDefined();
-    });
-  });
-
-  describe('POST /api/auth/logout', () => {
-    it('acknowledges logout and confirms data is preserved', async () => {
-      const res = await request(app).post('/api/auth/logout');
-      expect(res.status).toBe(200);
-      expect(res.body.message).toContain('preserved');
-    });
+    expect(res.status).toBe(200);
+    expect(res.body.data.id).toBe('local-1');
+    expect(prisma.user.create).not.toHaveBeenCalled();
   });
 
   describe('DELETE /api/auth/account', () => {
-    it('deletes resumes and user data when authenticated with local token', async () => {
-      const token = generateLocalToken('user-to-delete', 'delete@example.com');
+    it('deletes resumes and user data when authenticated with a Supabase token', async () => {
+      __getUserMock.mockResolvedValueOnce({
+        data: { user: { id: 'supabase-del', email: 'delete@example.com' } },
+        error: null,
+      });
       (prisma.user.findUnique as any).mockResolvedValueOnce({
         id: 'user-to-delete',
+        supabaseUserId: 'supabase-del',
         name: 'To Delete',
         email: 'delete@example.com',
       });
@@ -152,7 +154,7 @@ describe('Auth Endpoints & Account Management', () => {
 
       const res = await request(app)
         .delete('/api/auth/account')
-        .set('Authorization', `Bearer ${token}`);
+        .set('Authorization', 'Bearer valid-token');
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -162,6 +164,7 @@ describe('Auth Endpoints & Account Management', () => {
       expect(prisma.user.delete).toHaveBeenCalledWith({
         where: { id: 'user-to-delete' },
       });
+      expect(__deleteUserMock).toHaveBeenCalledWith('supabase-del');
     });
   });
 });

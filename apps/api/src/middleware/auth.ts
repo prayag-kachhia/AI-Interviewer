@@ -1,25 +1,24 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import prisma from '../utils/db';
-import { AuthUser } from '../types';
-import { verifyLocalToken } from '../utils/token';
 
 const supabase = createClient(
-  process.env.SUPABASE_URL || 'https://dummy.supabase.co',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-key'
+  process.env.SUPABASE_URL || '',
+  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 );
 
-interface LocalUserRecord {
-  id: string;
-  supabaseUserId?: string | null;
-  name: string;
-  email: string;
-  passwordHash: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+/**
+ * Authenticate every protected API request with the Supabase access token
+ * supplied by the browser as: Authorization: Bearer <access_token>.
+ *
+ * No application-generated/local tokens are accepted here. Supabase Auth is
+ * the single authentication authority for the application.
+ */
+export const authenticate = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -27,101 +26,93 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     return;
   }
 
-  const token = authHeader.split(' ')[1];
-
+  const token = authHeader.slice('Bearer '.length).trim();
   if (!token) {
     res.status(401).json({ success: false, message: 'Authentication required' });
     return;
   }
 
-  // Handle local tokens
-  if (token.startsWith('local_')) {
-    const payload = verifyLocalToken(token);
-    if (!payload || !payload.userId) {
-      res.status(401).json({ success: false, message: 'Invalid or expired token' });
-      return;
-    }
-
-    try {
-      const localUser = await (prisma.user as any).findUnique({
-        where: { id: payload.userId }
-      });
-
-      if (!localUser) {
-        res.status(401).json({ success: false, message: 'User record not found' });
-        return;
-      }
-
-      req.user = {
-        id: localUser.id,
-        supabaseUserId: localUser.supabaseUserId || null,
-        email: localUser.email,
-        name: localUser.name,
-      };
-
-      next();
-      return;
-    } catch (err) {
-      res.status(401).json({ success: false, message: 'Invalid or expired token' });
-      return;
-    }
-  }
-
   try {
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser(token);
 
     if (error || !user) {
-      res.status(401).json({ success: false, message: 'Invalid or expired token' });
+      res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token',
+      });
       return;
     }
 
-    let localUser: (LocalUserRecord | null) = await (prisma.user as any).findUnique({
-      where: { supabaseUserId: user.id }
+    const email = user.email?.trim().toLowerCase();
+    if (!email) {
+      res.status(401).json({
+        success: false,
+        message: 'Authenticated user has no email address',
+      });
+      return;
+    }
+
+    // Link the Supabase identity to the application's users table. This keeps
+    // resume ownership in the application DB without making the browser query
+    // that table directly.
+    let localUser = await prisma.user.findUnique({
+      where: { supabaseUserId: user.id },
     });
 
     if (!localUser) {
-      let existingEmailUser: (LocalUserRecord | null) = null;
-      if (user.email) {
-        existingEmailUser = await (prisma.user as any).findUnique({
-          where: { email: user.email }
-        });
-      }
+      const existingEmailUser = await prisma.user.findUnique({
+        where: { email },
+      });
 
-      if (existingEmailUser && !existingEmailUser.supabaseUserId) {
-        localUser = await (prisma.user as any).update({
-          where: { email: user.email },
-          data: { supabaseUserId: user.id }
+      if (existingEmailUser) {
+        if (
+          existingEmailUser.supabaseUserId &&
+          existingEmailUser.supabaseUserId !== user.id
+        ) {
+          res.status(401).json({
+            success: false,
+            message: 'This email is linked to another authentication account',
+          });
+          return;
+        }
+
+        localUser = await prisma.user.update({
+          where: { id: existingEmailUser.id },
+          data: { supabaseUserId: user.id },
         });
-      } else if (existingEmailUser) {
-        // Email exists but is mapped to another supabaseUserId (should not happen normally)
-        res.status(401).json({ success: false, message: 'Invalid or expired token' });
-        return;
       } else {
-        localUser = await (prisma.user as any).create({
+        localUser = await prisma.user.create({
           data: {
             supabaseUserId: user.id,
-            email: user.email || `no-email-${user.id}@example.com`,
-            name: user.user_metadata?.full_name || 'Candidate',
+            email,
+            name:
+              user.user_metadata?.full_name ||
+              user.user_metadata?.name ||
+              'Candidate',
+            // Passwords belong to Supabase Auth and are never stored by the
+            // application.
             passwordHash: 'supabase-auth',
-          }
+          },
         });
       }
-    }
-
-    if (!localUser) {
-      res.status(401).json({ success: false, message: 'User record not found' });
-      return;
     }
 
     req.user = {
       id: localUser.id,
-      supabaseUserId: localUser.supabaseUserId || user.id,
+      supabaseUserId: localUser.supabaseUserId,
       email: localUser.email,
       name: localUser.name,
     };
 
     next();
   } catch (error) {
-    res.status(401).json({ success: false, message: 'Invalid or expired token' });
+    console.error('Supabase authentication error:', error);
+    res.status(401).json({
+      success: false,
+      message: 'Invalid or expired token',
+    });
   }
 };

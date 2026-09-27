@@ -36,7 +36,7 @@ describe('Authentication and Resource Ownership', () => {
     vi.clearAllMocks();
   });
 
-  describe('Authentication Middleware', () => {
+  describe('Authentication Middleware (Supabase Bearer tokens)', () => {
     it('returns 401 when no Authorization header is present', async () => {
       const res = await request(app).get('/api/resume/latest');
       expect(res.status).toBe(401);

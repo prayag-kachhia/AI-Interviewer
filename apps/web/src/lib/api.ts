@@ -2,7 +2,6 @@ import axios from 'axios';
 import { supabase } from './supabase';
 import type {
   ResumeResponse,
-  AuthResponse,
   RolesResponse,
   SessionResponse,
   TurnResponse,
@@ -16,27 +15,30 @@ const api = axios.create({
   baseURL: API_URL,
 });
 
+/**
+ * Attach the current Supabase access token to authenticated API requests.
+ *
+ * The frontend deliberately does not keep or generate an application/local
+ * authentication token. Supabase Auth is the single source of truth for the
+ * browser session; the backend validates the Bearer token on protected routes.
+ */
 api.interceptors.request.use(async (config) => {
-  // Check local token first
-  const localToken = localStorage.getItem('auth_token');
-  if (localToken) {
-    config.headers.Authorization = `Bearer ${localToken}`;
-    return config;
-  }
-
-  // Fallback to Supabase token if available
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
     if (session?.access_token) {
       config.headers.Authorization = `Bearer ${session.access_token}`;
     }
-  } catch {
-    // Ignore error if Supabase credentials are dummy or unreachable
+  } catch (error) {
+    console.error('Unable to read Supabase session:', error);
   }
+
   return config;
 });
 
-// Resume Endpoints
+// Resume endpoints
 export const uploadResume = async (file: File): Promise<ResumeResponse> => {
   const formData = new FormData();
   formData.append('resume', file);
@@ -54,34 +56,20 @@ export const getLatestResume = async (): Promise<ResumeResponse> => {
   return data;
 };
 
-// Auth & User Endpoints
-export const checkUserExists = async (email: string): Promise<{ success: boolean; exists: boolean; name?: string }> => {
-  const { data } = await api.post('/auth/check-user', { email });
-  return data;
-};
-
-export const registerUser = async (name: string, email: string, password: string): Promise<AuthResponse> => {
-  const { data } = await api.post<AuthResponse>('/auth/register', { name, email, password });
-  return data;
-};
-
-export const loginUser = async (email: string, password: string): Promise<AuthResponse> => {
-  const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
-  return data;
-};
-
-export const logoutUser = async (): Promise<{ success: boolean; message: string }> => {
-  const { data } = await api.post('/auth/logout');
-  return data;
-};
-
-export const deleteUserAccount = async (): Promise<{ success: boolean; message: string; deletedResumesCount?: number }> => {
-  const { data } = await api.delete('/auth/account');
-  return data;
-};
-
+// Authenticated application-profile endpoints.
+// Supabase Auth handles sign-in/sign-up/sign-out in AuthContext; these
+// endpoints never receive a password from the browser.
 export const getMe = async (): Promise<{ success: boolean; data: any }> => {
   const { data } = await api.get('/auth/me');
+  return data;
+};
+
+export const deleteUserAccount = async (): Promise<{
+  success: boolean;
+  message: string;
+  deletedResumesCount?: number;
+}> => {
+  const { data } = await api.delete('/auth/account');
   return data;
 };
 

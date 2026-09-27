@@ -26,7 +26,7 @@ import {
 export const Login: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signIn, signUp, checkUser, user } = useAuth();
+  const { signIn, signUp, user } = useAuth();
   const { theme, setTheme } = useTheme();
 
   // Mode: 'signin' | 'signup'
@@ -46,38 +46,24 @@ export const Login: React.FC = () => {
   // Status feedback
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState(() => location.state?.message || '');
-  const [suggestMode, setSuggestMode] = useState<'signin' | 'signup' | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Redirect if already authenticated
   useEffect(() => {
     if (user) {
-      navigate('/dashboard');
+      const selectedRole = localStorage.getItem('selectedRole');
+      if (selectedRole) {
+        navigate('/dashboard');
+      } else {
+        navigate('/role-picker');
+      }
     }
   }, [user, navigate]);
-
-  // Check email on blur for smart suggestion
-  const handleEmailBlur = async () => {
-    if (!email || !email.includes('@')) return;
-    try {
-      const result = await checkUser(email);
-      if (mode === 'signin' && !result.exists) {
-        setSuggestMode('signup');
-      } else if (mode === 'signup' && result.exists) {
-        setSuggestMode('signin');
-      } else {
-        setSuggestMode(null);
-      }
-    } catch {
-      // Ignore network noise on blur
-    }
-  };
 
   const handleSwitchMode = (newMode: 'signin' | 'signup') => {
     if (newMode === mode) return;
     setMode(newMode);
     setError('');
-    setSuggestMode(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -106,23 +92,26 @@ export const Login: React.FC = () => {
 
         const res = await signUp(name, email, password);
         if (res.success) {
-          navigate('/dashboard');
+          if (res.message) {
+            setSuccessMsg(res.message);
+          } else {
+            navigate('/role-picker');
+          }
         } else {
           setError(res.message || 'Registration failed');
-          if (res.exists) {
-            setSuggestMode('signin');
-          }
         }
       } else {
         // Sign In
         const res = await signIn(email, password);
         if (res.success) {
-          navigate('/dashboard');
+          const selectedRole = localStorage.getItem('selectedRole');
+          if (selectedRole) {
+            navigate('/dashboard');
+          } else {
+            navigate('/role-picker');
+          }
         } else {
           setError(res.message || 'Invalid credentials');
-          if (res.isNewUser) {
-            setSuggestMode('signup');
-          }
         }
       }
     } catch (err: any) {
@@ -236,28 +225,6 @@ export const Login: React.FC = () => {
               </div>
             )}
 
-            {/* Smart Suggestion: New User on Sign In */}
-            {suggestMode === 'signup' && mode === 'signin' && (
-              <div className="auth-suggestion-card">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.88rem' }}>
-                  <Sparkles size={16} color="var(--primary-color)" />
-                  New account required
-                </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
-                  We couldn't find an account for <strong>{email}</strong>. Flip over to create one!
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem', alignSelf: 'flex-start', marginTop: '0.35rem' }}
-                  onClick={() => handleSwitchMode('signup')}
-                >
-                  Flip to Sign Up <ArrowRight size={14} />
-                </button>
-              </div>
-            )}
-
-            {/* Sign In Form */}
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">Email address</label>
@@ -272,9 +239,7 @@ export const Login: React.FC = () => {
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
-                      setSuggestMode(null);
-                    }}
-                    onBlur={handleEmailBlur}
+                                      }}
                     required
                     tabIndex={isFlipped ? -1 : 0}
                   />
@@ -414,27 +379,6 @@ export const Login: React.FC = () => {
               </div>
             )}
 
-            {/* Smart Suggestion: Account Already Exists on Sign Up */}
-            {suggestMode === 'signin' && mode === 'signup' && (
-              <div className="auth-suggestion-card">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.88rem' }}>
-                  <CheckCircle2 size={16} color="var(--primary-color)" />
-                  Account already exists
-                </div>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
-                  An account for <strong>{email}</strong> already exists. Flip back to sign in!
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  style={{ padding: '0.4rem 0.85rem', fontSize: '0.82rem', alignSelf: 'flex-start', marginTop: '0.35rem' }}
-                  onClick={() => handleSwitchMode('signin')}
-                >
-                  Flip to Sign In <ArrowRight size={14} />
-                </button>
-              </div>
-            )}
-
             {/* Sign Up Form */}
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div className="form-group" style={{ margin: 0 }}>
@@ -468,9 +412,7 @@ export const Login: React.FC = () => {
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
-                      setSuggestMode(null);
-                    }}
-                    onBlur={handleEmailBlur}
+                                      }}
                     required
                     tabIndex={!isFlipped ? -1 : 0}
                   />
