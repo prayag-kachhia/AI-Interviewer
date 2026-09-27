@@ -1,10 +1,15 @@
-# dependencies (bun install)
+# dependencies (bun install). bun.lock is the only lockfile.
 node_modules
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
-# output
+# build output
 out
 dist
+dist-ssr
 *.tgz
+vite.config.*.timestamp-*
 
 # code coverage
 coverage
@@ -12,25 +17,30 @@ coverage
 
 # logs
 logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+*.log
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-# dotenv environment variable files
+# environment files: every variant except the committed examples
 .env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+.env.*
+!.env.example
+*.local
+
+# local databases (Prisma SQLite files and journals)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
 
 # caches
 .eslintcache
 .cache
 *.tsbuildinfo
 
-# IntelliJ based IDEs
+# editors and OS
 .idea
-
-# Finder (MacOS) folder config
+.vscode/*
+!.vscode/extensions.json
 .DS_Store
 
 # Personal AI-assistant notes; never committed

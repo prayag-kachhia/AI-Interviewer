@@ -1,7 +1,7 @@
 // Slice A (Live Session) — interview role catalogue.
 //
 // This is intentionally a small hard-coded list for Sprint 1. The frontend
-// role picker (frontend/src/pages/NewInterview.tsx) shows the SAME ids, so
+// role picker (apps/web/src/pages/NewInterview.tsx) shows the SAME ids, so
 // keep the two lists in sync if you add a role here.
 
 export interface InterviewRole {

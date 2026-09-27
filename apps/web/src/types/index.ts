@@ -61,7 +61,7 @@ export interface InterviewRoleOption {
   description?: string;
 }
 
-// Centralized role catalogue kept in sync with backend/src/constants/roles.ts
+// Centralized role catalogue kept in sync with apps/api/src/constants/roles.ts
 export const INTERVIEW_ROLES: InterviewRoleOption[] = [
   {
     id: 'software-engineer',
