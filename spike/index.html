@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LS1 Voice Spike — Gemini Multimodal Live API</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card-bg: #161b22;
+      --border: #30363d;
+      --accent: #58a6ff;
+      --accent-glow: rgba(88, 166, 255, 0.2);
+      --success: #3fb950;
+      --danger: #f85149;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --text-bright: #ffffff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 800px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    header {
+      text-align: center;
+    }
+
+    header h1 {
+      color: var(--text-bright);
+      font-size: 1.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-primary {
+      background: #238636;
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #2ea043;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: #fff;
+    }
+    .btn-danger:hover:not(:disabled) {
+      opacity: 0.9;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: 20px;
+      background: #21262d;
+      border: 1px solid var(--border);
+      color: var(--text-bright);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+    .status-dot.active { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .status-dot.speaking { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .status-dot.error { background: var(--danger); }
+
+    .timer {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-bright);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .transcript-box {
+      min-height: 250px;
+      max-height: 380px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      padding-right: 0.5rem;
+    }
+
+    .message {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      line-height: 1.4;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message.candidate {
+      background: #1c2738;
+      border-left: 3px solid var(--accent);
+      align-self: flex-end;
+      max-width: 85%;
+    }
+
+    .message.interviewer {
+      background: #21262d;
+      border-left: 3px solid var(--success);
+      align-self: flex-start;
+      max-width: 85%;
+    }
+
+    .message-sender {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.25rem;
+      color: var(--text-muted);
+    }
+
+    .log-box {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.8rem;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      max-height: 140px;
+      overflow-y: auto;
+      color: var(--text-muted);
+    }
+
+    .log-item { margin-bottom: 0.25rem; }
+    .log-item.info { color: var(--accent); }
+    .log-item.warn { color: #d29922; }
+    .log-item.error { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Task LS1: Voice Spike</h1>
+      <p>Gemini Multimodal Live API (<code>gemini-3.1-flash-live-preview</code>) with Server-Minted Ephemeral Token</p>
+    </header>
+
+    <div class="card controls">
+      <div>
+        <button id="startBtn" class="btn btn-primary">
+          <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+          Start 60s Voice Interview
+        </button>
+        <button id="stopBtn" class="btn btn-danger" style="display:none;">
+          End Session
+        </button>
+      </div>
+
+      <div class="status-badge">
+        <div id="statusDot" class="status-dot"></div>
+        <span id="statusText">Disconnected</span>
+      </div>
+
+      <div class="timer" id="timer">01:00</div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom: 1rem; color: var(--text-bright); font-size: 1.1rem;">
+        Spoken Transcript (Real-time Stream)
+      </h3>
+      <div id="transcriptBox" class="transcript-box">
+        <div style="color: var(--text-muted); font-style: italic; text-align: center; margin-top: 2rem;">
+          Click "Start 60s Voice Interview" to speak with the AI interviewer.<br>
+          (Use headphones to prevent echo)
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h4 style="margin-bottom: 0.5rem; color: var(--text-muted); font-size: 0.9rem;">Debug Logs & Event Stream</h4>
+      <div id="logBox" class="log-box"></div>
+    </div>
+  </div>
+
+  <script>
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+    const timerEl = document.getElementById("timer");
+    const transcriptBox = document.getElementById("transcriptBox");
+    const logBox = document.getElementById("logBox");
+
+    let ws = null;
+    let audioInContext = null;
+    let audioOutContext = null;
+    let micStream = null;
+    let processorNode = null;
+    let countdownInterval = null;
+    let timeLeft = 60;
+    let nextPlayTime = 0;
+    let activeAudioSources = [];
+    let audioChunksQueue = [];
+    let isPlayingQueue = false;
+
+    // Current streaming turn message elements
+    let currentCandidateMsg = null;
+    let currentInterviewerMsg = null;
+
+    function log(msg, type = "") {
+      const el = document.createElement("div");
+      el.className = "log-item " + type;
+      el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logBox.appendChild(el);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    function setStatus(text, dotClass = "") {
+      statusText.textContent = text;
+      statusDot.className = "status-dot " + dotClass;
+    }
+
+    // Helper: append or update candidate/interviewer transcript
+    function appendCandidateText(text) {
+      if (!currentCandidateMsg) {
+        currentCandidateMsg = document.createElement("div");
+        currentCandidateMsg.className = "message candidate";
+        currentCandidateMsg.innerHTML = `<div class="message-sender">You (Candidate)</div><div class="message-body"></div>`;
+        transcriptBox.appendChild(currentCandidateMsg);
+      }
+      currentCandidateMsg.querySelector(".message-body").textContent += text;
+      transcriptBox.scrollTop = transcriptBox.scrollHeight;
+      currentInterviewerMsg = null;
+    }
+
+    function appendInterviewerText(text) {
+      if (!currentInterviewerMsg) {
+        currentInterviewerMsg = document.createElement("div");
+        currentInterviewerMsg.className = "message interviewer";
+        currentInterviewerMsg.innerHTML = `<div class="message-sender">AI Interviewer</div><div class="message-body"></div>`;
+        transcriptBox.appendChild(currentInterviewerMsg);
+      }
+      currentInterviewerMsg.querySelector(".message-body").textContent += text;
+      transcriptBox.scrollTop = transcriptBox.scrollHeight;
+      currentCandidateMsg = null;
+    }
+
+    // Convert Float32Array PCM [-1.0, 1.0] to base64-encoded Int16Array
+    function floatTo16BitPCM(float32Array) {
+      const buffer = new ArrayBuffer(float32Array.length * 2);
+      const view = new DataView(buffer);
+      for (let i = 0; i < float32Array.length; i++) {
+        let s = Math.max(-1, Math.min(1, float32Array[i]));
+        view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+      let binary = "";
+      const bytes = new Uint8Array(buffer);
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    }
+
+    // Convert base64 PCM 24kHz 16-bit to Float32Array and schedule gapless playback
+    function playAudioChunk(base64Data) {
+      try {
+        const binaryString = atob(base64Data);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // Align to 16-bit PCM samples
+        const sampleCount = Math.floor(len / 2);
+        const pcm16 = new Int16Array(bytes.buffer, 0, sampleCount);
+        const float32 = new Float32Array(sampleCount);
+        for (let i = 0; i < sampleCount; i++) {
+          float32[i] = pcm16[i] / 32768.0;
+        }
+
+        if (!audioOutContext || audioOutContext.state === "closed") {
+          audioOutContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        }
+        if (audioOutContext.state === "suspended") {
+          audioOutContext.resume();
+        }
+
+        const audioBuffer = audioOutContext.createBuffer(1, float32.length, 24000);
+        audioBuffer.copyToChannel(float32, 0);
+
+        const source = audioOutContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioOutContext.destination);
+
+        const currentTime = audioOutContext.currentTime;
+        if (nextPlayTime < currentTime) {
+          nextPlayTime = currentTime + 0.05; // 50ms buffer for seamless streaming
+        }
+
+        source.start(nextPlayTime);
+        nextPlayTime += audioBuffer.duration;
+
+        activeAudioSources.push(source);
+        source.onended = () => {
+          const idx = activeAudioSources.indexOf(source);
+          if (idx !== -1) activeAudioSources.splice(idx, 1);
+          if (activeAudioSources.length === 0 && ws?.readyState === WebSocket.OPEN) {
+            setStatus("Listening to you…", "active");
+          }
+        };
+      } catch (err) {
+        log("Audio playback error: " + err.message, "error");
+      }
+    }
+
+    function stopAllAudioOutput() {
+      for (const src of activeAudioSources) {
+        try { src.stop(); } catch(e) {}
+      }
+      activeAudioSources = [];
+      if (audioOutContext) {
+        nextPlayTime = audioOutContext.currentTime;
+      }
+    }
+
+    async function startInterview() {
+      try {
+        startBtn.disabled = true;
+
+        // CRITICAL: Unlock Web Audio on user click (Autoplay policy)
+        if (!audioOutContext || audioOutContext.state === "closed") {
+          audioOutContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+        }
+        if (audioOutContext.state === "suspended") {
+          await audioOutContext.resume();
+        }
+        nextPlayTime = audioOutContext.currentTime;
+
+        setStatus("Minting ephemeral token…");
+        log("Requesting ephemeral token from server /api/token...", "info");
+
+        // 1. Fetch ephemeral token from our server
+        const tokenRes = await fetch("/api/token", { method: "POST" });
+        if (!tokenRes.ok) {
+          throw new Error("Failed to mint ephemeral token: " + (await tokenRes.text()));
+        }
+        const tokenData = await tokenRes.json();
+        const ephemeralToken = tokenData.token;
+        log("Received ephemeral token: " + ephemeralToken.substring(0, 20) + "...", "info");
+
+        // 2. Initialize Microphone
+        setStatus("Requesting microphone…");
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 16000,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+
+        audioInContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        const sourceNode = audioInContext.createMediaStreamSource(micStream);
+        processorNode = audioInContext.createScriptProcessor(4096, 1, 1);
+
+        // 3. Connect to Gemini Live WebSocket
+        setStatus("Connecting to Gemini Live…");
+        const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${ephemeralToken}`;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          log("Connected to Gemini Live WebSocket!", "info");
+          setStatus("Connected. Sending setup...", "active");
+
+          // Initial setup configuration requesting AUDIO modality & voice Puck
+          const setupMsg = {
+            setup: {
+              model: "models/gemini-3.1-flash-live-preview",
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName: "Puck"
+                    }
+                  }
+                }
+              },
+              systemInstruction: {
+                parts: [{
+                  text: "You are an interviewer conducting a realistic software engineering campus placement mock interview. Start immediately by greeting the candidate out loud and asking your first technical question. Keep each spoken turn concise."
+                }]
+              },
+              inputAudioTranscription: {},
+              outputAudioTranscription: {}
+            }
+          };
+
+          ws.send(JSON.stringify(setupMsg));
+          log("Sent setup configuration (requesting AUDIO voice: Puck + Transcriptions)", "info");
+
+          // Start microphone audio streaming
+          processorNode.onaudioprocess = (e) => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              const inputData = e.inputBuffer.getChannelData(0);
+              const pcmBase64 = floatTo16BitPCM(inputData);
+              const audioMsg = {
+                realtimeInput: {
+                  audio: {
+                    data: pcmBase64,
+                    mimeType: "audio/pcm;rate=16000"
+                  }
+                }
+              };
+              ws.send(JSON.stringify(audioMsg));
+            }
+          };
+
+          sourceNode.connect(processorNode);
+          processorNode.connect(audioInContext.destination);
+
+          // Update UI
+          transcriptBox.innerHTML = "";
+          startBtn.style.display = "none";
+          stopBtn.style.display = "inline-flex";
+          setStatus("Live Interview in progress", "active");
+
+          // Start 60s countdown timer
+          timeLeft = 60;
+          timerEl.textContent = "01:00";
+          countdownInterval = setInterval(() => {
+            timeLeft--;
+            const mins = String(Math.floor(timeLeft / 60)).padStart(2, "0");
+            const secs = String(timeLeft % 60).padStart(2, "0");
+            timerEl.textContent = `${mins}:${secs}`;
+            if (timeLeft <= 0) {
+              log("60 seconds reached! Completed LS1 duration goal.", "info");
+              stopInterview();
+            }
+          }, 1000);
+        };
+
+        ws.onmessage = async (event) => {
+          let response;
+          if (event.data instanceof Blob) {
+            response = JSON.parse(await event.data.text());
+          } else {
+            response = JSON.parse(event.data);
+          }
+
+          const serverContent = response.serverContent;
+          if (!serverContent) return;
+
+          // 1. Check for Interruption (NFR-02)
+          if (serverContent.interrupted) {
+            log("⚡ Interruption detected! Stopped interviewer audio.", "warn");
+            stopAllAudioOutput();
+            setStatus("Interrupted — listening to you…", "active");
+            return;
+          }
+
+          // 2. Transcriptions (Both Speakers)
+          if (serverContent.inputTranscription?.text) {
+            appendCandidateText(serverContent.inputTranscription.text);
+          }
+          if (serverContent.outputTranscription?.text) {
+            appendInterviewerText(serverContent.outputTranscription.text);
+          }
+
+          // 3. Audio Output playback
+          if (serverContent.modelTurn?.parts) {
+            for (const part of serverContent.modelTurn.parts) {
+              if (part.inlineData && part.inlineData.data) {
+                setStatus("Interviewer speaking aloud…", "speaking");
+                playAudioChunk(part.inlineData.data);
+              } else if (part.text) {
+                log("AI text part received: " + part.text.substring(0, 40) + "…", "info");
+              }
+            }
+          }
+        };
+
+        ws.onerror = (err) => {
+          log("WebSocket error: " + JSON.stringify(err), "error");
+          setStatus("Connection Error", "error");
+        };
+
+        ws.onclose = (e) => {
+          log(`WebSocket closed (code: ${e.code}, reason: ${e.reason || "normal"})`, "warn");
+          stopInterview();
+        };
+
+      } catch (err) {
+        log("Error starting interview: " + err.message, "error");
+        setStatus("Failed: " + err.message, "error");
+        stopInterview();
+      }
+    }
+
+    function stopInterview() {
+      clearInterval(countdownInterval);
+      if (processorNode) {
+        processorNode.disconnect();
+        processorNode = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+      }
+      if (audioInContext) {
+        audioInContext.close();
+        audioInContext = null;
+      }
+      stopAllAudioOutput();
+      if (audioOutContext) {
+        audioOutContext.close();
+        audioOutContext = null;
+      }
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+
+      startBtn.style.display = "inline-flex";
+      startBtn.disabled = false;
+      stopBtn.style.display = "none";
+      setStatus("Session Finished", "");
+      log("Session stopped.", "info");
+    }
+
+    startBtn.addEventListener("click", startInterview);
+    stopBtn.addEventListener("click", stopInterview);
+  </script>
+</body>
+</html>
