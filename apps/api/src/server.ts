@@ -12,7 +12,8 @@ const app: Express = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+// Only the web app may call the API from a browser.
+app.use(cors({ origin: process.env.WEB_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
 
 // Routes
