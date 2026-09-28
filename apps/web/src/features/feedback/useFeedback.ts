@@ -1,7 +1,7 @@
 // useFeedback.ts
 import { useEffect, useState } from "react";
 import type { Feedback } from "@interview/contracts";
-import { fetchFeedback } from "./feedbackApi.local";
+import { fetchFeedback } from "./feedbackApi";
 
 const POLL_INTERVAL_MS = 3000;
 
