@@ -4,6 +4,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Profile } from './pages/Profile';
 import { RolePicker, NewInterview, InterviewRoom } from './features/sessions';
+import { ResultsPage } from './features/feedback';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -25,6 +26,7 @@ function App() {
               <Route path="/profile" element={<Profile />} />
               <Route path="/interview/new" element={<NewInterview />} />
               <Route path="/interview/:sessionId" element={<InterviewRoom />} />
+              <Route path="/interview/:sessionId/feedback" element={<ResultsPage />} />
             </Route>
           </Routes>
         </Router>
