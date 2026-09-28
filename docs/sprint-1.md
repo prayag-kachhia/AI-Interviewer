@@ -15,7 +15,7 @@ screenshots or a screen recording — see [CONTRIBUTING.md](../CONTRIBUTING.md).
 |---|---|---|
 | Lead | Prayag (@prayag-kachhia) | L1–L7 (#2–#8) |
 | Live session | Prayag, Vishwa (@Vishwa7399), Kishan (@kishan-savani-ops) | LS1, LS3: Vishwa · LS2, LS4: Kishan (#9–#12) |
-| Feedback | Pranil (@Praneel2309), Shaurya (@Shaurya9989), Ved (@Patel-Ved-702), Rahi | FB1: Pranil · FB2: Ved · FB3: Shaurya · FB4: Rahi (#13–#16) |
+| Feedback | Pranil (@Praneel2309), Shaurya (@Shaurya9989), Ved (@Patel-Ved-702), Rahi (@Rahi2310) | FB1: Pranil · FB2: Ved · FB3: Shaurya · FB4: Rahi (#13–#16) |
 | Identity & profile | Prakriti (@PrakritiPandey24), Raj (@Raj-PaTel-007), Vismay (@vismay0101) | ID1: Raj · ID2: Prakriti · ID3: Vismay (#17–#19) |
 
 Prakriti also owns documentation.
@@ -119,7 +119,7 @@ L1's contracts and a sample transcript, not the rest of the pipeline.
 ## Identity & profile
 
 **ID1 — Database setup (Sat 26). Blocks LS2, FB2 — do this first, ideally by Saturday midday.**
-- A Supabase project; Drizzle configured in `apps/api`; one command runs migrations.
+- A Supabase project; Prisma configured in `apps/api`; one command runs migrations.
 - A `users` table; the API connects using credentials from `.env`, never committed.
 - The README explains how a teammate gets their own database running.
 - Proof: terminal running the migration, the table in Supabase.
@@ -137,8 +137,30 @@ L1's contracts and a sample transcript, not the rest of the pipeline.
 - A shared helper so other modules return 404, not 403, for another user's resource (FR-27).
 - Proof: terminal running the tests, Network tab showing 401 and 200.
 
+## Where Sprint 1 ended up (28 Sep)
+
+The Identity and Live session teams built one Express 5 + Prisma 5 app outside the repo. It
+became the base (#23) in place of the Hono shell, so it also replaced L2's stub auth and
+the Drizzle setup that ID1 described. See `docs/adr/0008-express-and-prisma.md`.
+
+| Task | Where it landed |
+|---|---|
+| L1 contracts | #28 |
+| L2 stub auth | not needed: real Supabase auth arrived with the base (#23) |
+| L3 CI | #27; `main` is protected |
+| LS1 voice spike | GO, Gemini Live (#9 comment) |
+| LS2, LS4, ID1–ID3 | the imported slices (#23) |
+| LS3 voice token | #24 (API side). The browser-side Gemini adapter is still to do |
+| FB1 results screen | #26 |
+| FB2 jobs table + worker | #25 |
+| FB3 feedback job + endpoint, FB4 evaluator | #29 |
+| L5/L6 integration and demo, L7 rubric approval | the lead, with real Supabase and Gemini keys |
+
+The live interview still uses the browser's speech recognition and synthesis until the Gemini
+adapter lands. That's the planned fallback, so the demo flow works either way.
+
 ## Moved to Sprint 2 (after exams)
 
-Per-role rubrics (OI-3) · feedback retry (NFR-04) · ESLint boundary rule and Prettier · profile
-(resume, GitHub context) · deleting sessions (FR-28) · 30-day retention purge (NFR-11) ·
+Per-role rubrics (OI-3) · feedback retry (NFR-04) · ESLint boundary rule and Prettier · GitHub
+context for the profile (resume upload already exists) · deleting sessions and accounts (FR-28) · 30-day retention purge (NFR-11) ·
 latency measurement (NFR-01, NFR-03).
