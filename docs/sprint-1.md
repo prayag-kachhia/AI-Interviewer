@@ -147,7 +147,7 @@ the Drizzle setup that ID1 described. See `docs/adr/0008-express-and-prisma.md`.
 |---|---|
 | L1 contracts | #28 |
 | L2 stub auth | not needed: real Supabase auth arrived with the base (#23) |
-| L3 CI | #27; `main` is protected |
+| L3 CI | #27. Protecting `main` needs GitHub Pro (free with the Student Pack) or a public repo |
 | LS1 voice spike | GO, Gemini Live (#9 comment) |
 | LS2, LS4, ID1–ID3 | the imported slices (#23) |
 | LS3 voice token | #24 (API side). The browser-side Gemini adapter is still to do |

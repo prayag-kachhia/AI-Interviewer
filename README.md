@@ -88,10 +88,10 @@ Done:
 - the LLM evaluator with a generic rubric (FB4)
 - the results screen (FB1)
 - shared contracts
-- CI on every PR, and a protected `main`
+- CI on every PR
 
 The live screen uses the browser's built-in speech recognition and synthesis until the Gemini
 Live adapter is wired to the voice token.
 
-Not yet done: the browser-side Gemini Live adapter, CODEOWNERS, a lint gate with the import rule,
+Not yet done: the browser-side Gemini Live adapter; a protected `main` (needs GitHub Pro or a public repo); CODEOWNERS; a lint gate with the import rule,
 and Prettier.
