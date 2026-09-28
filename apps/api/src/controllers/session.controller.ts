@@ -9,6 +9,7 @@ import {
   InvalidTimestampError,
   SessionEndedError,
 } from '../services/session.service';
+import { mintVoiceToken } from '../services/voice-provider.service';
 import { NotFoundError } from '../utils/resource';
 import { INTERVIEW_ROLES } from '../constants/roles';
 
@@ -132,5 +133,33 @@ export const postEndSession = async (req: Request, res: Response): Promise<void>
     }
     console.error('End session error:', error);
     res.status(500).json({ success: false, message: 'Failed to end session' });
+  }
+};
+
+// POST /api/sessions/:id/voice-token  (LS3)
+export const postVoiceToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const id = req.params.id as string;
+
+    const session = await getOwnedSession(id, userId);
+    if (session.status !== 'LIVE') {
+      throw new SessionEndedError();
+    }
+
+    const token = await mintVoiceToken();
+    res.status(200).json({ success: true, data: { token } });
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+    if (error instanceof SessionEndedError) {
+      res.status(409).json({ success: false, message: error.message });
+      return;
+    }
+    // Provider errors can carry provider details; log them, never return them (NFR-09).
+    console.error('Voice token error:', error);
+    res.status(500).json({ success: false, message: 'Failed to start the voice session' });
   }
 };

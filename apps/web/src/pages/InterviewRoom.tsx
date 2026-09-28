@@ -333,6 +333,7 @@ export const InterviewRoom: React.FC = () => {
         setStatus('ENDED');
         setEndedAt(res.data.endedAt ?? new Date().toISOString());
         setVoiceState('IDLE');
+        navigate(`/interview/${sessionId}/feedback`);
       } else {
         setError(res.message || 'Failed to end the interview session.');
       }
