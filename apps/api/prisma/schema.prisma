@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(uuid())
+  supabaseUserId String?   @unique
+  name           String
+  email          String    @unique
+  passwordHash   String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  resumes        Resume[]
+  sessions       Session[]
+
+  @@map("users")
+}
+
+model Resume {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  fileName      String
+  extractedText String
+  parsedProfile String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Slice A — Live Session (LS2 + LS4)
+// ---------------------------------------------------------------------------
+
+enum SessionStatus {
+  LIVE
+  ENDED
+}
+
+enum TurnSpeaker {
+  AI
+  CANDIDATE
+}
+
+model Session {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  role      String
+  status    SessionStatus @default(LIVE)
+  startedAt DateTime      @default(now())
+  endedAt   DateTime?
+  createdAt DateTime      @default(now())
+  turns     Turn[]
+  jobs      Job[]
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Turn {
+  id           String      @id @default(uuid())
+  sessionId    String
+  session      Session     @relation(fields: [sessionId], references: [id])
+  turnIndex    Int
+  speaker      TurnSpeaker
+  text         String
+  timestampSec Float
+  createdAt    DateTime    @default(now())
+
+  @@index([sessionId])
+  @@map("turns")
+}
+
+// Minimal shared queue table so LS4 can hand off to the Feedback slice (FB2)
+// without importing any Feedback code. FB2 owns/extends this table.
+model Job {
+  id        String   @id @default(uuid())
+  type      String
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id])
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@map("jobs")
+}

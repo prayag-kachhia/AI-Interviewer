@@ -10,24 +10,32 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 1. **Have a task with your name on it.** Every task is a GitHub issue made from the Task
    template, assigned to one person, with a milestone that sets its deadline. If there isn't
    one, ask the lead.
-2. **Read the story's acceptance criteria.** The content & research pair writes them as
-   Given/When/Then statements. Your tests must cover them. If they're missing or unclear,
+2. **Read the story's acceptance criteria.** Whoever creates the task (by default the
+   lead) writes them as Given/When/Then statements. Your tests must cover them. If they're missing or unclear,
    ask before building — don't guess.
-3. **Check whether you need a new contract.** Request and response shapes live in
-   `packages/contracts`. If your task needs a new one, it goes in the same PR as the code that
-   uses it.
+3. **Check whether you need a new contract.** Shapes the API and web share belong in
+   `packages/contracts`. The imported code still declares its shapes in
+   `apps/api/src/types/index.ts` and `apps/web/src/types/index.ts`. If your task needs a new
+   shape, add it in the same PR as the code that uses it, and never add a second copy of one that
+   already exists.
 
 ## Architecture rules
 
-- **Import a module only through its `index.ts`.** Inside a module, use relative imports.
-  `@/modules/*/*` and `@/features/*/*` are off limits from outside.
+- **Web: import a feature only through `apps/web/src/features/<name>/index.ts`.** Inside a
+  feature, use relative imports.
+- **API: code is organised by layer.** `routes/` wires middleware to `controllers/`, controllers
+  call `services/`, and `middleware/auth.ts` and `utils/db.ts` (the Prisma client) are shared.
 - **Dependency direction:** `identity ← profile ← sessions ← feedback`. `sessions` never
-  imports `feedback`; it emits a `session.ended` job instead.
-- **Contracts are the only definition of a shape.** Don't write a type by hand that duplicates
-  one. The API parses what it sends; the web parses what it receives (`getJson`).
+  imports `feedback`; it inserts a `session.ended` job in the same transaction that ends the session instead.
+- **The web calls the API only through `apps/web/src/lib/api.ts`**, which attaches the Supabase
+  access token.
 - **The browser never sees provider API keys** and never queries Supabase tables directly.
-- **Vendor code is quarantined:** only `sessions/voice-provider.ts` talks to the voice provider,
-  only `feedback/evaluator.ts` calls the evaluation LLM.
+- **Sign-in is Supabase only.** The browser signs in with Supabase, and the API accepts only a
+  Supabase access token (`apps/api/src/middleware/auth.ts`). Don't add another login, password
+  endpoint or token format.
+- **Vendor code is quarantined:** only `apps/api/src/services/gemini.service.ts` calls Gemini for
+  resume analysis. The voice-provider token code (LS3) and the evaluation LLM (FB4) each get one
+  file of their own under `apps/api/src/services/`, and nothing else calls those providers.
 - **Placeholder code is marked `STUB`** with the owning slice named.
 
 ## Making a change
@@ -38,14 +46,20 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 - Before pushing:
 
   ```bash
-  bun run typecheck   # Bun runs TypeScript without checking types, so this is required
+  bun run typecheck   # Bun (API) and Vite (web) don't check types, so this is required
   bun run test
   ```
+
+- Changing `apps/api/prisma/schema.prisma`? Add a new migration in the same PR, and run
+  `bun run --filter @interview/api db:generate`. Never edit a migration that is already committed,
+  and never run `prisma migrate dev` or `prisma migrate reset` against the shared Supabase database.
 
 ## What makes a PR mergeable
 
 - **One task, small.** Under ~300 changed lines, not counting `bun.lock`. Split bigger work.
-- **Stays in your lane.** Only your module or feature, plus `packages/contracts` if needed.
+- **Stays in your lane.** Only your part of the app (your routes, controllers and services in
+  `apps/api`, your feature or pages in `apps/web`), plus `packages/contracts` or a new migration
+  if the task needs it.
   Found a problem elsewhere? Open an issue or a separate PR.
 - **Tests encode the acceptance criteria.** Test names should read like the criteria. Every bug
   fix comes with a test that failed before the fix.
@@ -57,6 +71,8 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 
 ### Automatic rejections
 
+These apply to the lines your PR adds or changes; code imported from the slices predates them.
+
 - Code unrelated to the task
 - Unused exports, files, or parameters
 - An abstraction with one caller "for later"
@@ -65,11 +81,12 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 - Comments that restate what the code does
 - Placeholder code not marked `STUB`
 - A hand-written type that duplicates a contract
+- A committed `.env` file, database file, `dist/` or `node_modules/`
 
 ## Review
 
 - **Every PR is reviewed by someone from a different pair.** Changes to `packages/contracts`,
-  any `package.json`, or `bun.lock` also need the lead.
+  `apps/api/prisma/` (schema or migrations), any `package.json`, or `bun.lock` also need the lead.
 - **Reviewers check behaviour, not just style:** does it meet the acceptance criteria, does it
   respect the architecture rules, would you know how to debug it?
 - **Ask the author, don't fix it for them.** If something is unclear, ask them to explain it.

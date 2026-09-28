@@ -1,40 +1,36 @@
-import { useEffect, useState } from "react";
-import { RoleList } from "@interview/contracts";
-import { getJson } from "./lib/api";
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Navbar } from './components/Navbar';
+import { Login } from './pages/Login';
+import { Dashboard } from './pages/Dashboard';
+import { Profile } from './pages/Profile';
+import { RolePicker, NewInterview, InterviewRoom } from './features/sessions';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 
-type State =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; roles: RoleList };
-
-// STUB (live-session slice): the role picker moves into features/sessions once
-// picking a role starts a session.
-export function App() {
-  const [state, setState] = useState<State>({ status: "loading" });
-
-  useEffect(() => {
-    getJson("/roles", RoleList)
-      .then((roles) => setState({ status: "ready", roles }))
-      .catch((err: unknown) =>
-        setState({ status: "error", message: err instanceof Error ? err.message : String(err) }),
-      );
-  }, []);
-
+function App() {
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", maxWidth: 640, margin: "2rem auto", padding: "0 1rem" }}>
-      <h1>Interview Practice</h1>
-      <h2>Pick a role</h2>
-      {state.status === "loading" && <p>Loading roles…</p>}
-      {state.status === "error" && <p role="alert">Could not load roles: {state.message}</p>}
-      {state.status === "ready" && (
-        <ul>
-          {state.roles.map((role) => (
-            <li key={role.id}>
-              <strong>{role.title}</strong> — {role.description}
-            </li>
-          ))}
-        </ul>
-      )}
-    </main>
+    <ThemeProvider>
+      <AuthProvider>
+        <Router>
+          <Navbar />
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/login" element={<Login />} />
+            
+            {/* Protected Routes */}
+            <Route element={<ProtectedRoute />}>
+              <Route path="/role-picker" element={<RolePicker />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/interview/new" element={<NewInterview />} />
+              <Route path="/interview/:sessionId" element={<InterviewRoom />} />
+            </Route>
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
+
+export default App;

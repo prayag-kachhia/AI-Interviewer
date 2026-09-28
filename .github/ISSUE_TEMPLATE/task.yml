@@ -59,7 +59,7 @@ body:
     attributes:
       label: Depends on / unblocked by
       description: Issue numbers, or the STUB to build against until they land.
-      placeholder: "#4 — until then, use the STUB auth middleware that returns a fixed user id"
+      placeholder: "#<issue> — or the STUB to build against until it lands"
 
   - type: textarea
     id: out-of-scope
