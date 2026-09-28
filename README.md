@@ -77,10 +77,21 @@ Current sprint, tasks and deadlines: [docs/sprint-1.md](docs/sprint-1.md).
 
 ## Status
 
-Done: Supabase sign-in and token check; Prisma schema and migrations for users, resumes, sessions,
-turns and jobs; resume upload and analysis; creating a session; the live interview screen with
-transcript turns and end session. The live screen uses the browser's built-in speech
-recognition and synthesis until the provider voice token lands.
+Done:
+- Supabase sign-in and the token check
+- Prisma schema and migrations
+- resume upload and analysis
+- creating a session
+- the live interview screen, with transcript turns and ending the session
+- the provider voice-token endpoint (LS3)
+- the job queue and feedback worker (FB2, FB3)
+- the LLM evaluator with a generic rubric (FB4)
+- the results screen (FB1)
+- shared contracts
+- CI on every PR
 
-Not yet done: provider voice token (LS3); feedback worker, evaluator and results screen (FB1–FB4);
-CI on every PR; protected `main`; CODEOWNERS; a lint gate with the import rule; Prettier.
+The live screen uses the browser's built-in speech recognition and synthesis until the Gemini
+Live adapter is wired to the voice token.
+
+Not yet done: the browser-side Gemini Live adapter; a protected `main` (needs GitHub Pro or a public repo); CODEOWNERS; a lint gate with the import rule,
+and Prettier.
