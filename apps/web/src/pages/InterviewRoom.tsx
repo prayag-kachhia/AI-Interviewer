@@ -17,8 +17,8 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { getSession, postTurn, endSession } from '../lib/api';
+import { ROLES } from '@interview/contracts';
 import {
-  INTERVIEW_ROLES,
   type InterviewVoiceState,
   type SessionStatus,
   type TurnData,
@@ -88,7 +88,7 @@ export const InterviewRoom: React.FC = () => {
   statusRef.current = status;
 
   const roleLabel = useMemo(() => {
-    const match = INTERVIEW_ROLES.find((r) => r.id === role);
+    const match = ROLES.find((r) => r.id === role);
     return match ? match.label : role.replace(/-/g, ' ');
   }, [role]);
 

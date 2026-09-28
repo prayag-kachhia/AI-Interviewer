@@ -13,7 +13,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { createSession, getRoles } from '../lib/api';
-import { INTERVIEW_ROLES, type InterviewRoleOption } from '../types';
+import { RoleList, ROLES, type Role } from '@interview/contracts';
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {
   'software-engineer': <Code2 size={22} color="var(--primary-color)" />,
@@ -22,7 +22,7 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
 };
 
 export const NewInterview: React.FC = () => {
-  const [roles, setRoles] = useState<InterviewRoleOption[]>(INTERVIEW_ROLES);
+  const [roles, setRoles] = useState<Role[]>(ROLES);
   const [roleId, setRoleId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -32,19 +32,11 @@ export const NewInterview: React.FC = () => {
     getRoles()
       .then((res) => {
         if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-          // Merge server role list with local role descriptions
-          const merged = res.data.map((serverRole) => {
-            const localMatch = INTERVIEW_ROLES.find((r) => r.id === serverRole.id);
-            return {
-              ...serverRole,
-              description: serverRole.description || localMatch?.description,
-            };
-          });
-          setRoles(merged);
+          setRoles(RoleList.parse(res.data));
         }
       })
       .catch(() => {
-        // Fallback to centralized INTERVIEW_ROLES catalogue if offline
+        // Fallback to centralized ROLES catalogue if offline
       });
   }, []);
 

@@ -2,7 +2,7 @@
 // STUB (feedback): fake data until FB3's real GET /feedback endpoint exists.
 // Replace fetchFeedback's body with a real fetch() call once FB3 merges.
 
-import type { Feedback, FeedbackStatus } from "./types.local";
+import type { Feedback, FeedbackStatus } from "@interview/contracts";
 
 // Change this constant while developing to preview each state manually.
 const FAKE_STATE: FeedbackStatus = "pending";

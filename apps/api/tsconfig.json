@@ -1,9 +1,11 @@
 {
+  // tsc only typechecks; Bun runs the TypeScript directly. "bundler" resolution
+  // lets the API import the ESM workspace package @interview/contracts.
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
-    "rootDir": "./src",
-    "outDir": "./dist",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
@@ -11,4 +13,3 @@
   },
   "include": ["src/**/*"]
 }
-

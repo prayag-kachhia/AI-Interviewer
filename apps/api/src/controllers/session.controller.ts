@@ -11,10 +11,10 @@ import {
 } from '../services/session.service';
 import { mintVoiceToken } from '../services/voice-provider.service';
 import { NotFoundError } from '../utils/resource';
-import { INTERVIEW_ROLES } from '../constants/roles';
+import { RoleList, ROLES, VoiceToken } from '@interview/contracts';
 
 export const getRoles = async (_req: Request, res: Response): Promise<void> => {
-  res.status(200).json({ success: true, data: INTERVIEW_ROLES });
+  res.status(200).json({ success: true, data: RoleList.parse(ROLES) });
 };
 
 // POST /api/sessions
@@ -148,7 +148,7 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
     }
 
     const token = await mintVoiceToken();
-    res.status(200).json({ success: true, data: { token } });
+    res.status(200).json({ success: true, data: VoiceToken.parse({ token }) });
   } catch (error) {
     if (error instanceof NotFoundError) {
       res.status(404).json({ success: false, message: 'Resource not found' });
