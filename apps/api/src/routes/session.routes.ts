@@ -7,6 +7,7 @@ import {
   getTurns,
   postTurn,
   postEndSession,
+  postVoiceToken,
 } from '../controllers/session.controller';
 
 const router = Router();
@@ -18,5 +19,6 @@ router.get('/:id', authenticate, getSessionById);
 router.get('/:id/turns', authenticate, getTurns);
 router.post('/:id/turns', authenticate, postTurn);
 router.post('/:id/end', authenticate, postEndSession);
+router.post('/:id/voice-token', authenticate, postVoiceToken);
 
 export default router;
