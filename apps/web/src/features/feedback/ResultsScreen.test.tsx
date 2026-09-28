@@ -3,7 +3,10 @@ import "@testing-library/jest-dom/vitest";
 import { test, expect, vi, afterEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import { ResultsScreen } from "./ResultsScreen";
-import * as api from "./feedbackApi.local";
+import * as api from "./feedbackApi";
+
+// The real API client creates a Supabase client on import; these tests replace fetchFeedback anyway.
+vi.mock("../../lib/api", () => ({ getFeedback: vi.fn() }));
 
 afterEach(() => {
   vi.useRealTimers();
