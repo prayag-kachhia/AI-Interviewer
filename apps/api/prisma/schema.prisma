@@ -57,6 +57,7 @@ model Session {
   createdAt DateTime      @default(now())
   turns     Turn[]
   jobs      Job[]
+  feedback  Feedback?
 
   @@index([userId])
   @@map("sessions")
@@ -76,16 +77,40 @@ model Turn {
   @@map("turns")
 }
 
-// Minimal shared queue table so LS4 can hand off to the Feedback slice (FB2)
-// without importing any Feedback code. FB2 owns/extends this table.
+// Postgres job queue (FB2). LS4 inserts a `session.ended` row in the same
+// transaction that ends the session; workers claim rows with
+// SELECT ... FOR UPDATE SKIP LOCKED (services/job-queue.service.ts).
+// sessionId is optional so jobs that are not about one session (the
+// retention purge) can share the table.
 model Job {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   type      String
-  sessionId String
-  session   Session  @relation(fields: [sessionId], references: [id])
-  status    String   @default("pending")
-  createdAt DateTime @default(now())
+  sessionId String?
+  session   Session?  @relation(fields: [sessionId], references: [id])
+  payload   Json      @default("{}")
+  status    String    @default("pending") // pending | processing | completed | failed
+  attempts  Int       @default(0)
+  lockedBy  String?
+  lockedAt  DateTime?
+  lastError String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
 
   @@index([sessionId])
+  @@index([status, createdAt])
   @@map("jobs")
+}
+
+// One evaluation per session (FB2 table; FB3 fills it, FB1 shows it).
+model Feedback {
+  id        String   @id @default(uuid())
+  sessionId String   @unique
+  session   Session  @relation(fields: [sessionId], references: [id])
+  status    String   @default("pending") // pending | ready | failed
+  summary   String?
+  scores    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("feedback")
 }
