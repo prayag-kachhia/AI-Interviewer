@@ -4,8 +4,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { z } from 'zod';
 import { FeedbackScore, type TurnSpeaker } from '@interview/contracts';
 
-// One generic rubric for every role in Sprint 1; per-role rubrics are OI-3.
-// Changing it needs the lead's approval (L7).
+// Lead-approved generic rubric for FB4 (L7); it applies to every role in Sprint 1.
+// Per-role rubrics come later.
 export const RUBRIC = [
   {
     category: 'Communication',

@@ -18,6 +18,23 @@ const VALID = JSON.stringify({
 });
 
 describe('FB4 — evaluator', () => {
+  it('uses the lead-approved generic rubric', () => {
+    expect(RUBRIC).toEqual([
+      {
+        category: 'Communication',
+        criteria: 'Answers are clear, concise and easy to follow; the candidate explains their thinking.',
+      },
+      {
+        category: 'Technical depth',
+        criteria: 'Answers show correct, specific knowledge for the role, including trade-offs, not just definitions.',
+      },
+      {
+        category: 'Structure',
+        criteria: 'Answers are organised (context, approach, result) and stay on the question asked.',
+      },
+    ]);
+  });
+
   it('given a transcript and a role, returns feedback scored against every rubric category', async () => {
     const result = await evaluateTranscript(SAMPLE, { generate: async () => VALID });
     expect(result.summary).toBe('Clear, concrete answers about API design.');
