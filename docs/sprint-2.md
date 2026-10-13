@@ -48,7 +48,7 @@ Each task is a GitHub issue in the Sprint 2 milestone with one assignee.
 | ID | Task | Owner | Done when |
 |---|---|---|---|
 | D1 | Deploy API (Cloud Run) and web (Firebase Hosting), see [Deployment](#deployment-google-cloud) | Raj, with Prayag | Public URLs work; sign-in, interview and feedback work on them |
-| D2 | CD: migrations on merge to `main` | Ved | Merging a PR with a migration applies it to production automatically |
+| D2 | CD: migrations on merge to `main` (done in the deploy workflow; verify on the first deploy) | Ved | Merging a PR with a migration applies it to production automatically |
 | V1 | `GeminiLiveVoiceAdapter` in `apps/web/src/lib/voiceAdapter.ts`, fetching its token from `POST /api/sessions/:id/voice-token` | Vishwa | A spoken interview with Gemini works in the browser; both speakers' transcript turns are posted to the API; it falls back to browser speech if the token call fails |
 | V2 | Interviewer briefing built server-side and sent with the voice token (role, DR-01 structure: introduction → 3–4 questions → closing, time limit) | Kishan | The AI introduces itself, asks role-specific questions, and closes the interview |
 | P1 | Add the candidate's parsed resume (from `Resume.parsedProfile`) to the briefing | Prakriti, with Kishan | At least one question refers to the candidate's own projects or skills |
@@ -69,7 +69,7 @@ Each task is a GitHub issue in the Sprint 2 milestone with one assignee.
 ### Where everything runs
 
 ```
-Browser ──HTTPS──> Web app (static files: Firebase Hosting, <project>.web.app)
+Browser ──HTTPS──> Web app (static files: Firebase Hosting, ai-interviewer-it314.web.app)
    │                  │ calls
    │                  ▼
    │               API + feedback worker (one Bun container on Cloud Run, asia-south1)
@@ -82,8 +82,8 @@ Sign-in: browser ↔ Supabase Auth; the API checks the token on every request.
 ```
 
 **Why these choices:**
-- **Cloud Run** runs our Docker container over HTTPS and redeploys from GitHub.
-- **Firebase Hosting** serves the static web app, with a preview URL for every PR.
+- **Cloud Run** runs our Docker container over HTTPS; GitHub Actions redeploys it on every merge.
+- **Firebase Hosting** serves the static web app.
 - **Supabase** stays the database and sign-in.
 - **Region:** `asia-south1` (Mumbai).
 - **Cost:** the trial credits cover all of it. Turn the API down after the evaluation (see the
@@ -99,92 +99,100 @@ Sign-in: browser ↔ Supabase Auth; the API checks the token on every request.
    `postgres.<project-ref>`). Supabase's direct connection is IPv6-only, and Cloud Run and
    GitHub's runners connect over IPv4.
 
-### One-time setup (D1, Raj with Prayag)
+### One-time setup (D1)
 
-1. **Production Supabase project.** Create a new project (not the development one).
-   - Authentication → URL Configuration: set the Site URL and redirect URL to
-     `https://<firebase-project>.web.app`.
-   - Authentication → Sign In / Providers → Email: **turn off "Confirm email" for the demo**.
-     Supabase's built-in mailer sends only about 2 emails per hour per project, which would
-     block sign-ups during the evaluation. Create the demo accounts in advance. Setting up your
-     own mail server (custom SMTP) and turning confirmation back on is a post-evaluation task.
-   - Database → Connect: copy the **session pooler** string. That's `DATABASE_URL`.
-   - Apply the migrations once from a laptop:
-     `DATABASE_URL=<session pooler URL> bun run --filter @interview/api db:migrate`
-2. **Google Cloud project.** Enable the APIs, then store the three secrets:
+**Already done (13 Oct):**
+- **Google Cloud project:** `ai-interviewer-it314`, region `asia-south1`, billing linked.
+- **APIs enabled:** Cloud Run, Cloud Build, Secret Manager, Artifact Registry, Firebase,
+  Firebase Hosting, IAM Credentials and STS.
+- **Runtime service account** (`628626987581-compute@…`): can read secrets and run builds.
+- **Workload Identity Federation:** pool `github`, provider `ai-interviewer`. It accepts only
+  tokens from `prayag-kachhia/AI-Interviewer` on `refs/heads/main`, so no Google key is stored in
+  GitHub.
+- **Deploy service account** (`gha-deployer@ai-interviewer-it314.iam.gserviceaccount.com`):
+  allowed to deploy Cloud Run from source, publish Firebase Hosting and read secrets. Nothing
+  else.
 
-   ```bash
-   gcloud config set project <PROJECT_ID>
-   gcloud services enable run.googleapis.com cloudbuild.googleapis.com secretmanager.googleapis.com artifactregistry.googleapis.com
-   printf %s "<session pooler URL>"   | gcloud secrets create database-url --data-file=-
-   printf %s "<Gemini API key>"       | gcloud secrets create gemini-api-key --data-file=-
-   printf %s "<Supabase service key>" | gcloud secrets create supabase-service-role-key --data-file=-
-   ```
+**Still to do, in this order:**
 
-   Give Cloud Run's runtime service account (by default the Compute Engine default account)
-   the role `roles/secretmanager.secretAccessor`.
-3. **First API deploy.** Run from the repo root; it uses the root `Dockerfile`:
+1. **Production Supabase project** (Supabase dashboard). Create a new project, not the
+   development one.
+   - Authentication → URL Configuration: Site URL `https://ai-interviewer-it314.web.app`. Also
+     add it under Redirect URLs.
+   - Authentication → Sign In / Providers → Email: turn **off** "Confirm email" for the demo.
+   - Database → Connect: copy the **session pooler** connection string (port 5432, user
+     `postgres.<ref>`).
+   - Project Settings → API: note the project URL, the **anon / publishable** key and the
+     **service_role / secret** key.
+2. **Three secrets in Secret Manager** (console → Security → Secret Manager → Create secret,
+   project `ai-interviewer-it314`). Paste each value in the browser, so it never lands in a
+   terminal's history:
 
-   ```bash
-   gcloud run deploy ai-interviewer-api --source . --region asia-south1 \
-     --no-cpu-throttling --min 1 --max 2 --memory 512Mi --allow-unauthenticated \
-     --set-env-vars WEB_ORIGIN=https://<firebase-project>.web.app,SUPABASE_URL=https://<ref>.supabase.co \
-     --set-secrets DATABASE_URL=database-url:latest,GEMINI_API_KEY=gemini-api-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest
-   ```
+   | Secret name | Value |
+   |---|---|
+   | `database-url` | the session pooler connection string |
+   | `gemini-api-key` | a Gemini API key (set a spending limit on it) |
+   | `supabase-service-role-key` | the service_role / secret key |
 
-   Check that `https://<run-url>/health` returns `{"status":"ok"}`.
-4. **Continuous deployment of the API.** In the Cloud Run console, open the service and choose
-   *Set up continuous deployment*:
-   - GitHub repo `prayag-kachhia/AI-Interviewer`, branch `^main$`
-   - build type Dockerfile, path `/Dockerfile`
+3. **Firebase** (console.firebase.google.com):
+   1. Add project, then pick the existing Google Cloud project `ai-interviewer-it314`.
+   2. Build → Hosting → Get started, which creates the site `ai-interviewer-it314.web.app`.
+4. **GitHub repository variables** (Settings → Secrets and variables → Actions → Variables).
+   Nothing here is secret; the anon key is public by design.
 
-   From then on every merge to `main` builds and deploys the API.
-5. **Web app on Firebase Hosting.**
-   1. In the Firebase console, add Firebase to the same Google Cloud project.
-   2. Run `npx firebase-tools init hosting:github` once. It creates a deploy service account
-      and stores its key as a GitHub secret.
-   3. Rename that secret to `FIREBASE_SERVICE_ACCOUNT` and delete the workflow files it wrote.
-      Ours is `.github/workflows/deploy-web.yml`, and `firebase.json` is already committed.
-   4. Set the repository **variables** (Settings → Secrets and variables → Actions → Variables):
-      `FIREBASE_PROJECT_ID`, `VITE_API_URL` (= `https://<run-url>/api`), `VITE_SUPABASE_URL`,
-      `VITE_SUPABASE_ANON_KEY`.
-6. **Migrations on merge (D2, Ved).** Add the repository **secret** `PRODUCTION_DATABASE_URL`
-   (the session pooler string). The `migrate` job in `ci.yml` applies new migrations after
-   every merge to `main`.
-7. **After the evaluation,** stop spending credits:
+   | Variable | Value |
+   |---|---|
+   | `SUPABASE_URL` | `https://<ref>.supabase.co` |
+   | `VITE_SUPABASE_ANON_KEY` | the anon / publishable key |
+   | `DEPLOY_ENABLED` | `true`. Set this last: it switches deployments on |
+
+5. **First deploy.** Merge the deploy PR, or run *Actions → Deploy → Run workflow*. Then:
+   - Check `https://<cloud-run-url>/health` shows `{"status":"ok"}`.
+   - Open `https://ai-interviewer-it314.web.app` and run the whole interview once.
+6. **After the evaluation,** stop spending credits:
    `gcloud run services update ai-interviewer-api --region asia-south1 --min 0`,
    or delete the service.
 
+### What the deploy workflow does (`.github/workflows/deploy.yml`)
+
+On every merge to `main`, in order:
+1. **Sign in** to Google Cloud (Workload Identity Federation; no stored key).
+2. **Migrate.** It reads `database-url` from Secret Manager, masked in the logs, and runs
+   `prisma migrate deploy` against production.
+3. **Deploy the API.** It runs `gcloud run deploy --source .`, which builds the root
+   `Dockerfile` with Cloud Build and deploys with `--no-cpu-throttling --min 1`. That keeps the
+   feedback worker running. Secrets are mounted from Secret Manager, and `WEB_ORIGIN` is the
+   Firebase URL.
+4. **Health check.** It calls `/health` on the new API.
+5. **Build the web app** with `VITE_API_URL` set to the new API's URL.
+6. **Publish** to Firebase Hosting.
+
+If any step fails, the later ones don't run, and the previous version stays live.
+
 ### Environment variables
 
-| Variable | Where | What |
+| Variable | Where it lives | What |
 |---|---|---|
-| `DATABASE_URL` | Secret Manager `database-url` | Supabase session pooler URL |
-| `GEMINI_API_KEY` | Secret Manager `gemini-api-key` | Server-only. Set a spending limit on the key |
+| `DATABASE_URL` | Secret Manager `database-url` | The Supabase session pooler URL, used by the API and by migrations |
+| `GEMINI_API_KEY` | Secret Manager `gemini-api-key` | Server-only |
 | `SUPABASE_SERVICE_ROLE_KEY` | Secret Manager `supabase-service-role-key` | Server-only. Never in the web app |
-| `SUPABASE_URL`, `WEB_ORIGIN` | Cloud Run env vars | Supabase URL; the Firebase URL (for CORS) |
-| `GEMINI_EVAL_MODEL` | Cloud Run env var (optional) | Override the evaluation model |
-| `PORT` | set by Cloud Run | Don't set it yourself |
-| `PRODUCTION_DATABASE_URL` | GitHub secret | For the `migrate` job |
-| `FIREBASE_SERVICE_ACCOUNT` | GitHub secret | For the web deploy |
-| `FIREBASE_PROJECT_ID`, `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | GitHub variables | Web build and deploy. The `VITE_` values are public by design |
-
-**`VITE_` values are baked in when the web app is built.** After changing one, re-run the web
-deploy.
+| `SUPABASE_URL` | GitHub variable, passed to Cloud Run and the web build | The Supabase project URL |
+| `WEB_ORIGIN` | Set by the workflow | `https://ai-interviewer-it314.web.app`, for CORS |
+| `GEMINI_EVAL_MODEL`, `GEMINI_RESUME_MODEL` | Optional; `gcloud run services update … --update-env-vars` | Model overrides |
+| `PORT` | Set by Cloud Run | Don't set it yourself |
+| `VITE_API_URL` | Set by the workflow from the deployed API | |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | GitHub variables | Public by design |
 
 ### How CI and deployment fit together
 
-1. **On every pull request:**
-   - `ci.yml` checks the code: install, typecheck, migrations on a throwaway Postgres, all
-     tests, the web build.
-   - `deploy-web.yml` publishes a Firebase **preview URL** and comments it on the PR.
-2. **On merge to `main`:**
-   - `ci.yml` checks again, and its `migrate` job applies new migrations to production.
-   - Cloud Build builds and deploys the API to Cloud Run.
-   - `deploy-web.yml` publishes the web app.
-3. **Undoing a bad deploy.** Revert the PR on GitHub; everything redeploys from `main`.
-   - To undo instantly, roll back in the Cloud Run console: Revisions → route traffic to the
-     previous one.
+1. **On every pull request,** `ci.yml`:
+   - installs dependencies and typechecks
+   - applies migrations to a throwaway Postgres
+   - runs all tests and builds the web app
+   - builds the API image and checks it starts with Prisma's engine loaded (the `docker` job)
+2. **On merge to `main`,** `ci.yml` runs again and `deploy.yml` deploys (above).
+3. **Undoing a bad deploy.** Revert the PR; the revert is a new merge, so it redeploys.
+   - To undo instantly: Cloud Run console → Revisions → send traffic to the previous one.
    - Migrations don't revert. Until the evaluation, schema changes only **add** columns or
      tables.
 
@@ -193,7 +201,7 @@ deploy.
 | Symptom | Look at |
 |---|---|
 | API errors, worker messages (`[api-…] job failed`) | Cloud Run → service → Logs |
-| Deploy failed | Cloud Build → History |
+| Deploy failed | GitHub → Actions → Deploy (the failing step), then Cloud Build → History |
 | CORS error in the browser | `WEB_ORIGIN` on Cloud Run must be exactly the Firebase URL |
 | Sign-in confirmation email links to localhost | The Supabase Site URL |
 | Feedback stuck on "preparing" | The `jobs` and `feedback` rows in Supabase, and the Cloud Run logs |

@@ -90,35 +90,3 @@ jobs:
           done
           docker logs api
           exit 1
-
-  # After a merge to main, apply new migrations to the production database.
-  # Skipped until the PRODUCTION_DATABASE_URL secret (Supabase session pooler URL) is set.
-  migrate:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    concurrency: production-migrations
-    env:
-      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install
-        run: bun install --frozen-lockfile
-
-      - name: Apply migrations to production
-        run: |
-          if [ -z "$DATABASE_URL" ]; then
-            echo "::notice::PRODUCTION_DATABASE_URL is not set; skipping production migrations."
-            exit 0
-          fi
-          bun run --filter @interview/api db:migrate
