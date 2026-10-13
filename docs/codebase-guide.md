@@ -276,7 +276,7 @@ client. The `postinstall` script also runs `prisma generate` on every `bun insta
 - `evaluator.service.ts`: **the only file that calls the evaluation LLM.**
   - `RUBRIC`, `buildEvaluationPrompt`, `evaluateTranscript`
   - the timeout, and the Zod validation of the reply
-  - the model is `GEMINI_EVAL_MODEL`, otherwise `gemini-flash-latest`
+  - the model is `GEMINI_EVAL_MODEL`, otherwise the pinned `gemini-3.8-flash`, via the `@google/genai` SDK
 - `voice-provider.service.ts`: **the only file that talks to the voice provider.**
   `mintVoiceToken` POSTs to Google's `auth_tokens` endpoint with the server's key. The token
   allows one session, expires in 30 minutes, and has to be used within 2.
@@ -487,7 +487,7 @@ Deployment (Google Cloud) is described in [sprint-2.md](sprint-2.md).
 - **Leftovers from the slices:**
   - `User.passwordHash` is a leftover column, always `'supabase-auth'`.
   - `Resume.parsedProfile` stores JSON as text.
-  - `@google/genai`, `zod` (API) and `@types/pdf-parse` are unused dependencies.
+  - `@types/pdf-parse` is an unused dependency.
 - **Types:** neither app extends the strict `tsconfig.base.json` yet (about 60 small fixes).
   There's no ESLint or Prettier.
 - **No protected `main` and no CODEOWNERS:** protection needs GitHub Pro or a public repo.

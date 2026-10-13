@@ -1,6 +1,6 @@
 // The only file that calls the evaluation LLM (FB4). Given a transcript and a
 // role, it returns written feedback scored against the generic rubric.
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { FeedbackScore, type TurnSpeaker } from '@interview/contracts';
 
@@ -23,7 +23,9 @@ export const RUBRIC = [
 
 // Leaves room inside the 15-second feedback budget (NFR-03) for polling and the database.
 export const EVALUATION_TIMEOUT_MS = 12_000;
-const DEFAULT_MODEL = 'gemini-flash-latest';
+// A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
+// Google swaps the model behind the alias.
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 export interface TranscriptTurn {
   speaker: TurnSpeaker;
@@ -72,15 +74,18 @@ async function generateWithGemini(prompt: string, timeoutMs: number): Promise<st
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured');
   }
-  const model = new GoogleGenerativeAI(apiKey).getGenerativeModel(
-    {
-      model: process.env.GEMINI_EVAL_MODEL?.trim() || DEFAULT_MODEL,
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: timeoutMs } });
+  const response = await ai.models.generateContent({
+    model: process.env.GEMINI_EVAL_MODEL?.trim() || DEFAULT_MODEL,
+    contents: prompt,
+    config: {
+      responseMimeType: 'application/json',
+      temperature: 0.2,
+      // Cancels the HTTP request itself when the time is up, not just our wait for it.
+      abortSignal: AbortSignal.timeout(timeoutMs),
     },
-    { timeout: timeoutMs }
-  );
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  });
+  return response.text ?? '';
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

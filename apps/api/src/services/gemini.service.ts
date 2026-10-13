@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { getResumeAnalysisPrompt } from '../prompts/resume.prompt';
 import { CandidateProfile } from '../types';
 import { extractResumeHeuristically } from './heuristic.service';
@@ -11,18 +11,15 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Candid
 
   if (!isPlaceholderKey) {
     try {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      // Use standard supported Gemini model
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-1.5-flash',
-        generationConfig: {
-          responseMimeType: 'application/json',
-        },
+      const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 20_000 } });
+      const result = await ai.models.generateContent({
+        // gemini-1.5-flash was retired, so every call failed and silently fell back to the
+        // heuristic parser. Pinned to a current model; override with GEMINI_RESUME_MODEL.
+        model: process.env.GEMINI_RESUME_MODEL?.trim() || 'gemini-3.8-flash',
+        contents: getResumeAnalysisPrompt(extractedText),
+        config: { responseMimeType: 'application/json' },
       });
-
-      const prompt = getResumeAnalysisPrompt(extractedText);
-      const result = await model.generateContent(prompt);
-      const responseText = result.response.text();
+      const responseText = result.text ?? '';
       
       // Parse the JSON safely
       const profileData: CandidateProfile = JSON.parse(responseText);
@@ -42,7 +39,8 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Candid
         languages: Array.isArray(profileData.languages) ? profileData.languages : [],
       };
     } catch (error: any) {
-      console.warn('[AI Service] Gemini API call unsuccessful (API key invalid, rate limit, or model unavailable). Falling back to intelligent heuristic parser:', error.message || error);
+      // Logged as an error so a broken key or retired model is visible in the logs, not hidden.
+      console.error('[AI Service] Gemini resume analysis failed; using the heuristic parser instead:', error.message || error);
     }
   } else {
     console.info('[AI Service] Using intelligent heuristic resume analyzer (no external Gemini API key configured).');
