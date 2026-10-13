@@ -56,7 +56,7 @@ apps/web             React 19 + Vite + react-router
 ## Rules
 
 Full workflow, PR standard and review process: [CONTRIBUTING.md](CONTRIBUTING.md).
-Current sprint, tasks and deadlines: [docs/sprint-1.md](docs/sprint-1.md).
+Current sprint, tasks and deadlines: [docs/sprint-2.md](docs/sprint-2.md) (Sprint 1: [docs/sprint-1.md](docs/sprint-1.md)).
 
 - **Sign-in is Supabase only.** The browser signs in with Supabase and sends the access token as
   `Authorization: Bearer <token>`; `apps/api/src/middleware/auth.ts` validates it. There is no other
