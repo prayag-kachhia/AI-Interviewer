@@ -1,4 +1,4 @@
-import { Navigate, useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router';
 import { ResultsScreen } from './ResultsScreen';
 
 // Route: /interview/:sessionId/feedback — where ending an interview lands.
