@@ -20,7 +20,6 @@
   "type": "commonjs",
   "dependencies": {
     "@google/genai": "^2.24.0",
-    "@google/generative-ai": "^0.24.1",
     "@interview/contracts": "workspace:*",
     "@prisma/client": "5.22.0",
     "@supabase/supabase-js": "^2.117.2",
