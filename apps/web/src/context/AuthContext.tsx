@@ -189,6 +189,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           data: {
             full_name: name.trim(),
           },
+          // The confirmation link returns to this web app, not Supabase's default Site URL.
+          emailRedirectTo: window.location.origin,
         },
       });
 

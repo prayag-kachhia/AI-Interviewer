@@ -57,3 +57,61 @@ jobs:
 
       - name: Build web
         run: bun run --filter @interview/web build
+
+  # Builds the Cloud Run image and checks it starts. Catches Dockerfile, Prisma engine and
+  # startup problems before they reach a deploy.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the API image
+        run: docker build -t interview-api .
+
+      - name: Start it and check /health
+        run: |
+          docker run -d --name api -p 8080:8080 \
+            -e PORT=8080 -e WORKER=off \
+            -e SUPABASE_URL=https://placeholder.supabase.co \
+            -e SUPABASE_SERVICE_ROLE_KEY=placeholder \
+            -e DATABASE_URL=postgresql://user:pass@127.0.0.1:1/db \
+            interview-api
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs api
+          exit 1
+
+  # After a merge to main, apply new migrations to the production database.
+  # Skipped until the PRODUCTION_DATABASE_URL secret (Supabase session pooler URL) is set.
+  migrate:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency: production-migrations
+    env:
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Apply migrations to production
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::notice::PRODUCTION_DATABASE_URL is not set; skipping production migrations."
+            exit 0
+          fi
+          bun run --filter @interview/api db:migrate

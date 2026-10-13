@@ -1,0 +1,16 @@
+# Files `gcloud run deploy --source .` must not upload (the build only needs what the
+# Dockerfile copies). Secrets and local folders stay on your machine.
+.gcloudignore
+.git
+.github
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/*.db
+docs
+slice-a-ls2-ls4
+ai-interviewer-slice-b
+CLAUDE.md
+CLAUDE.personal.md

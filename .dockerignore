@@ -1,0 +1,14 @@
+# Keep the image small and free of secrets: dependencies are installed inside the build.
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+!**/.env.example
+**/*.db
+.git
+.github
+docs
+slice-a-ls2-ls4
+ai-interviewer-slice-b
+CLAUDE.md
+CLAUDE.personal.md
