@@ -6,7 +6,8 @@ way, and answer an evaluator's questions about it.
 
 Read it in order the first time. Sections 1–4 are the big picture, 5 follows one interview
 through the code, 6–13 go file by file, and 14–16 cover tests, CI, configuration and the
-known gaps. Section 17 is a list of likely evaluation questions with answers.
+known gaps. Section 17 is a list of likely evaluation questions with answers, and section 18
+has the questions each team should be ready for, by slice.
 
 ---
 
@@ -528,6 +529,258 @@ and a PR can't be merged with a red check by team rule.
 **"What did each person build?"**
 See the task tables in `docs/sprint-1.md` and `docs/sprint-2.md`. Each PR names its task and
 author, and ported PRs credit the original authors as co-authors.
+
+## 18. Questions by slice
+
+Each team should be able to answer its own block without notes, and know where the code is.
+Every answer points to the file to open if you're asked to show it.
+
+### Identity & profile (sign-in, users, resume)
+
+**How does a user sign in? Does our API see the password?**
+No. The browser calls Supabase directly (`supabase.auth.signInWithPassword` in
+`apps/web/src/context/AuthContext.tsx`). Supabase checks the password and returns an access
+token (a JWT). Our API only ever receives that token.
+
+**How does the API know who is calling?**
+`apps/api/src/middleware/auth.ts` runs before every protected route:
+1. It reads the `Authorization: Bearer <token>` header and asks Supabase whether the token is
+   valid (`supabase.auth.getUser`).
+2. It finds our `users` row by `supabaseUserId`, links a row with the same email, or creates
+   one.
+3. It sets `req.user`.
+
+No token, or an invalid one, gets 401. Handlers use `req.user.id` and never trust a user id
+sent in the request.
+
+**Why keep our own `users` table if Supabase already has users?**
+Our tables (sessions, resumes) need a normal foreign key to a user in our own database. The
+`users` row is our copy of the Supabase user, linked by `supabaseUserId`.
+
+**What is `passwordHash` in the users table?**
+A leftover column from the slice's early prototype. It is always the placeholder
+`'supabase-auth'`; real passwords exist only in Supabase.
+
+**What happens when the token expires?**
+The Supabase client in the browser refreshes the session automatically. `lib/api.ts` reads the
+current session before every request, so each call carries a fresh token. The API keeps no
+session state of its own, so there's nothing on the server to expire.
+
+**How does resume analysis work?**
+`POST /api/resume/analyze` (`resume.controller.ts`):
+1. multer keeps the uploaded file in memory (PDF only, 5 MB limit).
+2. `pdf.service.ts` extracts the text.
+3. `gemini.service.ts` asks Gemini for a structured JSON profile (name, skills, projects,
+   experience…). Missing fields default to empty values.
+4. The text and the profile are saved in the `Resume` table.
+
+If Gemini isn't configured or fails, `heuristic.service.ts` parses the text with rules
+instead: a skills list, section headings, and regexes for email and phone.
+
+**Why does a scanned PDF fail?**
+A scanned PDF is an image with no text layer, and there's no OCR, so extraction returns
+nothing and the API answers 400 with an explanation.
+
+**What does "delete account" do?**
+It deletes the user's resumes, their `users` row, and their Supabase identity. Known bug:
+it fails for users who have interview sessions, because those foreign keys don't cascade.
+A1 (#42) fixes it.
+
+**Can the browser read another user's data straight from Supabase?**
+No. The browser uses Supabase **only to sign in**. All data goes through our API, which checks
+ownership on every query.
+
+### Live session (sessions, turns, voice)
+
+**What happens when the candidate picks a role?**
+`POST /api/sessions` with `{ roleId }`. `session.service.ts → createSession` checks the id
+against the shared `ROLES` list (an unknown id is a 400) and inserts a `sessions` row with
+status `LIVE`. The browser then opens `/interview/:sessionId`.
+
+**Why are turns saved one by one during the interview, not at the end?**
+So nothing already said is lost if the tab closes or the connection drops. Each finished turn
+is `POST /api/sessions/:id/turns` with `{ speaker, text, timestampSec }`.
+
+**What does the API check when a turn arrives?** (`session.service.ts → addTurn`)
+- The session belongs to the caller; otherwise 404.
+- The session is still LIVE; otherwise 409.
+- `timestampSec` is not later than the time elapsed since the session started; otherwise 400.
+  That stops a client inventing turns "in the future".
+
+**How does ending an interview work, and why is it one transaction?**
+`endSession` marks the session `ENDED` **and** inserts a `session.ended` job in the same
+database transaction. Either both are saved or neither is, so no session can end without a
+feedback job, and no job can exist for a session that didn't end. Calling end twice does
+nothing the second time.
+
+**Why does another user's session return 404, not 403?**
+FR-27. A 403 would confirm that the id exists. Every query filters by `id AND userId`
+(`getOwnedSession`), so someone else's session is simply "not found".
+
+**How does the voice work today, and what changes in Sprint 2?**
+- **Today:** `BrowserWebSpeechVoiceAdapter` in `lib/voiceAdapter.ts` speaks with the browser's
+  speech synthesis and listens with its speech recognition. The questions come from a fixed
+  per-role script (`lib/questionProvider.ts`).
+- **Sprint 2:**
+  - V1: a `GeminiLiveVoiceAdapter` streams audio to Gemini Live.
+  - V2: the interviewer's instructions are built on the server and locked into the voice
+    token.
+  - P1: those instructions include the candidate's resume.
+
+**Why is there a `VoiceSessionAdapter` interface?**
+`InterviewRoom.tsx` talks only to the interface (`connect`, `speakAiQuestion`,
+`startListening`, `finishCandidateTurn`, `setMuted`, `disconnect`). Swapping browser speech for
+Gemini Live means adding one class, not rewriting the screen. The browser adapter also stays
+as the fallback.
+
+**Why doesn't the audio go through our server?**
+The interviewer has to start answering within 2 seconds (NFR-01), and relaying audio through
+our API would add delay and cost. Instead, `POST /api/sessions/:id/voice-token` returns a
+token that works once, expires in 30 minutes and must be used within 2. The browser connects
+to Google with it, and our Gemini key never reaches the browser (NFR-09). The token
+code is in `services/voice-provider.service.ts`.
+
+**Which browsers work?**
+Speech recognition works in Chrome and Edge. In other browsers the interview room shows a text
+box, so the candidate can type answers instead.
+
+**How are the questions chosen today?**
+`DeterministicQuestionProvider` has a script per role. It never repeats a question, and the
+second question quotes something the candidate said, so it feels responsive.
+
+### Feedback (job queue, worker, evaluator, results screen)
+
+**Why is feedback generated in the background instead of when "end" is pressed?**
+The LLM can take several seconds or fail. Doing it inside the "end" request would make ending
+slow, and lose the work on a crash. Instead, ending only writes a job row (in the same
+transaction). A worker does the slow part, and the browser polls for the result.
+
+**Why a Postgres table as the queue and not Redis?**
+It's one less service to run and pay for. Postgres's `FOR UPDATE SKIP LOCKED` gives a safe
+queue, and the job is saved in the same transaction as ending the session, which a separate
+Redis couldn't guarantee.
+
+**What does `FOR UPDATE SKIP LOCKED` do?** (`job-queue.service.ts → claimNextJob`)
+Inside a transaction, the worker selects the oldest pending job and locks that row. Another
+worker running the same query skips locked rows and takes the next job instead. So two
+workers can never take the same job. A CI test runs two workers on a real Postgres and checks
+exactly that.
+
+**Where does the worker run?**
+`apps/api/src/worker.ts`. `server.ts` starts one worker inside the API process, and
+`bun run worker` starts more. In production, Cloud Run runs with the CPU always on and at
+least one instance, so the worker keeps polling between requests.
+
+**What if the worker crashes in the middle of a job?**
+The job stays `processing` with a `lockedAt` time. After 5 minutes another worker picks it up
+again, at most 3 times in total (`MAX_ATTEMPTS`). After that it's marked `failed`, so it can't
+loop forever.
+
+**What if the LLM is down or slow?**
+- The evaluator gives up after **12 seconds**, which stays inside the 15-second feedback target
+  (NFR-03).
+- `handleSessionEnded` writes feedback with status `failed`, and the job is marked failed with
+  the error saved.
+- The transcript is never touched (NFR-04).
+- The results screen shows the failure. F2 (#40) adds a Retry button that queues the job again,
+  without re-interviewing.
+
+**How do you make sure the LLM's answer is valid?** (`evaluator.service.ts`)
+- The prompt asks for a fixed JSON shape and Gemini is set to reply in JSON.
+- The reply is checked with Zod: every score must be an integer from 1 to 5, with a comment.
+- Every rubric category must appear exactly once.
+- A transcript with no candidate answers is rejected before the LLM is called.
+
+Anything that fails a check is treated as a failed evaluation.
+
+**What is the rubric, and who decided it?**
+Communication, Technical depth and Structure, each scored 1–5 with a comment (`RUBRIC` in
+`evaluator.service.ts`). The lead approved it (#8). Per-role rubrics are planned (OI-3).
+
+**Why a pinned model name (`gemini-3.8-flash`) instead of "latest"?**
+An alias like `gemini-flash-latest` changes when Google releases a new model, so the same
+interview could get different scores from one month to the next. A pinned model keeps
+scoring stable. `GEMINI_EVAL_MODEL` overrides it.
+
+**How does the results screen know when feedback is ready?**
+`useFeedback.ts` calls `GET /api/sessions/:id/feedback` immediately, then every 3 seconds
+while the status is `pending`. It stops on `ready` or `failed`. The endpoint returns `pending`
+until the worker has written the feedback row.
+
+**Why polling and not WebSockets?**
+For a single result that arrives within about 15 seconds, polling every 3 seconds is simple,
+works through any proxy, and needs no extra server.
+
+**How do you test this without calling Gemini?**
+The evaluator accepts a `generate` function that tests replace with a fake reply. The
+handler tests mock both the database and the evaluator. The queue tests run against a real
+Postgres in CI (`TEST_DATABASE_URL`).
+
+### Platform and process (contracts, CI, deployment, how we work)
+
+**Why one repository with three packages?**
+The API, the web app and the shared contracts change together. One repository means one PR
+can change a shape and both of its users, and CI checks all three at once.
+
+**What is `packages/contracts` for?**
+Zod schemas shared by both apps (roles, session, turn, feedback, voice token). Each one gives a
+TypeScript type at compile time and a validator at run time. If the API changes a shape,
+typecheck fails everywhere that uses it.
+
+**The plan said Hono and Drizzle; why is it Express and Prisma?**
+By the Sprint 1 deadline, two teams had built a working app on Express and Prisma, while the
+planned Hono shell was about 30 lines. The lead kept the working code and recorded the
+decision in [ADR-0008](adr/0008-express-and-prisma.md). It's also our main example for the
+course's "conflict identification" deliverable: plan versus reality, and how it was resolved.
+
+**What does CI check on every pull request?** (`.github/workflows/ci.yml`)
+1. Install with the exact lockfile.
+2. Typecheck every package.
+3. Apply all migrations to a fresh Postgres.
+4. Run every test.
+5. Build the web app.
+6. Build the API's Docker image and check that it starts (added by the deploy PR, #46).
+
+A red check means don't merge.
+
+**How is the app deployed?** ([sprint-2.md](sprint-2.md), set up by the deploy PR #46)
+The API runs as a container on Google Cloud Run, and the web app is static files on Firebase
+Hosting. On every merge to `main`, a GitHub Actions workflow:
+1. applies database migrations
+2. deploys the API
+3. checks `/health`
+4. builds and publishes the web app
+
+**Where are the secrets, and how does GitHub get access to Google Cloud?**
+- The database URL, the Gemini key and the Supabase service key are in Google Secret Manager.
+  Cloud Run reads them when it starts, and they are never in the repository.
+- GitHub signs in to Google Cloud with Workload Identity Federation. Google gives it
+  short-lived access, only for this repository's `main` branch, so no Google key is stored in
+  GitHub.
+
+**Why does the API keep one instance always running?**
+The feedback worker lives inside the API. By default Cloud Run pauses the CPU between requests,
+which would freeze the worker and leave feedback stuck on "pending". So it runs with the CPU
+always on and at least one instance.
+
+**How do you change the database schema safely?**
+1. Edit `schema.prisma`.
+2. Add a **new** migration in the same PR. Never edit a committed one.
+
+CI applies all migrations to a fresh database, and the deploy workflow applies them to
+production before the new API starts. Until the evaluation, changes only add columns or
+tables, so the previous version keeps working.
+
+**How do you undo a bad deploy?**
+Revert the PR on GitHub. The revert is a new merge, so everything redeploys automatically. For
+an instant fix, the Cloud Run console can send traffic back to the previous revision.
+
+**How is work divided and reviewed?**
+- **Work:** one GitHub issue per task, with one assignee and Given/When/Then acceptance criteria.
+- **Review:** one PR per task. CI must pass, and someone from another team reviews it.
+- **Ownership:** the author must be able to explain every line.
+
+The task tables in `docs/sprint-1.md` and `docs/sprint-2.md` show who built what.
 
 ## Glossary
 
