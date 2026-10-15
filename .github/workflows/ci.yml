@@ -57,3 +57,36 @@ jobs:
 
       - name: Build web
         run: bun run --filter @interview/web build
+
+  # Builds the Cloud Run image and checks it starts. Catches Dockerfile, Prisma engine and
+  # startup problems before they reach a deploy.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the API image
+        run: docker build -t interview-api .
+
+      - name: Start it and check /health and the Prisma engine
+        run: |
+          docker run -d --name api -p 8080:8080 \
+            -e PORT=8080 \
+            -e SUPABASE_URL=https://placeholder.supabase.co \
+            -e SUPABASE_SERVICE_ROLE_KEY=placeholder \
+            -e DATABASE_URL=postgresql://user:pass@127.0.0.1:1/db \
+            interview-api
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8080/health && break
+            if [ "$i" = 30 ]; then docker logs api; exit 1; fi
+            sleep 1
+          done
+          # The worker's first query must fail on the (fake) database, not on a missing or
+          # wrong Prisma engine: "Can't reach database server" proves the engine loaded.
+          for i in $(seq 1 30); do
+            docker logs api 2>&1 | grep -q "Can't reach database server" && exit 0
+            sleep 1
+          done
+          docker logs api
+          exit 1

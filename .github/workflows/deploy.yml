@@ -1,0 +1,85 @@
+name: Deploy
+
+# On every merge to main: apply database migrations, deploy the API to Cloud Run, then build
+# and publish the web app to Firebase Hosting, in that order, so the API never runs against
+# a schema it doesn't expect.
+#
+# GitHub signs in to Google Cloud with Workload Identity Federation: no key is stored in
+# GitHub, and Google only accepts tokens from this repository's main branch.
+# One-time setup and the repository variables are described in docs/sprint-2.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: ai-interviewer-it314
+  REGION: asia-south1
+  SERVICE: ai-interviewer-api
+
+jobs:
+  deploy:
+    # Inert until the lead turns it on with the DEPLOY_ENABLED repository variable.
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/628626987581/locations/global/workloadIdentityPools/github/providers/ai-interviewer
+          service_account: gha-deployer@ai-interviewer-it314.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Apply database migrations
+        run: |
+          DATABASE_URL="$(gcloud secrets versions access latest --secret=database-url --project "$PROJECT_ID")"
+          echo "::add-mask::$DATABASE_URL"
+          export DATABASE_URL
+          bun run --filter @interview/api db:migrate
+
+      # --no-cpu-throttling and --min 1 keep the in-process feedback worker running between
+      # requests; without them Cloud Run pauses the CPU and feedback stays "pending".
+      - name: Deploy the API to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" --source . --project "$PROJECT_ID" --region "$REGION" \
+            --no-cpu-throttling --min 1 --max 2 --memory 512Mi --allow-unauthenticated \
+            --set-env-vars "WEB_ORIGIN=https://$PROJECT_ID.web.app,SUPABASE_URL=${{ vars.SUPABASE_URL }}" \
+            --set-secrets "DATABASE_URL=database-url:latest,GEMINI_API_KEY=gemini-api-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest" \
+            --quiet
+          echo "API_URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')" >> "$GITHUB_ENV"
+
+      - name: Check the API is up
+        run: curl -fsS --retry 5 --retry-delay 5 "$API_URL/health"
+
+      # VITE_ values are baked into the JavaScript at build time and are public by design.
+      - name: Build the web app
+        run: bun run --filter @interview/web build
+        env:
+          VITE_API_URL: ${{ env.API_URL }}/api
+          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Publish the web app to Firebase Hosting
+        run: npx --yes firebase-tools@15 deploy --only hosting --project "$PROJECT_ID" --non-interactive
