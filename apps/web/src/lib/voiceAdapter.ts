@@ -160,8 +160,21 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
       };
 
       recognition.onerror = (event: any) => {
-        if (event?.error === 'not-allowed' || event?.error === 'service-not-allowed') {
-          this.callbacks?.onError?.('Microphone speech recognition permission was denied.');
+        // Any of these means no answer will ever be heard, so tell the candidate and let the
+        // interview room open the typed-answer fallback. 'no-speech' and 'aborted' are normal
+        // pauses and restarts, so they stay silent.
+        const messages: Record<string, string> = {
+          'not-allowed': 'Microphone permission was denied. Allow the microphone, or type your answers below.',
+          'service-not-allowed':
+            "This browser doesn't allow speech recognition. Use Chrome or Edge, or type your answers below.",
+          network:
+            "Speech recognition couldn't reach its service (common in Brave or offline). Use Chrome or Edge, or type your answers below.",
+          'audio-capture': 'No microphone was found. Connect one, or type your answers below.',
+          'language-not-supported': "Speech recognition doesn't support this language here. Type your answers below.",
+        };
+        const message = messages[event?.error];
+        if (message) {
+          this.callbacks?.onError?.(message);
         }
       };
 
