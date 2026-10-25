@@ -32,6 +32,24 @@ body:
       required: true
 
   - type: textarea
+    id: start-here
+    attributes:
+      label: Start here
+      description: >-
+        Written by whoever creates the task. The files and functions the builder opens first,
+        in the order a request travels: screen → HTTP call → route → controller → service → table.
+        Leave out the steps this task doesn't touch.
+      value: |
+        1. apps/web/src/pages/<Screen>.tsx → <function>() (the screen)
+        2. apps/web/src/lib/api.ts → <function>() (the HTTP call)
+        3. apps/api/src/routes/<name>.routes.ts → <METHOD /path> (the URL)
+        4. apps/api/src/controllers/<name>.controller.ts → <function>() (checks the input)
+        5. apps/api/src/services/<name>.service.ts → <function>() (the logic and database)
+        6. apps/api/prisma/schema.prisma → model <Name> (the table)
+    validations:
+      required: true
+
+  - type: textarea
     id: acceptance
     attributes:
       label: Acceptance criteria
