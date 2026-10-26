@@ -1,11 +1,11 @@
-# Sprint 3 and 4 plan: 26 Oct to 20 Nov 2026
+# Sprint 3 and 4 plan
 
 This plan replaces the old Sprint 2 issues. It covers everything until the final evaluation, so
 the whole team can see the full scope now. Each person owns **one feature that users can see**, end
 to end: the screen, the API, the database and the tests. Each person's work also includes one
 smaller add-on.
 
-- [1. Dates](#1-dates)
+- [1. Order of work](#1-order-of-work)
 - [2. Rules](#2-rules)
 - [3. Who builds what](#3-who-builds-what)
 - [4. Agreements so nobody waits](#4-agreements-so-nobody-waits)
@@ -14,17 +14,16 @@ smaller add-on.
 - [7. How to give your AI assistant the context it needs](#7-how-to-give-your-ai-assistant-the-context-it-needs)
 - [8. Each person's feature in detail](#8-each-persons-feature-in-detail)
 
-## 1. Dates
+## 1. Order of work
 
-| When | What |
+| Phase | What |
 |---|---|
-| **Mon 26 Oct** | Prayag merges the folder move (#66) by noon. Everyone sets up locally (§5). |
-| **Tue 27 Oct, 23:59** | Everyone posts a half-page design on their issue (§5, step 6). Prayag approves within a day. |
-| **Wed 28 Oct – Tue 3 Nov: Sprint 3** | Build your **main feature**. **Done means it works on the live site**, with a screen recording in the PR. |
-| **Wed 4 Nov – Thu 12 Nov: Sprint 4** | Build your **add-on**, and fix whatever Sprint 3 broke. |
-| **Sun 15 Nov, 23:59** | **Feature freeze.** After this, bug fixes only. |
-| **Mon 16 – Thu 19 Nov** | Quality review of 20 sessions (Rahi runs it, everyone reviews), bug fixes, demo rehearsals. |
-| **Fri 20 Nov** | Final evaluation. |
+| **Start** | Prayag merges the folder move (#66) first. Everyone sets up locally (§5). |
+| **Design** | Everyone posts a half-page design on their issue (§5, step 6). Prayag approves within a day. |
+| **Sprint 3** | Build your **main feature**. **Done means it works on the live site**, with a screen recording in the PR. |
+| **Sprint 4** | Build your **add-on**, and fix whatever Sprint 3 broke. |
+| **Feature freeze** | After this, bug fixes only. |
+| **Before the final evaluation** | Quality review of 20 sessions (Rahi runs it, everyone reviews), bug fixes, demo rehearsals. |
 
 ## 2. Rules
 
@@ -71,18 +70,18 @@ the add-on. Section 8 breaks down every estimate.
 
 ## 4. Agreements so nobody waits
 
-Agree on these on Mon 26 Oct. Until the other person's part is merged, build against the
+Agree on these at the start. Until the other person's part is merged, build against the
 placeholder in the right-hand column.
 
 | Where two people meet | The agreement | Until it's merged |
 |---|---|---|
-| Kishan's interviewer instructions take input from Prayag, Prakriti and Kishan himself | `buildBriefing(input: { roleId: string; focus?: string; resumeSummary?: string; pastQuestions?: string[] }): string` in `apps/api/src/services/briefing.service.ts`. Kishan creates the file with this signature on day 1. | Leave your field out; the function works without it |
+| Kishan's interviewer instructions take input from Prayag, Prakriti and Kishan himself | `buildBriefing(input: { roleId: string; focus?: string; resumeSummary?: string; pastQuestions?: string[] }): string` in `apps/api/src/services/briefing.service.ts`. Kishan creates the file with this signature first. | Leave your field out; the function works without it |
 | Rahi's rubrics feed Shaurya's evaluator | `getRubric(roleId: string)` in `apps/api/src/services/rubrics.ts` returns the same shape as today's `RUBRIC` in `evaluator.service.ts` | The evaluator keeps using today's general rubric |
 | Vishwa's voice and Ved's browser speech | Vishwa writes Gemini Live in a **new file**, `apps/web/src/lib/geminiLiveAdapter.ts`. In `voiceAdapter.ts`, Vishwa changes only `createVoiceSessionAdapter()`. Ved owns the rest of `voiceAdapter.ts`. | The browser-speech adapter stays the default |
 | The interview screen | Ved owns `InterviewRoom` and the pieces #69 splits it into. Vishwa's only change there is "if the adapter is Gemini (`isExternalProvider`), don't use the local question list". He makes it after #69 merges. | — |
 | Delete buttons on the history page | Vismay adds the delete button to Praneel's history page after Praneel merges it. Until then it goes on the results page. | — |
 | Database changes | Prayag (`Session.focus`), Prakriti (`Resume.parsedProfile` → JSON, a list of past questions if needed), Vismay (cascading deletes, `Session.keep`) and Shaurya (cost columns) each add **their own migration** (§6). Raj's Prisma upgrade waits until all of these are merged. | — |
-| Everyone | Prayag merges the folder move (#66) on Mon 26 Oct by noon; everyone starts after that | — |
+| Everyone | Prayag merges the folder move (#66) first; everyone starts after that | — |
 
 ## 5. How to start your feature
 
@@ -95,7 +94,7 @@ placeholder in the right-hand column.
 4. **Read your section** in §8 and your GitHub issue. The **Start here** list is where you begin.
 5. **Make a branch** from an up-to-date `main`: `git checkout main && git pull && git checkout -b <area>/<short-name>`,
    e.g. `feedback/role-rubrics`.
-6. **Post your design** as a comment on your issue by **Tue 27 Oct, 23:59**. Half a page:
+6. **Post your design** as a comment on your issue before you start building. Half a page:
    - **What the user sees** when it's done.
    - **What changes in each layer**: screen, API, database, contracts. Write "none" where nothing changes.
    - **Requirement IDs** covered.
@@ -224,7 +223,7 @@ File paths assume the folder move (#66) is merged.
 
 **Build:** each role offers 3–4 focuses, for example Software Engineer → Frontend / Backend / System
 design. The candidate picks one with the role, it's saved on the session, and it's passed to the
-interviewer as `focus`. Also #66 (folder move, Mon 26 Oct by noon) and #68 (single role-picker
+interviewer as `focus`. Also #66 (folder move, merged first) and #68 (single role-picker
 address). Add-on: #52 and #53.
 
 **Start here:**
@@ -253,7 +252,7 @@ address). Add-on: #52 and #53.
 the `VoiceSessionAdapter` interface. It must:
 - get a token from `POST /api/sessions/:id/voice-token`;
 - open the Gemini Live WebSocket with model **`gemini-3.8-live`**, not the spike's model, which
-  shuts down on or after 17 Nov;
+  is being retired;
 - **wait for `setupComplete`** before streaming the microphone;
 - play the AI's audio, and stop it when `interrupted` arrives;
 - join transcript chunks into one turn per speaker and post each turn as today;
@@ -405,7 +404,7 @@ and the interview's length, and work out the cost per interview in ₹ so Prayag
 
 Add-on: a script that exports 20 sessions (transcript plus feedback) into a review sheet, with the
 NFR-18 (question relevance) and NFR-19 (feedback quality) checklists. You run the review with two
-reviewers per session on 16–19 Nov.
+reviewers per session before the final evaluation.
 
 **Start here:**
 1. `apps/api/src/services/evaluator.service.ts` → `RUBRIC`, `buildEvaluationPrompt()`.
@@ -433,8 +432,8 @@ reviewers per session on 16–19 Nov.
 4. Decide what "ended early" means (for example, ended before the time limit) and show it.
 
 Add-on: an accessibility pass on every screen (form labels, keyboard use, contrast, visible focus),
-and checking the main flow in Chrome, Firefox, Edge and Safari (NFR-14, NFR-15). Do it in the week
-of 9 Nov, after the other features have merged.
+and checking the main flow in Chrome, Firefox, Edge and Safari (NFR-14, NFR-15). Do it after the other
+features have merged.
 
 **Start here:**
 1. `apps/web/src/components/Navbar.tsx` and `apps/web/src/App.tsx`: the link and the route.
@@ -536,7 +535,7 @@ interview room that runs the whole interview by typing.
 4. **README (#44).**
 
 Add-on (#51): upgrade Prisma 5 → 7 (pin `^7`, not `latest`), **after** everyone's migrations have
-merged, in the week of 9 Nov. All tests and a full interview must pass afterwards.
+merged. All tests and a full interview must pass afterwards.
 
 **Start here:**
 1. `apps/web/src/features/identity/Login.tsx`.
