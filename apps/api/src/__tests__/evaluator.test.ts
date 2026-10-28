@@ -1,15 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateTranscript, buildEvaluationPrompt, RUBRIC } from '../services/evaluator.service';
+import { readFileSync } from 'node:fs';
+import { z } from 'zod';
+import { TurnSpeaker } from '@interview/contracts';
+import {
+  evaluateTranscript,
+  buildEvaluationPrompt,
+  RUBRIC,
+  type TranscriptTurn,
+} from '../services/evaluator.service';
 
-// A short sample interview. The LLM call is always replaced; no test reaches Gemini.
+// One hand-written interview per quality level, shared by the evaluator, the benchmark and
+// the results screen so they all test against the same material.
+const TranscriptFixture = z.array(z.object({ speaker: TurnSpeaker, text: z.string() }));
+
+function loadTranscript(name: string): TranscriptTurn[] {
+  const url = new URL(`./fixtures/transcripts/${name}.json`, import.meta.url);
+  return TranscriptFixture.parse(JSON.parse(readFileSync(url, 'utf8')));
+}
+
+// A realistic "good" interview from the fixtures. The LLM call is always replaced; no test
+// reaches Gemini.
 const SAMPLE = {
-  roleLabel: 'Backend Developer',
-  turns: [
-    { speaker: 'AI' as const, text: 'Tell me about an API you designed.' },
-    { speaker: 'CANDIDATE' as const, text: 'I built a REST API for orders with Postgres and added idempotency keys.' },
-    { speaker: 'AI' as const, text: 'How did you handle retries?' },
-    { speaker: 'CANDIDATE' as const, text: 'Clients retry with the same key, so the server returns the first result.' },
-  ],
+  roleLabel: 'Software Engineer',
+  turns: loadTranscript('good'),
 };
 
 const VALID = JSON.stringify({
@@ -26,10 +39,12 @@ describe('FB4 — evaluator', () => {
 
   it('puts the role, the rubric and both speakers into the prompt', () => {
     const prompt = buildEvaluationPrompt(SAMPLE);
-    expect(prompt).toContain('Backend Developer');
+    expect(prompt).toContain('Software Engineer');
     for (const r of RUBRIC) expect(prompt).toContain(r.category);
-    expect(prompt).toContain('Interviewer: Tell me about an API you designed.');
-    expect(prompt).toContain('Candidate: Clients retry with the same key');
+    const interviewer = SAMPLE.turns.find((t) => t.speaker === 'AI');
+    const candidate = SAMPLE.turns.find((t) => t.speaker === 'CANDIDATE');
+    expect(prompt).toContain(`Interviewer: ${interviewer?.text}`);
+    expect(prompt).toContain(`Candidate: ${candidate?.text}`);
   });
 
   it('given the LLM call times out, then it fails well inside the 15-second budget', async () => {
@@ -72,7 +87,7 @@ describe('FB4 — evaluator', () => {
     let called = false;
     await expect(
       evaluateTranscript(
-        { roleLabel: 'Data Analyst', turns: [{ speaker: 'AI', text: 'Tell me about yourself.' }] },
+        { roleLabel: 'Software Engineer', turns: loadTranscript('empty-answers') },
         { generate: async () => { called = true; return VALID; } }
       )
     ).rejects.toThrow('no candidate answers');

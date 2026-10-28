@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Tell me about a system you designed that had to handle a lot of traffic."
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "At my last internship I designed the checkout service for a retail app that handled about 3,000 requests per second at peak. I split it into an order service and a payment service, put a queue between them, and cached product lookups in Redis. That cut p99 latency from 800 ms to about 180 ms."
+  },
+  {
+    "speaker": "AI",
+    "text": "How did you keep the order and payment services consistent?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I used idempotency keys on every payment request and an outbox table in the order service. A worker published outbox rows to the queue, so a crash between the database write and the publish could not lose an event. Duplicate deliveries were safe because the payment handler ignored keys it had already processed."
+  },
+  {
+    "speaker": "AI",
+    "text": "Tell me about a bug that was hard to track down."
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "We saw intermittent 500s that only appeared under load. I added structured logs with a request id and traced it to a connection pool that was created per request instead of per process, so we exhausted Postgres connections. I moved the pool to a singleton and added a load test to catch a regression."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you approach code review?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I read the diff for correctness first, then ask whether the tests would catch a regression. I keep feedback specific to the code rather than the person, and I would rather leave one clear comment than rewrite someone's work for them. If a change is too large I ask for it to be split so it is easier to reason about."
+  }
+]

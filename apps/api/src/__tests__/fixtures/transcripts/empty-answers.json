@@ -1,0 +1,26 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Tell me about a project you built."
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": ""
+  },
+  {
+    "speaker": "AI",
+    "text": "What was the hardest bug you fixed?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": ""
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you test your code?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": ""
+  }
+]

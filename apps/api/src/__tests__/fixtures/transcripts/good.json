@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Tell me about a project you're proud of."
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I built a task tracker with a React front end and an Express API on Postgres. Users could create projects, assign tasks, and move them across a Kanban board. I added JWT authentication and wrote tests for the main endpoints."
+  },
+  {
+    "speaker": "AI",
+    "text": "How did you structure the API?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I split it into routes, controllers, and a service layer. Controllers handled validation and status codes, and services talked to the database through an ORM. That kept the route files small and made the logic easier to test."
+  },
+  {
+    "speaker": "AI",
+    "text": "What would you change if you built it again?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would add pagination from the start, because the task list got slow once there were a few hundred rows. I would also add clearer error handling so the client gets a useful message instead of a generic 500."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you test your code?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I write unit tests for the service functions and a few integration tests that hit the API with a test database. I try to cover edge cases like empty input and missing records, though I know the coverage is not complete."
+  }
+]

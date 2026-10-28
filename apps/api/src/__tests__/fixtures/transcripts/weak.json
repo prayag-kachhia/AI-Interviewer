@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Tell me about yourself."
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I am a student. I like computers."
+  },
+  {
+    "speaker": "AI",
+    "text": "What programming languages do you know?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Some. I used Java and a bit of Python."
+  },
+  {
+    "speaker": "AI",
+    "text": "Describe a problem you solved."
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I fixed a bug once. It was not working and then it worked."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you work in a team?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I just do my part. I don't talk much."
+  }
+]

@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "What kind of work do you do as a developer?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Mostly web development. I work on both the front end and the back end depending on the task. I have used JavaScript, React, and Node the most."
+  },
+  {
+    "speaker": "AI",
+    "text": "Can you walk me through a feature you built?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I built a login page once. It had a form and it connected to the backend. Users could sign up and log in, and it worked fine for the demo."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you handle errors in your code?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I usually add try and catch blocks. If something fails I log it. I don't always have a specific plan for every error but I try to handle the common ones."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you decide between two technical approaches?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I think about which one is easier. Sometimes I look online to see what other people did. I don't always compare them in detail."
+  }
+]
