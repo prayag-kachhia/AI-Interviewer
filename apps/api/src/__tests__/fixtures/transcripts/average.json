@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to the Software Engineer interview. How would you handle state management and caching for an e-commerce shopping cart in a web application?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would store the cart items in Redis so it is fast. Whenever a user adds an item to their cart, we make an API call to save the items into Redis under the user's ID as a JSON string. Redis is in-memory, so reading and writing is much quicker than querying a relational database on every page click. When the customer is ready to checkout, we pull the cart from Redis and create the order in PostgreSQL."
+  },
+  {
+    "speaker": "AI",
+    "text": "What happens if a user adds items while browsing anonymously before logging in, or if Redis restarts unexpectedly?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "For anonymous users, we could store the cart in the browser's localStorage or cookies, and then when they log in, send those items to the server to combine them. For Redis restarting, I think Redis has disk persistence features like saving snapshots, but if it crashed hard, some cart updates might be lost. We could write every cart change to PostgreSQL too, but I feel that might defeat the point of having a fast cache."
+  },
+  {
+    "speaker": "AI",
+    "text": "If a product in the user's cart goes out of stock or changes price before they finalize their order, how does your system handle that?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "At checkout time, we can query the database to verify the current price and inventory before charging the user. If the quantity is zero, we show an error message and tell them to update their cart. We don't constantly check inventory while they are browsing because that would be too many database calls."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you prevent race conditions if two customers try to purchase the very last available unit of an item at the exact same second?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I think we would use a database transaction. We start the transaction, check if stock is greater than zero, decrement it by one, and commit. The database handles table or row locking, so one of the transactions finishes first and the second one sees zero stock and fails. I haven't set up optimistic locking with version columns myself, but I know standard transactions keep things consistent."
+  }
+]
