@@ -1,3 +1,3 @@
 // feedback — public entry point. Other features import only from this file.
-// Owner: feedback pair. Results and history screens, polling for feedback.
+// Results and history screens, polling for feedback.
 export { ResultsPage } from './ResultsPage';

@@ -1,6 +1,6 @@
 // The only file that talks to the voice provider (Gemini Live API).
 // It mints single-use, short-lived tokens so the browser never receives the
-// API key itself (NFR-09).
+// API key itself.
 
 export interface VoiceProviderOptions {
   apiKey?: string;

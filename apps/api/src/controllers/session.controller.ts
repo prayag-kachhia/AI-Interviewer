@@ -136,7 +136,7 @@ export const postEndSession = async (req: Request, res: Response): Promise<void>
   }
 };
 
-// POST /api/sessions/:id/voice-token  (LS3)
+// POST /api/sessions/:id/voice-token
 export const postVoiceToken = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
@@ -158,7 +158,7 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
       res.status(409).json({ success: false, message: error.message });
       return;
     }
-    // Provider errors can carry provider details; log them, never return them (NFR-09).
+    // Provider errors can carry provider details; log them, never return them.
     console.error('Voice token error:', error);
     res.status(500).json({ success: false, message: 'Failed to start the voice session' });
   }

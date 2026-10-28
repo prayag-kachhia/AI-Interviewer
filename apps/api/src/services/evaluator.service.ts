@@ -1,11 +1,11 @@
-// The only file that calls the evaluation LLM (FB4). Given a transcript and a
+// The only file that calls the evaluation LLM. Given a transcript and a
 // role, it returns written feedback scored against the generic rubric.
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { FeedbackScore, type TurnSpeaker } from '@interview/contracts';
 
-// One generic rubric for every role in Sprint 1; per-role rubrics are OI-3.
-// Changing it needs the lead's approval (L7).
+// One generic rubric for every role; per-role rubrics are a future addition.
+// Changing it needs approval.
 export const RUBRIC = [
   {
     category: 'Communication',
@@ -21,7 +21,7 @@ export const RUBRIC = [
   },
 ] as const;
 
-// Leaves room inside the 15-second feedback budget (NFR-03) for polling and the database.
+// Leaves room inside the 15-second feedback budget for polling and the database.
 export const EVALUATION_TIMEOUT_MS = 12_000;
 // A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
 // Google swaps the model behind the alias.

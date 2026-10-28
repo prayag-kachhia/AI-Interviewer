@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { getFeedbackForSession } from '../services/feedback.service';
 import { NotFoundError } from '../utils/resource';
 
-// GET /api/sessions/:id/feedback  (FB3; the results screen polls this)
+// GET /api/sessions/:id/feedback  (the results screen polls this)
 export const getFeedback = async (req: Request, res: Response): Promise<void> => {
   try {
     const feedback = await getFeedbackForSession(req.params.id as string, req.user!.id);

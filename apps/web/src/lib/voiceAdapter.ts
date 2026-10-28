@@ -1,7 +1,7 @@
 import type { InterviewVoiceState, TurnSpeaker } from '../types';
 
 /**
- * Contract for short-lived voice session tokens produced by LS3 (owned by Vishwa).
+ * Contract for short-lived voice session tokens.
  * Never store or return permanent provider API keys here — only ephemeral session tokens.
  */
 export interface VoiceSessionToken {
@@ -25,14 +25,11 @@ export interface VoiceAdapterCallbacks {
 }
 
 /**
- * Clean abstraction isolating LS4 (InterviewRoom) from specific voice provider SDKs (LS1/LS3).
+ * Clean abstraction isolating `InterviewRoom` from specific voice provider SDKs.
  *
- * TEAM OWNERSHIP BOUNDARY:
- * - LS1 (Voice Provider Spike) and LS3 (Short-Lived Voice Token) are owned by Vishwa.
- * - LS4 (Live Interview Screen, Transcript Turns, End Session) is owned by Kishan.
- * - Because LS1/LS3 provider code is not yet present in this repository, LS4 programs
- *   against `VoiceSessionAdapter`. Once LS1/LS3 lands, wire its token/SDK implementation
- *   into `createVoiceSessionAdapter` without changing `InterviewRoom.tsx`.
+ * Because external provider code is not yet present in this repository, the screen
+ * programs against `VoiceSessionAdapter`. Once the provider token/SDK lands, wire its
+ * implementation into `createVoiceSessionAdapter` without changing `InterviewRoom.tsx`.
  */
 export interface VoiceSessionAdapter {
   readonly providerLabel: string;
@@ -48,12 +45,12 @@ export interface VoiceSessionAdapter {
 
 /**
  * Browser Web Speech API + Web Audio microphone adapter implementing `VoiceSessionAdapter`.
- * Used when no external LS1/LS3 provider token is configured so the spoken audio flow
+ * Used when no external provider token is configured so the spoken audio flow
  * (AI speech synthesis -> candidate microphone speech recognition -> transcript turn event)
  * runs natively in the browser without exposing any external API keys.
  */
 export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
-  public readonly providerLabel = 'Browser Web Speech Audio (LS1/LS3 External Token Pending)';
+  public readonly providerLabel = 'Browser Web Speech Audio (External Token Pending)';
   public readonly isExternalProvider = false;
   public readonly isSpeechRecognitionSupported: boolean;
 
@@ -198,7 +195,7 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
     this.isAiSpeaking = true;
     this.callbacks?.onStateChange('AI_SPEAKING');
 
-    // Emit the AI transcript event so LS4 stores the AI turn in the database
+    // Emit the AI transcript event so the interview room stores the AI turn in the database
     this.callbacks?.onTranscript({
       speaker: 'AI',
       text,
