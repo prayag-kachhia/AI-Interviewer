@@ -83,7 +83,7 @@ export const postTurn = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
-    const { speaker, text, timestampSec } = req.body ?? {};
+    const { speaker, text } = req.body ?? {};
 
     if (speaker !== 'AI' && speaker !== 'CANDIDATE') {
       res.status(400).json({ success: false, message: 'speaker must be "AI" or "CANDIDATE"' });
@@ -93,20 +93,12 @@ export const postTurn = async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ success: false, message: 'text is required' });
       return;
     }
-    if (typeof timestampSec !== 'number' || !Number.isFinite(timestampSec) || timestampSec < 0) {
-      res.status(400).json({ success: false, message: 'timestampSec must be a non-negative number' });
-      return;
-    }
 
-    const turn = await addTurn(id, userId, speaker, text.trim(), timestampSec);
+    const turn = await addTurn(id, userId, speaker, text.trim());
     res.status(201).json({ success: true, data: turn });
   } catch (error) {
     if (error instanceof NotFoundError) {
       res.status(404).json({ success: false, message: 'Resource not found' });
-      return;
-    }
-    if (error instanceof InvalidTimestampError) {
-      res.status(400).json({ success: false, message: error.message });
       return;
     }
     if (error instanceof SessionEndedError) {

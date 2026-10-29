@@ -50,6 +50,14 @@ export const Turn = z.object({
 });
 export type Turn = z.infer<typeof Turn>;
 
+// Request to post a turn (POST /api/sessions/:id/turns, LS4 / Issue #83).
+// timestampSec is computed by the server from session.startedAt, not supplied by the client.
+export const CreateTurnInput = z.object({
+  speaker: TurnSpeaker,
+  text: z.string().min(1),
+});
+export type CreateTurnInput = z.infer<typeof CreateTurnInput>;
+
 export const Session = z.object({
   id: z.string(),
   userId: z.string(),

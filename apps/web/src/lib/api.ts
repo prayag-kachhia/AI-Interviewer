@@ -101,13 +101,11 @@ export const getTurns = async (sessionId: string): Promise<TurnsListResponse> =>
 export const postTurn = async (
   sessionId: string,
   speaker: TurnSpeaker,
-  text: string,
-  timestampSec: number
+  text: string
 ): Promise<TurnResponse> => {
   const { data } = await api.post<TurnResponse>(`/sessions/${sessionId}/turns`, {
     speaker,
     text,
-    timestampSec,
   });
   return data;
 };

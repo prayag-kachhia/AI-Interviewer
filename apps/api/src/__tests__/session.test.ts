@@ -205,7 +205,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       const res = await request(app)
         .post('/api/sessions/sess-1/turns')
         .set('Authorization', authHeader())
-        .send({ speaker: 'CANDIDATE', text: 'I am a third year ICT student.', timestampSec: 20 });
+        .send({ speaker: 'CANDIDATE', text: 'I am a third year ICT student.' });
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -220,7 +220,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       const res = await request(app)
         .post('/api/sessions/not-mine/turns')
         .set('Authorization', authHeader())
-        .send({ speaker: 'CANDIDATE', text: 'hi', timestampSec: 1 });
+        .send({ speaker: 'CANDIDATE', text: 'hi' });
 
       expect(res.status).toBe(404);
       expect(prisma.turn.create).not.toHaveBeenCalled();
@@ -232,26 +232,48 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(getTurnsRes.status).toBe(404);
     });
 
-    // TEST 7: future timestamp is rejected
-    it('TEST 7: rejects a turn whose timestampSec is greater than the session elapsed time', async () => {
-      const startedAt = new Date(Date.now() - 30_000); // ~30s elapsed
+    // TEST 7: server assigns the timestamp (replaces future timestamp rejected, Issue #83)
+    it('TEST 7: server assigns the timestamp (stores server elapsed time even if client clock is 10 minutes ahead)', async () => {
+      const thirtySecAgo = new Date(Date.now() - 30_000); // ~30s elapsed
       (prisma.session.findFirst as any).mockResolvedValueOnce({
         id: 'sess-1',
         userId: AUTH_USER.id,
         role: 'software-engineer',
         status: 'LIVE',
-        startedAt,
+        startedAt: thirtySecAgo,
         endedAt: null,
       });
+      (prisma.turn.count as any).mockResolvedValueOnce(0);
+      (prisma.turn.create as any).mockImplementationOnce(async ({ data }: any) => ({
+        id: 'turn-1',
+        ...data,
+        createdAt: new Date(),
+      }));
 
+      // Client clock is 10 minutes ahead and sends timestampSec = 600 or any value
       const res = await request(app)
         .post('/api/sessions/sess-1/turns')
         .set('Authorization', authHeader())
-        .send({ speaker: 'CANDIDATE', text: 'From the future', timestampSec: 45 });
+        .send({ speaker: 'CANDIDATE', text: 'My clock is 10 minutes ahead', timestampSec: 600 });
 
-      expect(res.status).toBe(400);
-      expect(res.body.success).toBe(false);
-      expect(prisma.turn.create).not.toHaveBeenCalled();
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(prisma.turn.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            sessionId: 'sess-1',
+            speaker: 'CANDIDATE',
+            text: 'My clock is 10 minutes ahead',
+            timestampSec: expect.any(Number),
+          }),
+        })
+      );
+
+      const createdTurnCall = (prisma.turn.create as any).mock.calls[0][0];
+      // Stored timestamp must reflect server elapsed time (~30s), NOT the client's 600s
+      expect(createdTurnCall.data.timestampSec).toBeGreaterThanOrEqual(29);
+      expect(createdTurnCall.data.timestampSec).toBeLessThan(35);
+      expect(res.body.data.timestampSec).toBeGreaterThanOrEqual(29);
     });
 
     // TEST 8: turn after session ended is rejected
@@ -268,7 +290,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       const res = await request(app)
         .post('/api/sessions/sess-1/turns')
         .set('Authorization', authHeader())
-        .send({ speaker: 'CANDIDATE', text: 'Too late', timestampSec: 10 });
+        .send({ speaker: 'CANDIDATE', text: 'Too late' });
 
       expect(res.status).toBe(409);
       expect(res.body.success).toBe(false);
