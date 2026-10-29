@@ -6,17 +6,7 @@ export interface TranscriptTurnSummary {
 }
 
 /**
- * Clean interface for the Interviewer Question Provider consumed by LS4.
- *
- * ARCHITECTURAL BOUNDARY:
- * - There are two separate LLM roles in the platform:
- *   1. INTERVIEWER Question Provider (generates live interview questions & follow-ups).
- *   2. FEEDBACK Evaluator LLM (owned by the Feedback team / FB4, which consumes the
- *      `session.ended` job and evaluates the stored transcript).
- * - Because no external Interviewer LLM service is wired in this repository yet,
- *   `DeterministicQuestionProvider` provides a deterministic local-development stub
- *   that demonstrates the exact `previous candidate answer -> question provider -> next question`
- *   pipeline without claiming to call an external LLM.
+ * Clean interface for the Interviewer Question Provider.
  */
 export interface InterviewQuestionProvider {
   readonly isStub: boolean;

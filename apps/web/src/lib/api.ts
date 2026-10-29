@@ -75,7 +75,7 @@ export const deleteUserAccount = async (): Promise<{
 };
 
 // ---------------------------------------------------------------------------
-// Slice A — Live Session (LS2 + LS4) Endpoints
+// Slice A — Live Session Endpoints
 // ---------------------------------------------------------------------------
 
 export const getRoles = async (): Promise<RolesResponse> => {
@@ -119,7 +119,7 @@ export const endSession = async (sessionId: string): Promise<SessionResponse> =>
 
 export const endInterviewSession = endSession;
 
-// Feedback (FB3) — the results screen polls this until the status is not 'pending'.
+// Feedback — the results screen polls this until the status is not 'pending'.
 export const getFeedback = async (sessionId: string): Promise<Feedback> => {
   const { data } = await api.get<{ success: boolean; data?: unknown }>(`/sessions/${sessionId}/feedback`);
   return Feedback.parse(data.data);
