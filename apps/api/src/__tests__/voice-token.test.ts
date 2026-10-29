@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../utils/db';
-import { mintVoiceToken } from '../services/voice-provider.service';
+import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
 
 vi.mock('@supabase/supabase-js', () => {
   const getUserMock = vi.fn();
@@ -113,6 +113,21 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
     expect(log).toHaveBeenCalled();
     log.mockRestore();
   });
+
+  it('given the provider times out, then the API answers 503 with a retry message', async () => {
+    (prisma.session.findFirst as any).mockResolvedValueOnce(OWN_LIVE_SESSION);
+    vi.mocked(mintVoiceToken).mockRejectedValueOnce(new VoiceProviderTimeoutError());
+
+    const res = await request(app)
+      .post('/api/sessions/sess-1/voice-token')
+      .set('Authorization', 'Bearer valid-supabase-token');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({
+      success: false,
+      message: 'Voice service unavailable, try again',
+    });
+  });
 });
 
 describe('LS3 — mintVoiceToken (voice provider client)', () => {
@@ -142,5 +157,45 @@ describe('LS3 — mintVoiceToken (voice provider client)', () => {
       'GEMINI_API_KEY is not configured'
     );
     if (saved !== undefined) process.env.GEMINI_API_KEY = saved;
+  });
+
+  it('aborts and throws VoiceProviderTimeoutError when fetch times out', async () => {
+    const { mintVoiceToken: realMint, VoiceProviderTimeoutError: RealTimeoutError } =
+      await vi.importActual<typeof import('../services/voice-provider.service')>(
+        '../services/voice-provider.service'
+      );
+
+    const hangingFetch = vi.fn((_url: string, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        if (init?.signal) {
+          init.signal.addEventListener('abort', () => {
+            const err = new Error('The operation was aborted due to timeout');
+            err.name = 'TimeoutError';
+            reject(err);
+          });
+        }
+      });
+    });
+
+    await expect(
+      realMint({
+        apiKey: 'test-key',
+        fetchFn: hangingFetch as unknown as typeof fetch,
+        timeoutMs: 10,
+      })
+    ).rejects.toThrow(RealTimeoutError);
+  });
+
+  it('passes AbortSignal to the fetch call and uses the v1beta endpoint', async () => {
+    const { mintVoiceToken: realMint } = await vi.importActual<
+      typeof import('../services/voice-provider.service')
+    >('../services/voice-provider.service');
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ name: 'auth_tokens/abc' })));
+
+    await realMint({ apiKey: 'test-key', fetchFn: fetchFn as unknown as typeof fetch });
+
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/auth_tokens');
+    expect(init.signal).toBeDefined();
   });
 });

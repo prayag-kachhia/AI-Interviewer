@@ -2,9 +2,17 @@
 // It mints single-use, short-lived tokens so the browser never receives the
 // API key itself (NFR-09).
 
+export class VoiceProviderTimeoutError extends Error {
+  constructor(message = 'Voice service unavailable, try again') {
+    super(message);
+    this.name = 'VoiceProviderTimeoutError';
+  }
+}
+
 export interface VoiceProviderOptions {
   apiKey?: string;
   fetchFn?: typeof fetch;
+  timeoutMs?: number;
 }
 
 interface GoogleTokenResponse {
@@ -35,20 +43,38 @@ export async function mintVoiceToken(options: VoiceProviderOptions = {}): Promis
   }
 
   const fetchImpl = options.fetchFn ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 5000;
   const now = Date.now();
 
-  const response = await fetchImpl('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
-    method: 'POST',
-    headers: {
-      'x-goog-api-key': apiKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      uses: 1, // Single-use session
-      expireTime: new Date(now + 30 * 60 * 1000).toISOString(), // 30 min duration
-      newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(), // Must start within 2 min
-    }),
-  });
+  // Checked on 2026-10-29: v1beta is the working Google Generative Language endpoint for ephemeral auth_tokens.
+  const endpoint = 'https://generativelanguage.googleapis.com/v1beta/auth_tokens';
+  const signal = AbortSignal.timeout(timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetchImpl(endpoint, {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      signal,
+      body: JSON.stringify({
+        uses: 1, // Single-use session
+        expireTime: new Date(now + 30 * 60 * 1000).toISOString(), // 30 min duration
+        newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(), // Must start within 2 min
+      }),
+    });
+  } catch (error: any) {
+    if (
+      error instanceof VoiceProviderTimeoutError ||
+      error?.name === 'TimeoutError' ||
+      error?.name === 'AbortError'
+    ) {
+      throw new VoiceProviderTimeoutError();
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     // Detailed for the server log only; the controller never sends this to the browser.

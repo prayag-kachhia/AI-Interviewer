@@ -9,7 +9,7 @@ import {
   InvalidTimestampError,
   SessionEndedError,
 } from '../services/session.service';
-import { mintVoiceToken } from '../services/voice-provider.service';
+import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
 import { NotFoundError } from '../utils/resource';
 import { RoleList, ROLES, VoiceToken } from '@interview/contracts';
 
@@ -156,6 +156,10 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
     }
     if (error instanceof SessionEndedError) {
       res.status(409).json({ success: false, message: error.message });
+      return;
+    }
+    if (error instanceof VoiceProviderTimeoutError) {
+      res.status(503).json({ success: false, message: 'Voice service unavailable, try again' });
       return;
     }
     // Provider errors can carry provider details; log them, never return them (NFR-09).
