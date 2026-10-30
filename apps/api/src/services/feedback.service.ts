@@ -1,7 +1,6 @@
-import type { Feedback, Job, Prisma } from '@prisma/client';
-import { Feedback as FeedbackContract, ROLES } from '@interview/contracts';
+import type { Feedback, Prisma } from '@prisma/client';
+import { Feedback as FeedbackContract } from '@interview/contracts';
 import prisma from '../utils/db';
-import { evaluateTranscript, type EvaluatorOptions } from './evaluator.service';
 import { getOwnedSession } from './session.service';
 
 export type FeedbackStatus = 'pending' | 'ready' | 'failed';
@@ -11,17 +10,19 @@ export interface SaveFeedbackParams {
   status: FeedbackStatus;
   summary?: string;
   scores?: Prisma.InputJsonArray;
+  error?: string;
 }
 
 /**
  * Creates or updates the one feedback row for a session (sessionId is unique),
- * so a retried job overwrites its earlier result instead of adding a second one.
+ * so an evaluation result overwrites its earlier pending status.
  */
 export async function saveFeedback(params: SaveFeedbackParams): Promise<Feedback> {
   const data = {
     status: params.status,
     summary: params.summary ?? null,
     scores: params.scores ?? [],
+    error: params.error ?? null,
   };
   return prisma.feedback.upsert({
     where: { sessionId: params.sessionId },
@@ -32,7 +33,7 @@ export async function saveFeedback(params: SaveFeedbackParams): Promise<Feedback
 
 /**
  * FB3 — the candidate's feedback for their own session. Another candidate's
- * session is a NotFoundError (404, FR-27). Until the worker has written a row,
+ * session is a NotFoundError (404, FR-27). Until evaluation has written a row,
  * the feedback is pending.
  */
 export async function getFeedbackForSession(sessionId: string, userId: string): Promise<FeedbackContract> {
@@ -46,35 +47,6 @@ export async function getFeedbackForSession(sessionId: string, userId: string): 
     status: row.status,
     summary: row.summary ?? undefined,
     scores: row.status === 'ready' ? row.scores : undefined,
+    error: row.error ?? undefined,
   });
-}
-
-/**
- * FB3 — handler for a `session.ended` job: evaluate the stored transcript and
- * write the feedback. If evaluation fails, the feedback is marked failed and
- * the error rethrown so the job is marked failed too. The transcript is only
- * read, never changed (NFR-04).
- */
-export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {}): Promise<void> {
-  if (!job.sessionId) {
-    throw new Error(`Job ${job.id} has no sessionId`);
-  }
-  const session = await prisma.session.findUniqueOrThrow({
-    where: { id: job.sessionId },
-    include: { turns: { orderBy: { turnIndex: 'asc' } } },
-  });
-  const roleLabel = ROLES.find((r) => r.id === session.role)?.label ?? session.role;
-
-  try {
-    const evaluation = await evaluateTranscript({ roleLabel, turns: session.turns }, options);
-    await saveFeedback({
-      sessionId: session.id,
-      status: 'ready',
-      summary: evaluation.summary,
-      scores: evaluation.scores,
-    });
-  } catch (error) {
-    await saveFeedback({ sessionId: session.id, status: 'failed' });
-    throw error;
-  }
 }

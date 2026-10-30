@@ -84,5 +84,6 @@ export const Feedback = z.object({
   status: FeedbackStatus,
   summary: z.string().optional(),
   scores: z.array(FeedbackScore).optional(),
+  error: z.string().optional(),
 });
 export type Feedback = z.infer<typeof Feedback>;

@@ -25,8 +25,9 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
   feature, use relative imports.
 - **API: code is organised by layer.** `routes/` wires middleware to `controllers/`, controllers
   call `services/`, and `middleware/auth.ts` and `utils/db.ts` (the Prisma client) are shared.
-- **Dependency direction:** `identity ← profile ← sessions ← feedback`. `sessions` never
-  imports `feedback`; it inserts a `session.ended` job in the same transaction that ends the session instead.
+- **Dependency direction:** `identity ← profile ← sessions ← feedback`. Ending a session
+  atomically marks it ended and initializes pending feedback, triggering asynchronous evaluation directly
+  without a background job queue or worker.
 - **The web calls the API only through `apps/web/src/lib/api.ts`**, which attaches the Supabase
   access token.
 - **The browser never sees provider API keys** and never queries Supabase tables directly.

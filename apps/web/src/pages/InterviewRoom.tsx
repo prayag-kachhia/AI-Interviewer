@@ -505,11 +505,11 @@ export const InterviewRoom: React.FC = () => {
             </div>
             <div style={{ flexGrow: 1 }}>
               <h3 style={{ marginBottom: '0.35rem', color: 'var(--text-main)' }}>
-                Interview Ended — Queued for Feedback Evaluation
+                Interview Ended — Evaluating Feedback
               </h3>
               <p style={{ marginBottom: '1rem', fontSize: '0.95rem' }}>
-                Your session has been marked <strong>ENDED</strong> and a <code>session.ended</code> job has been
-                recorded in the database for the Feedback module to evaluate your transcript.
+                Your session has been marked <strong>ENDED</strong> and feedback evaluation has started
+                to evaluate your transcript.
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <Link className="btn btn-primary" to="/interview/new">

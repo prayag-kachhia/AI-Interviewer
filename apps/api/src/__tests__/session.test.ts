@@ -20,6 +20,7 @@ vi.mock('../utils/db', () => ({
     session: {
       create: vi.fn(),
       findFirst: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
     },
     turn: {
@@ -27,11 +28,15 @@ vi.mock('../utils/db', () => ({
       findMany: vi.fn(),
       count: vi.fn(),
     },
-    job: {
-      create: vi.fn(),
+    feedback: {
+      upsert: vi.fn(),
     },
     $transaction: vi.fn(),
   },
+}));
+
+vi.mock('../services/evaluator.service', () => ({
+  evaluateTranscript: vi.fn().mockResolvedValue({ summary: 'Good', scores: [] }),
 }));
 
 import * as supabase from '@supabase/supabase-js';
@@ -289,10 +294,17 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
         endedAt: null,
       });
       (prisma.session.update as any).mockReturnValue('session-update-op');
-      (prisma.job.create as any).mockReturnValue('job-create-op');
+      (prisma.feedback.upsert as any).mockReturnValue('feedback-upsert-op');
+      (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+        role: 'software-engineer',
+        status: 'ENDED',
+        turns: [],
+      });
       (prisma.$transaction as any).mockResolvedValueOnce([
         { id: 'sess-1', userId: AUTH_USER.id, role: 'software-engineer', status: 'ENDED', endedAt },
-        { id: 'job-1', type: 'session.ended', sessionId: 'sess-1', status: 'pending' },
+        { id: 'fb-1', sessionId: 'sess-1', status: 'pending' },
       ]);
 
       const res = await request(app)
@@ -311,8 +323,8 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       );
     });
 
-    // TEST 10: end session creates session.ended Job
-    it('TEST 10: creates a session.ended job with pending status when ending a session', async () => {
+    // TEST 10: end session creates pending feedback
+    it('TEST 10: creates/upserts a feedback record with pending status when ending a session', async () => {
       (prisma.session.findFirst as any).mockResolvedValueOnce({
         id: 'sess-1',
         userId: AUTH_USER.id,
@@ -321,28 +333,38 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
         startedAt: new Date(Date.now() - 60_000),
         endedAt: null,
       });
+      (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+        role: 'software-engineer',
+        status: 'ENDED',
+        turns: [],
+      });
       (prisma.session.update as any).mockReturnValue('session-update-op');
-      (prisma.job.create as any).mockReturnValue('job-create-op');
+      (prisma.feedback.upsert as any).mockReturnValue('feedback-upsert-op');
       (prisma.$transaction as any).mockResolvedValueOnce([
-        { id: 'sess-1', status: 'ENDED', endedAt: new Date() },
-        { id: 'job-1', type: 'session.ended', sessionId: 'sess-1', status: 'pending' },
+        { id: 'sess-1', status: 'ENDED', endedAt: new Date(), role: 'software-engineer' },
+        { id: 'fb-1', sessionId: 'sess-1', status: 'pending' },
       ]);
 
       await request(app)
         .post('/api/sessions/sess-1/end')
         .set('Authorization', authHeader());
 
-      expect(prisma.job.create).toHaveBeenCalledWith({
-        data: {
-          type: 'session.ended',
+      expect(prisma.feedback.upsert).toHaveBeenCalledWith({
+        where: { sessionId: 'sess-1' },
+        create: {
           sessionId: 'sess-1',
+          status: 'pending',
+        },
+        update: {
           status: 'pending',
         },
       });
     });
 
-    // TEST 11: Session update + Job insertion are atomic
-    it('TEST 11: executes Session update and Job insertion atomically in one $transaction and rolls back on failure', async () => {
+    // TEST 11: Session update + Feedback upsert are atomic
+    it('TEST 11: executes Session update and Feedback upsert atomically in one $transaction and rolls back on failure', async () => {
       (prisma.session.findFirst as any).mockResolvedValueOnce({
         id: 'sess-1',
         userId: AUTH_USER.id,
@@ -352,7 +374,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
         endedAt: null,
       });
       (prisma.session.update as any).mockReturnValue('session-update-promise');
-      (prisma.job.create as any).mockReturnValue('job-create-promise');
+      (prisma.feedback.upsert as any).mockReturnValue('feedback-upsert-promise');
       (prisma.$transaction as any).mockRejectedValueOnce(new Error('DB transaction aborted'));
 
       const res = await request(app)
@@ -362,14 +384,14 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(prisma.$transaction).toHaveBeenCalledWith([
         'session-update-promise',
-        'job-create-promise',
+        'feedback-upsert-promise',
       ]);
       expect(res.status).toBe(500);
       expect(res.body.success).toBe(false);
     });
 
     // TEST 12: duplicate/end request does not create inconsistent state
-    it('TEST 12: handles duplicate end-session requests idempotently without creating duplicate jobs', async () => {
+    it('TEST 12: handles duplicate end-session requests idempotently without creating duplicate feedback', async () => {
       const endedAt = new Date(Date.now() - 10_000);
       (prisma.session.findFirst as any).mockResolvedValueOnce({
         id: 'sess-1',
@@ -387,7 +409,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(res.status).toBe(200);
       expect(res.body.data.status).toBe('ENDED');
       expect(prisma.$transaction).not.toHaveBeenCalled();
-      expect(prisma.job.create).not.toHaveBeenCalled();
+      expect(prisma.feedback.upsert).not.toHaveBeenCalled();
     });
 
     it('returns 404 when ending another user\'s session', async () => {

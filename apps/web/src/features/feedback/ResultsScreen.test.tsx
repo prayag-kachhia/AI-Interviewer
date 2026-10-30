@@ -45,6 +45,18 @@ test("given feedback failed, then the screen says so", async () => {
   expect(await screen.findByRole("alert")).toBeInTheDocument();
 });
 
+test("given feedback failed with error details, then the screen displays the error", async () => {
+  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+    sessionId: "s1",
+    status: "failed",
+    error: "Evaluation timed out after 12000 ms",
+  });
+
+  render(<ResultsScreen sessionId="s1" />);
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect(await screen.findByText("Evaluation timed out after 12000 ms")).toBeInTheDocument();
+});
+
 test("given feedback is pending, then it polls again and shows it once ready, then stops", async () => {
   vi.useFakeTimers();
   const fetchSpy = vi

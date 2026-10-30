@@ -11,8 +11,7 @@
     "test": "vitest run src/",
     "typecheck": "tsc --noEmit -p .",
     "db:generate": "prisma generate",
-    "postinstall": "prisma generate",
-    "worker": "bun src/worker.ts"
+    "postinstall": "prisma generate"
   },
   "keywords": [],
   "author": "",
