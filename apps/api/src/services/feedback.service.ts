@@ -32,7 +32,7 @@ export async function saveFeedback(params: SaveFeedbackParams): Promise<Feedback
 }
 
 /**
- * FB3 — the candidate's feedback for their own session. Another candidate's
+ * The candidate's feedback for their own session. Another candidate's
  * session is a NotFoundError (404, FR-27). Until evaluation has written a row,
  * the feedback is pending.
  */

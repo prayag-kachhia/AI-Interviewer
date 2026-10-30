@@ -26,7 +26,7 @@ export class SessionEndedError extends Error {
 }
 
 /**
- * LS2 — Create a session for a signed-in candidate + a validated role.
+ * Create a session for a signed-in candidate + a validated role.
  */
 export async function createSession(userId: string, roleId: string) {
   if (!isValidRoleId(roleId)) {
@@ -41,7 +41,7 @@ export async function createSession(userId: string, roleId: string) {
 /**
  * Ownership-scoped lookup. Always query by (id AND userId) together so a
  * session belonging to another user resolves to "not found" (404), never a
- * 403 — this avoids revealing whether the id exists at all (FR-27).
+ * 403 — this avoids revealing whether the id exists at all.
  */
 export async function getOwnedSession(sessionId: string, userId: string) {
   const session = await prisma.session.findFirst({
@@ -64,7 +64,7 @@ export async function listTurns(sessionId: string, userId: string) {
 }
 
 /**
- * LS4 — Store one transcript turn, after ownership + timestamp validation.
+ * Store one transcript turn, after ownership + timestamp validation.
  */
 export async function addTurn(
   sessionId: string,
@@ -152,7 +152,7 @@ export async function runFeedbackEvaluation(
 }
 
 /**
- * LS4 — End the session and initialize feedback in ONE atomic transaction:
+ * End the session and initialize feedback in ONE atomic transaction:
  * mark the session ENDED and upsert a pending feedback row.
  * After the transaction successfully commits, directly fire feedback evaluation asynchronously.
  */

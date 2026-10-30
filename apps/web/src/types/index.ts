@@ -41,7 +41,7 @@ export interface ResumeResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Slice A — Live Session (LS2 + LS4)
+// Slice A — Live Session
 // ---------------------------------------------------------------------------
 
 export type { Role, SessionStatus, TurnSpeaker } from '@interview/contracts';

@@ -230,3 +230,30 @@ If any step fails, the later ones don't run, and the previous version stays live
 - CODEOWNERS
 - protecting `main`, which needs GitHub Pro from the Student Developer Pack or a public repo
 - split the worker into its own Cloud Run service, so the API can scale to zero
+
+## Where Sprint 2 ended up (28 Oct)
+
+The mid-evaluation ran on 15 Oct on the deployed site, with the browser-speech interviewer as the
+fallback. The deployment tasks shipped. The interviewer, personalisation, feedback and history tasks
+were not started, and they moved into the revised Sprint 3 plan under new issue numbers.
+
+| Task | Where it landed |
+|---|---|
+| D1 deploy, D2 migrations on merge | Done (#34, #35, PR #46): Cloud Run, Firebase Hosting, migrations in the deploy workflow |
+| V1 Gemini Live adapter | Not started. Now #72, the `useGeminiLive` hook (Vishwa) |
+| V2 server-side briefing locked into the token | Not started. Now #87 (Kishan) |
+| P1 resume in the briefing | Not started. Now #90, after the resume fix #78 (Vismay) |
+| F1 feedback with quotes and tips | Not started. Now #92 (contract, Ved) and #93 (evaluator, Praneel) |
+| F2 retry failed feedback | Not started. Now #92 (Ved) |
+| H1 session history | Not started. Now #94 (Rahi) |
+| A1 delete a session; fix account deletion | Not started. Now #77 (cascade) and #97 (delete), Vismay |
+| L1 contracts, reviews, integration, demo | Done (#43) |
+| L2 README | Open; moved to Sprint 3 (#44, Raj) |
+
+Also merged in this period, outside the task list: the codebase guide (#45), Gemini calls moved to
+`@google/genai` with current models (#47), JSON 404s and a global error handler for the API (#48),
+and the `react-router` import cleanup (#49).
+
+The Sprint 3 plan was rewritten on 28 Oct: Gemini Live is the only interviewer, the job queue goes,
+and everyone's first PR is a small fix before any feature. The revised plan is at
+https://claude.ai/artifact/JymoK3Xqvm3D6hshVAmuX5 and its issues are #72–#97.
