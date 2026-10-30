@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to the Software Engineer interview. Could you describe how you would design an asynchronous notification service that delivers emails and SMS messages reliably?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would decouple the notification requests from the main web API using a message queue like RabbitMQ or AWS SQS. When a service needs to send an email or SMS, it publishes a notification event payload with the recipient ID, template type, and data to the queue. A background worker pool consumes messages from the queue, renders the appropriate template, and calls external providers like SendGrid or Twilio. Using a queue allows the API to return a 202 Accepted status immediately without blocking on external network latency, and helps buffer spikes in traffic."
+  },
+  {
+    "speaker": "AI",
+    "text": "What happens if a third-party provider like SendGrid experiences downtime or returns rate-limit errors?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "We should handle failures by implementing exponential backoff retries with jitter. When SendGrid returns a 5xx error or a 429 Too Many Requests, the worker catches the error and requeues the message with an increased delay. We would also configure a dead-letter queue so that after four or five failed attempts, the problematic message is moved out of the active queue. That prevents the worker pool from getting blocked by bad messages while allowing engineers to inspect failures and replay them once the downstream service is healthy."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you prevent duplicate notifications from being sent to a user if network timeouts occur during the third-party call?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would use idempotency keys. Before calling SendGrid, the worker creates a notification record in PostgreSQL with a unique key based on the event ID and channel, setting the status to 'in_progress'. If a timeout happens and the queue redelivers the message, the worker checks the database first. If the record already exists and is marked as 'sent', it skips sending and acknowledges the message. Many third-party APIs also support an idempotency key header to prevent duplicate sends on their side."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you test and verify this notification service?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "For unit testing, I write tests with mocked HTTP clients to verify template rendering and retry logic. For integration testing, I use Testcontainers or local Docker containers for RabbitMQ and PostgreSQL to test the full pipeline from publishing an event to processing and recording status in the database. We also write tests simulating provider network timeouts to confirm messages route to the dead-letter queue."
+  }
+]

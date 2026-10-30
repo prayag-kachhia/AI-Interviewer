@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to the Software Engineer interview. Could you explain how you would design an API endpoint to upload and store large user profile photos?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would make a POST endpoint in Express using Multer to take the image from the form. Then we can convert the image into a base64 string and save it into a text column in our database, or just save the file onto the local server disk in an uploads folder."
+  },
+  {
+    "speaker": "AI",
+    "text": "What challenges might arise with storing base64 images directly in the database or saving files to the local application server filesystem?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Well, base64 strings get pretty long, so the database might get heavy or slow. And saving on the server disk works fine on my laptop, but if the app runs on multiple servers, the other instances won't have the file. I know people use Amazon S3 or cloud buckets for this, but I haven't set up S3 myself."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you handle security risks, such as a malicious user trying to upload executable scripts disguised as images?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "We can check the file extension on both the frontend and backend to ensure the name ends with .jpg or .png. If the file ends with something else, we reject the upload and return an error."
+  },
+  {
+    "speaker": "AI",
+    "text": "File extensions can easily be spoofed by renaming a file. How would you validate the true file content or prevent server-side execution?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "To be honest, I'm not really sure how to inspect the contents past checking the file extension and the file size limit. In my previous projects, the upload middleware was already configured by a senior engineer, so I didn't get into inspecting file headers or magic bytes."
+  }
+]

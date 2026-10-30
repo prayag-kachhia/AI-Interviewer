@@ -1,35 +1,66 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { evaluateTranscript, buildEvaluationPrompt, RUBRIC } from '../services/evaluator.service';
+import { z } from 'zod';
+import { TurnSpeaker } from '@interview/contracts';
+import {
+  evaluateTranscript,
+  buildEvaluationPrompt,
+  RUBRIC,
+  type EvaluationInput,
+  type TranscriptTurn,
+} from '../services/evaluator.service';
 
-// A short sample interview. The LLM call is always replaced; no test reaches Gemini.
-const SAMPLE = {
-  roleLabel: 'Backend Developer',
-  turns: [
-    { speaker: 'AI' as const, text: 'Tell me about an API you designed.' },
-    { speaker: 'CANDIDATE' as const, text: 'I built a REST API for orders with Postgres and added idempotency keys.' },
-    { speaker: 'AI' as const, text: 'How did you handle retries?' },
-    { speaker: 'CANDIDATE' as const, text: 'Clients retry with the same key, so the server returns the first result.' },
-  ],
+// Established schema validation for transcript turn fixtures against shared contracts
+const TranscriptTurnSchema = z.object({
+  speaker: TurnSpeaker,
+  text: z.string(),
+});
+const TranscriptFixtureSchema = z.array(TranscriptTurnSchema);
+
+function loadTranscriptFixture(filename: string): TranscriptTurn[] {
+  const fileUrl = new URL(`./fixtures/transcripts/${filename}`, import.meta.url);
+  const raw = readFileSync(fileUrl, 'utf-8');
+  return TranscriptFixtureSchema.parse(JSON.parse(raw));
+}
+
+// Primary fixture loaded from good.json for normal evaluation tests.
+const GOOD_TRANSCRIPT = loadTranscriptFixture('good.json');
+const SAMPLE: EvaluationInput = {
+  roleLabel: 'Software Engineer',
+  turns: GOOD_TRANSCRIPT,
 };
 
 const VALID = JSON.stringify({
-  summary: 'Clear, concrete answers about API design.',
+  summary: 'Clear, concrete answers about asynchronous architecture and idempotency.',
   scores: RUBRIC.map((r, i) => ({ category: r.category, score: 3 + (i % 2), comment: 'Specific and relevant.' })),
 });
 
 describe('FB4 — evaluator', () => {
+  it('validates all hand-written transcript fixtures against the TurnSpeaker contract and turn constraints', () => {
+    const fixtureNames = ['excellent.json', 'good.json', 'average.json', 'weak.json', 'empty-answers.json'] as const;
+    for (const name of fixtureNames) {
+      const turns = loadTranscriptFixture(name);
+      expect(turns.length).toBeGreaterThanOrEqual(6);
+      expect(turns.length).toBeLessThanOrEqual(10);
+      for (const turn of turns) {
+        expect(['AI', 'CANDIDATE']).toContain(turn.speaker);
+        expect(typeof turn.text).toBe('string');
+      }
+    }
+  });
+
   it('given a transcript and a role, returns feedback scored against every rubric category', async () => {
     const result = await evaluateTranscript(SAMPLE, { generate: async () => VALID });
-    expect(result.summary).toBe('Clear, concrete answers about API design.');
+    expect(result.summary).toBe('Clear, concrete answers about asynchronous architecture and idempotency.');
     expect(result.scores.map((s) => s.category).sort()).toEqual(RUBRIC.map((r) => r.category).sort());
   });
 
   it('puts the role, the rubric and both speakers into the prompt', () => {
     const prompt = buildEvaluationPrompt(SAMPLE);
-    expect(prompt).toContain('Backend Developer');
+    expect(prompt).toContain('Software Engineer');
     for (const r of RUBRIC) expect(prompt).toContain(r.category);
-    expect(prompt).toContain('Interviewer: Tell me about an API you designed.');
-    expect(prompt).toContain('Candidate: Clients retry with the same key');
+    expect(prompt).toContain('Interviewer: Welcome to the Software Engineer interview.');
+    expect(prompt).toContain('Candidate: I would decouple the notification requests');
   });
 
   it('given the LLM call times out, then it fails well inside the 15-second budget', async () => {
@@ -69,10 +100,11 @@ describe('FB4 — evaluator', () => {
   });
 
   it('given a transcript with no candidate answers, then it fails without calling the LLM', async () => {
+    const emptyTranscript = loadTranscriptFixture('empty-answers.json');
     let called = false;
     await expect(
       evaluateTranscript(
-        { roleLabel: 'Data Analyst', turns: [{ speaker: 'AI', text: 'Tell me about yourself.' }] },
+        { roleLabel: 'Software Engineer', turns: emptyTranscript },
         { generate: async () => { called = true; return VALID; } }
       )
     ).rejects.toThrow('no candidate answers');
