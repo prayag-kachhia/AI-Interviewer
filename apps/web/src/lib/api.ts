@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Feedback } from '@interview/contracts';
+import { Feedback, VoiceToken } from '@interview/contracts';
 import { supabase } from './supabase';
 import type {
   ResumeResponse,
@@ -120,6 +120,15 @@ export const endSession = async (sessionId: string): Promise<SessionResponse> =>
 export const endInterviewSession = endSession;
 
 // Feedback — the results screen polls this until the status is not 'pending'.
+// Short-lived voice token for Gemini Live (POST /api/sessions/:id/voice-token, LS3)
+export const getVoiceToken = async (sessionId: string): Promise<string> => {
+  const { data } = await api.post<{ success: boolean; data: VoiceToken }>(
+    `/sessions/${sessionId}/voice-token`
+  );
+  return data.data.token;
+};
+
+// Feedback (FB3) — the results screen polls this until the status is not 'pending'.
 export const getFeedback = async (sessionId: string): Promise<Feedback> => {
   const { data } = await api.get<{ success: boolean; data?: unknown }>(`/sessions/${sessionId}/feedback`);
   return Feedback.parse(data.data);

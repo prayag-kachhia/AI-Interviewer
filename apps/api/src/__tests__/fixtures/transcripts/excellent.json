@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Software Engineer interview. Let's start with system design. How would you design a distributed rate-limiting service to protect our core API endpoints from burst traffic and abuse?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would implement a token bucket algorithm backed by a Redis cluster. Each user or API key gets a bucket with a maximum capacity and a continuous refill rate. When an incoming request arrives at our API gateway, we execute an atomic Lua script in Redis to calculate tokens replenished since the last timestamp, check if at least one token is available, and decrement it. This keeps the rate-limiting check to O(1) time and minimal memory per client key. For high availability, we would deploy Redis in a clustered multi-AZ setup with read replicas, and set the gateway to fail-open with local in-memory fallback counters if Redis becomes completely unreachable, preventing an outage of the rate limiter from bringing down the entire API."
+  },
+  {
+    "speaker": "AI",
+    "text": "That's a solid architectural design. How would you handle race conditions when multiple concurrent requests from the same user hit different gateway instances simultaneously?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Executing the token evaluation and decrement inside a Redis Lua script prevents race conditions because Redis executes Lua scripts as a single atomic transaction on the single-threaded shard key. By keying the Redis entry on the tenant ID or API key, all concurrent requests for that user hash to the same Redis slot. If we were using a sliding window counter approach instead, we would use a Redis sorted set with ZADD and ZREMRANGEBYSCORE within an atomic MULTI/EXEC block. The trade-off with the sorted set is higher memory overhead—storing individual request timestamps versus just two numerical fields in the token bucket—so token bucket is typically much more cost-effective at high scale."
+  },
+  {
+    "speaker": "AI",
+    "text": "Now switching to database performance: suppose a query filtering on user_id and sorting by created_at descending begins timing out on a table with 50 million records. How would you diagnose and fix it?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "First, I would run EXPLAIN (ANALYZE, BUFFERS) on the query in a staging environment with representative data to inspect the execution plan. The timeout usually indicates either a sequential scan or an index scan followed by an in-memory or on-disk external merge sort because the existing index only covers user_id or has the wrong column ordering. To resolve this, I would create a composite B-tree index on (user_id, created_at DESC). In PostgreSQL, this allows the query planner to seek directly to the user's partition and scan the index pre-sorted, reducing the query time from O(N log N) with disk I/O down to O(log N + K), where K is the limit count. On production, I would ensure we use CREATE INDEX CONCURRENTLY to avoid exclusive write table locks during creation."
+  },
+  {
+    "speaker": "AI",
+    "text": "Lastly, how do you verify and monitor this optimization once deployed to production?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Before deployment, I would write automated performance regression tests comparing query execution times against baseline thresholds. Post-deployment, I would monitor our p95 and p99 query latency metrics in Datadog or Prometheus, track slow queries via pg_stat_statements, and observe database buffer cache hit ratios. I would also set up alert thresholds for query execution times exceeding 100 milliseconds and monitor index bloat over time to ensure vacuuming processes keep the composite index healthy."
+  }
+]

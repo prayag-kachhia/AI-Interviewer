@@ -1,0 +1,26 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Software Engineer mock interview. To start, could you tell me about a project you've built recently that you're proud of?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": ""
+  },
+  {
+    "speaker": "AI",
+    "text": "No rush at all. When you're ready, could you tell me how you typically approach structuring a new RESTful backend service?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "   "
+  },
+  {
+    "speaker": "AI",
+    "text": "Take your time. Could you share how you usually handle debugging when an unexpected error occurs in production?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "\t\n  "
+  }
+]
