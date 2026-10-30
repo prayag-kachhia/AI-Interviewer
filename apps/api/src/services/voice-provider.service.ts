@@ -13,6 +13,8 @@ export interface VoiceProviderOptions {
   apiKey?: string;
   fetchFn?: typeof fetch;
   timeoutMs?: number;
+  briefing?: string;
+  model?: string;
 }
 
 interface GoogleTokenResponse {
@@ -46,9 +48,47 @@ export async function mintVoiceToken(options: VoiceProviderOptions = {}): Promis
   const timeoutMs = options.timeoutMs ?? 5000;
   const now = Date.now();
 
-  // Checked on 2026-10-29: v1beta is the working Google Generative Language endpoint for ephemeral auth_tokens.
+  // Checked on 2026-10-30: v1beta is the working Google Generative Language endpoint for ephemeral auth_tokens with bidiGenerateContentSetup.
   const endpoint = 'https://generativelanguage.googleapis.com/v1beta/auth_tokens';
   const signal = AbortSignal.timeout(timeoutMs);
+
+  const model = options.model ?? process.env.GEMINI_LIVE_MODEL ?? 'models/gemini-3.8-live';
+  const briefing = options.briefing;
+
+  const requestBody: Record<string, unknown> = {
+    uses: 1, // Single-use session
+    expireTime: new Date(now + 30 * 60 * 1000).toISOString(), // 30 min duration
+    newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(), // Must start within 2 min
+  };
+
+  // Lock the briefing, audio modality, and context compression into the token (FR-13, DR-02, NFR-09)
+  // In the REST API, the SDK's liveConnectConstraints translates to bidiGenerateContentSetup and fieldMask.
+  if (briefing) {
+    requestBody.bidiGenerateContentSetup = {
+      model,
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: 'Puck',
+            },
+          },
+        },
+      },
+      systemInstruction: {
+        parts: [{ text: briefing }],
+      },
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
+      contextWindowCompression: {
+        slidingWindow: {},
+      },
+      sessionResumption: {},
+    };
+    requestBody.fieldMask =
+      'model,generationConfig.responseModalities,generationConfig.speechConfig,systemInstruction.parts,inputAudioTranscription,outputAudioTranscription,contextWindowCompression.slidingWindow,sessionResumption';
+  }
 
   let response: Response;
   try {
@@ -59,11 +99,7 @@ export async function mintVoiceToken(options: VoiceProviderOptions = {}): Promis
         'Content-Type': 'application/json',
       },
       signal,
-      body: JSON.stringify({
-        uses: 1, // Single-use session
-        expireTime: new Date(now + 30 * 60 * 1000).toISOString(), // 30 min duration
-        newSessionExpireTime: new Date(now + 2 * 60 * 1000).toISOString(), // Must start within 2 min
-      }),
+      body: JSON.stringify(requestBody),
     });
   } catch (error: any) {
     if (

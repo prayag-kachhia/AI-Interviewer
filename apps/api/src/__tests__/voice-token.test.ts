@@ -16,6 +16,7 @@ vi.mock('../utils/db', () => ({
   default: {
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn() },
+    resume: { findFirst: vi.fn() },
   },
 }));
 
@@ -53,9 +54,10 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
       error: null,
     });
     (prisma.user.findUnique as any).mockResolvedValue({ ...AUTH_USER, passwordHash: 'x' });
+    (prisma.resume.findFirst as any).mockResolvedValue(null);
   });
 
-  it("given the candidate's own session, when a token is requested, then a short-lived token comes back", async () => {
+  it("given the candidate's own session, when a token is requested, then a short-lived token comes back with role briefing", async () => {
     (prisma.session.findFirst as any).mockResolvedValueOnce(OWN_LIVE_SESSION);
     vi.mocked(mintVoiceToken).mockResolvedValueOnce('auth_tokens/ephemeral-123');
 
@@ -68,6 +70,31 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
     expect(prisma.session.findFirst).toHaveBeenCalledWith({
       where: { id: 'sess-1', userId: AUTH_USER.id },
     });
+    expect(mintVoiceToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        briefing: expect.stringContaining('Software Engineer'),
+      })
+    );
+  });
+
+  it('given a candidate with a resume, passes the resume summary into the token briefing (FR-08)', async () => {
+    (prisma.session.findFirst as any).mockResolvedValueOnce(OWN_LIVE_SESSION);
+    (prisma.resume.findFirst as any).mockResolvedValueOnce({
+      parsedProfile: 'Experienced with Kubernetes, Go, and Kafka microservices.',
+    });
+    vi.mocked(mintVoiceToken).mockResolvedValueOnce('auth_tokens/ephemeral-resume');
+
+    const res = await request(app)
+      .post('/api/sessions/sess-1/voice-token')
+      .set('Authorization', 'Bearer valid-supabase-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, data: { token: 'auth_tokens/ephemeral-resume' } });
+    expect(mintVoiceToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        briefing: expect.stringContaining('Experienced with Kubernetes, Go, and Kafka microservices.'),
+      })
+    );
   });
 
   it("given another candidate's session, then the API returns 404 (FR-27) and mints nothing", async () => {
@@ -145,6 +172,36 @@ describe('LS3 — mintVoiceToken (voice provider client)', () => {
     expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/auth_tokens');
     expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('test-key');
     expect(JSON.parse(init.body as string).uses).toBe(1);
+  });
+
+  it('mints with bidiGenerateContentSetup locking model, briefing, and sliding window compression (DR-02, NFR-09)', async () => {
+    const { mintVoiceToken: realMint } = await vi.importActual<
+      typeof import('../services/voice-provider.service')
+    >('../services/voice-provider.service');
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ name: 'auth_tokens/locked-123' })));
+
+    const testBriefing = 'You are a Software Engineer interviewer.';
+    const token = await realMint({
+      apiKey: 'test-key',
+      briefing: testBriefing,
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+
+    expect(token).toBe('auth_tokens/locked-123');
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/auth_tokens');
+
+    const parsedBody = JSON.parse(init.body as string);
+    expect(parsedBody.bidiGenerateContentSetup).toBeDefined();
+    expect(parsedBody.bidiGenerateContentSetup.model).toBe('models/gemini-3.8-live');
+    expect(parsedBody.bidiGenerateContentSetup.generationConfig.responseModalities).toEqual(['AUDIO']);
+    expect(parsedBody.bidiGenerateContentSetup.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Puck');
+    expect(parsedBody.bidiGenerateContentSetup.systemInstruction.parts[0].text).toBe(testBriefing);
+    expect(parsedBody.bidiGenerateContentSetup.contextWindowCompression).toEqual({
+      slidingWindow: {},
+    });
+    expect(parsedBody.bidiGenerateContentSetup.sessionResumption).toEqual({});
+    expect(parsedBody.fieldMask).toContain('model');
   });
 
   it('throws when no API key is configured', async () => {
