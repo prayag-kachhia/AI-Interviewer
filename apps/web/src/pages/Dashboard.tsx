@@ -188,7 +188,7 @@ export const Dashboard: React.FC = () => {
           <p>Start a live AI interview session for a role of your choice.</p>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <button className="btn btn-primary" onClick={() => navigate('/interview/new')}>
+          <button className="btn btn-primary" onClick={() => navigate('/new-interview')}>
             <BrainCircuit size={18} />
             Start Interview
             <ArrowRight size={18} />

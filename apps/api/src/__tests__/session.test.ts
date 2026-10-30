@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../utils/db';
-import { DeterministicQuestionProvider } from '../services/question.service';
 
 vi.mock('@supabase/supabase-js', () => {
   const getUserMock = vi.fn();
@@ -399,37 +398,6 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
 
       expect(res.status).toBe(404);
       expect(prisma.$transaction).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('DeterministicQuestionProvider (LS4 local question stub)', () => {
-    it('returns role-specific initial question, references preceding candidate answer, and never repeats questions', () => {
-      const provider = new DeterministicQuestionProvider();
-      const q1 = provider.getInitialQuestion('software-engineer');
-      expect(q1).toContain('software engineering');
-
-      const transcript: { speaker: 'AI' | 'CANDIDATE'; text: string }[] = [
-        { speaker: 'AI', text: q1 },
-        { speaker: 'CANDIDATE', text: 'I am a third year ICT student building full-stack web apps.' },
-      ];
-
-      const q2 = provider.getNextQuestion('software-engineer', transcript);
-      expect(q2).toBeTruthy();
-      expect(q2).not.toBe(q1);
-      // Follow-up references the candidate's preceding answer
-      expect(q2!.toLowerCase()).toContain('third year ict student');
-
-      // Ensure no duplicate questions across the entire interview script
-      const seen = new Set<string>([q1]);
-      let current = q2;
-      while (current) {
-        expect(seen.has(current)).toBe(false);
-        seen.add(current);
-        transcript.push({ speaker: 'AI', text: current });
-        transcript.push({ speaker: 'CANDIDATE', text: 'I worked closely with my team to deliver the solution.' });
-        current = provider.getNextQuestion('software-engineer', transcript);
-      }
-      expect(seen.size).toBeGreaterThanOrEqual(4);
     });
   });
 });

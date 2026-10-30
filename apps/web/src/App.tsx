@@ -3,7 +3,7 @@ import { Navbar } from './components/Navbar';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Profile } from './pages/Profile';
-import { RolePicker, NewInterview, InterviewRoom } from './features/sessions';
+import { NewInterview, InterviewRoom } from './features/sessions';
 import { ResultsPage } from './features/feedback';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
@@ -21,10 +21,9 @@ function App() {
             
             {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>
-              <Route path="/role-picker" element={<RolePicker />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/profile" element={<Profile />} />
-              <Route path="/interview/new" element={<NewInterview />} />
+              <Route path="/new-interview" element={<NewInterview />} />
               <Route path="/interview/:sessionId" element={<InterviewRoom />} />
               <Route path="/interview/:sessionId/feedback" element={<ResultsPage />} />
             </Route>

@@ -55,7 +55,7 @@ export const Login: React.FC = () => {
       if (selectedRole) {
         navigate('/dashboard');
       } else {
-        navigate('/role-picker');
+        navigate('/new-interview');
       }
     }
   }, [user, navigate]);
@@ -95,7 +95,7 @@ export const Login: React.FC = () => {
           if (res.message) {
             setSuccessMsg(res.message);
           } else {
-            navigate('/role-picker');
+            navigate('/new-interview');
           }
         } else {
           setError(res.message || 'Registration failed');
@@ -108,7 +108,7 @@ export const Login: React.FC = () => {
           if (selectedRole) {
             navigate('/dashboard');
           } else {
-            navigate('/role-picker');
+            navigate('/new-interview');
           }
         } else {
           setError(res.message || 'Invalid credentials');
