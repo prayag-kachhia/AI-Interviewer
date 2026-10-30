@@ -58,7 +58,6 @@ model Session {
   endedAt   DateTime?
   createdAt DateTime      @default(now())
   turns     Turn[]
-  jobs      Job[]
   feedback  Feedback?
 
   @@index([userId])
@@ -79,31 +78,7 @@ model Turn {
   @@map("turns")
 }
 
-// Postgres job queue inserts a `session.ended` row in the same
-// transaction that ends the session; workers claim rows with
-// SELECT ... FOR UPDATE SKIP LOCKED (services/job-queue.service.ts).
-// sessionId is optional so jobs that are not about one session (the
-// retention purge) can share the table.
-model Job {
-  id        String    @id @default(uuid())
-  type      String
-  sessionId String?
-  session   Session?  @relation(fields: [sessionId], references: [id])
-  payload   Json      @default("{}")
-  status    String    @default("pending") // pending | processing | completed | failed
-  attempts  Int       @default(0)
-  lockedBy  String?
-  lockedAt  DateTime?
-  lastError String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @default(now()) @updatedAt
-
-  @@index([sessionId])
-  @@index([status, createdAt])
-  @@map("jobs")
-}
-
-// One evaluation per session (FB2 table; FB3 fills it, FB1 shows it).
+// One evaluation per session (direct evaluation on session end fills it, results screen shows it).
 model Feedback {
   id        String   @id @default(uuid())
   sessionId String   @unique
@@ -111,6 +86,7 @@ model Feedback {
   status    String   @default("pending") // pending | ready | failed
   summary   String?
   scores    Json?
+  error     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 

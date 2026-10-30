@@ -5,7 +5,6 @@ import authRoutes from './routes/auth.routes';
 import resumeRoutes from './routes/resume.routes';
 import sessionRoutes from './routes/session.routes';
 import feedbackRoutes from './routes/feedback.routes';
-import { runWorker } from './worker';
 
 // Load environment variables
 dotenv.config();
@@ -56,12 +55,6 @@ if (process.env.NODE_ENV !== 'test') {
   app.listen(Number(PORT), '0.0.0.0', () => {
     console.log(`Server is running on http://localhost:${PORT}`);
   });
-
-  // One feedback worker runs inside the API so `bun run dev` is enough for the
-  // full flow. Set WORKER=off to run workers separately (`bun run worker`).
-  if (process.env.WORKER !== 'off') {
-    runWorker(`api-${process.pid}`);
-  }
 }
 
 export default app;

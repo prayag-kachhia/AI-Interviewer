@@ -8,8 +8,7 @@ The current plan, with who owns what, is in `docs/sprint-3.md`.
 
 - `apps/api`: Express 5 + Prisma 5 on Supabase Postgres, run with Bun.
   - `src/routes/` (URLs) → `src/controllers/` (check the input, choose the HTTP status) →
-    `src/services/` (logic and database) → `prisma/schema.prisma` (tables).
-  - `src/worker.ts`: the feedback job worker. It runs inside the API process.
+    `src/services/` (logic, direct feedback evaluation on session end, and database) → `prisma/schema.prisma` (tables).
   - `src/__tests__/`: Vitest + Supertest. Gemini is always mocked.
 - `apps/web`: React 19 + Vite + react-router.
   - `src/features/<name>/`: each feature's screens. Import a feature only through its `index.ts`.

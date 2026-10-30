@@ -59,8 +59,8 @@ jobs:
           export DATABASE_URL
           bun run --filter @interview/api db:migrate
 
-      # --no-cpu-throttling and --min 1 keep the in-process feedback worker running between
-      # requests; without them Cloud Run pauses the CPU and feedback stays "pending".
+      # --no-cpu-throttling and --min 1 keep background asynchronous evaluation running after
+      # the HTTP response completes; without them Cloud Run pauses the CPU and feedback stays "pending".
       - name: Deploy the API to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" --source . --project "$PROJECT_ID" --region "$REGION" \

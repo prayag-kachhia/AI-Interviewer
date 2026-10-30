@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    # A throwaway database for the migrations and the job-queue tests (FB2).
+    # A throwaway database for applying migrations.
     # CI never sees the team's Supabase credentials.
     services:
       postgres:
@@ -78,14 +78,7 @@ jobs:
             -e DATABASE_URL=postgresql://user:pass@127.0.0.1:1/db \
             interview-api
           for i in $(seq 1 30); do
-            curl -fsS http://localhost:8080/health && break
-            if [ "$i" = 30 ]; then docker logs api; exit 1; fi
-            sleep 1
-          done
-          # The worker's first query must fail on the (fake) database, not on a missing or
-          # wrong Prisma engine: "Can't reach database server" proves the engine loaded.
-          for i in $(seq 1 30); do
-            docker logs api 2>&1 | grep -q "Can't reach database server" && exit 0
+            curl -fsS http://localhost:8080/health && exit 0
             sleep 1
           done
           docker logs api

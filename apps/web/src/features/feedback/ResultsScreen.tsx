@@ -16,6 +16,7 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
     return (
       <div role="alert">
         <p>We couldn't generate feedback for this session.</p>
+        {feedback.error && <p>{feedback.error}</p>}
       </div>
     );
   }

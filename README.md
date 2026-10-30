@@ -63,8 +63,8 @@ Current sprint, tasks and deadlines: [docs/sprint-2.md](docs/sprint-2.md) (Sprin
   `Authorization: Bearer <token>`; `apps/api/src/middleware/auth.ts` validates it. There is no other
   login or token.
 - **Web: import a feature only through its `index.ts`** (`apps/web/src/features/<name>/index.ts`).
-- **Dependency direction:** `identity ← profile ← sessions ← feedback`. `sessions` never imports
-  `feedback`; ending a session inserts a `session.ended` job instead.
+- **Dependency direction:** `identity ← profile ← sessions ← feedback`. Ending a session atomically
+  marks it ended and initializes pending feedback, directly triggering evaluation asynchronously.
 - **One definition per shape.** New request/response shapes shared by API and web go in
   `packages/contracts`. Don't add a second copy of a shape that already exists in
   `apps/api/src/types` or `apps/web/src/types`. Change a contract in the same PR as the code that needs it.
@@ -85,7 +85,7 @@ Done:
 - creating a session
 - the live interview screen, with transcript turns and ending the session
 - the provider voice-token endpoint (LS3)
-- the job queue and feedback worker (FB2, FB3)
+- direct feedback evaluation on session end (FB2, FB3)
 - the LLM evaluator with a generic rubric (FB4)
 - the results screen (FB1)
 - shared contracts
