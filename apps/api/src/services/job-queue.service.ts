@@ -27,40 +27,50 @@ export async function enqueueJob(params: EnqueueJobParams): Promise<Job> {
  * Jobs left 'processing' by a crashed worker for over 5 minutes are claimed
  * again, up to MAX_ATTEMPTS; past that they are marked failed.
  */
+
 export async function claimNextJob(workerId: string, jobType?: string): Promise<Job | null> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`
       UPDATE jobs
-      SET status = 'failed', "lastError" = 'Worker stopped responding', "lockedBy" = NULL,
-          "lockedAt" = NULL, "updatedAt" = NOW()
+      SET status = 'failed',
+          "lastError" = 'Worker stopped responding',
+          "lockedBy" = NULL,
+          "lockedAt" = NULL,
+          "updatedAt" = NOW()
       WHERE status = 'processing'
         AND "lockedAt" < NOW() - INTERVAL '5 minutes'
         AND attempts >= ${MAX_ATTEMPTS}`;
 
     const type = jobType ?? null;
+
     const rows = await tx.$queryRaw<Job[]>`
-      SELECT * FROM jobs
-      WHERE (${type}::text IS NULL OR type = ${type}::text)
-        AND (status = 'pending'
-             OR (status = 'processing' AND "lockedAt" < NOW() - INTERVAL '5 minutes'))
-      ORDER BY "createdAt" ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED`;
+      WITH next_job AS (
+        SELECT id
+        FROM jobs
+        WHERE (${type}::text IS NULL OR type = ${type}::text)
+          AND (
+            status = 'pending'
+            OR (
+              status = 'processing'
+              AND "lockedAt" < NOW() - INTERVAL '5 minutes'
+            )
+          )
+        ORDER BY "createdAt" ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE jobs AS j
+      SET status = 'processing',
+          "lockedBy" = ${workerId},
+          "lockedAt" = NOW(),
+          attempts = j.attempts + 1,
+          "updatedAt" = NOW()
+      FROM next_job
+      WHERE j.id = next_job.id
+      RETURNING j.*;
+    `;
 
-    const job = rows[0];
-    if (!job) {
-      return null;
-    }
-
-    return tx.job.update({
-      where: { id: job.id },
-      data: {
-        status: 'processing',
-        lockedBy: workerId,
-        lockedAt: new Date(),
-        attempts: { increment: 1 },
-      },
-    });
+    return rows[0] ?? null;
   });
 }
 

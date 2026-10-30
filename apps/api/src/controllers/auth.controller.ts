@@ -51,6 +51,7 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
  * Delete the application user, their resumes, and their Supabase Auth user.
  * The browser only calls this endpoint with its Supabase access token.
  */
+
 export const deleteAccount = async (
   req: Request,
   res: Response
@@ -64,31 +65,31 @@ export const deleteAccount = async (
       return;
     }
 
-    const deletedResumes = await prisma.resume.deleteMany({
-      where: { userId },
-    });
-
-    const deletedUser = await prisma.user.delete({
+    // Step 1: Delete the Prisma user.
+    // Related resumes, sessions, turns, feedback and jobs
+    // are deleted automatically through onDelete: Cascade.
+    await prisma.user.delete({
       where: { id: userId },
     });
 
-    try {
-      const { error } = await supabase.auth.admin.deleteUser(supabaseUserId);
-      if (error) {
-        console.error('Supabase Auth user deletion failed:', error);
-      }
-    } catch (error) {
+    // Step 2: Delete the Supabase Auth user.
+    const { error } = await supabase.auth.admin.deleteUser(supabaseUserId);
+
+    if (error) {
       console.error('Supabase Auth user deletion failed:', error);
+
+      res.status(500).json({
+        success: false,
+        message: 'Application data deleted, but Supabase account deletion failed',
+      });
+      return;
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'Account and all associated resume data deleted successfully',
-      deletedResumesCount: deletedResumes.count,
-      deletedUserId: deletedUser.id,
-    });
+    // Step 3: Return HTTP 204 No Content.
+    res.status(204).send();
   } catch (error) {
     console.error('Delete account error:', error);
+
     res.status(500).json({
       success: false,
       message: 'Failed to delete account',

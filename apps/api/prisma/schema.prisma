@@ -1,3 +1,4 @@
+
 generator client {
   provider      = "prisma-client-js"
   // "native" for laptops and CI; the Debian/OpenSSL 3 engine for the Cloud Run image.
@@ -14,7 +15,6 @@ model User {
   supabaseUserId String?   @unique
   name           String
   email          String    @unique
-  passwordHash   String
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   resumes        Resume[]
@@ -26,7 +26,7 @@ model User {
 model Resume {
   id            String   @id @default(uuid())
   userId        String
-  user          User     @relation(fields: [userId], references: [id])
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   fileName      String
   extractedText String
   parsedProfile String
@@ -51,7 +51,7 @@ enum TurnSpeaker {
 model Session {
   id        String        @id @default(uuid())
   userId    String
-  user      User          @relation(fields: [userId], references: [id])
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      String
   status    SessionStatus @default(LIVE)
   startedAt DateTime      @default(now())
@@ -68,7 +68,7 @@ model Session {
 model Turn {
   id           String      @id @default(uuid())
   sessionId    String
-  session      Session     @relation(fields: [sessionId], references: [id])
+  session      Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   turnIndex    Int
   speaker      TurnSpeaker
   text         String
@@ -88,7 +88,7 @@ model Job {
   id        String    @id @default(uuid())
   type      String
   sessionId String?
-  session   Session?  @relation(fields: [sessionId], references: [id])
+  session   Session?  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   payload   Json      @default("{}")
   status    String    @default("pending") // pending | processing | completed | failed
   attempts  Int       @default(0)
@@ -107,7 +107,7 @@ model Job {
 model Feedback {
   id        String   @id @default(uuid())
   sessionId String   @unique
-  session   Session  @relation(fields: [sessionId], references: [id])
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   status    String   @default("pending") // pending | ready | failed
   summary   String?
   scores    Json?
