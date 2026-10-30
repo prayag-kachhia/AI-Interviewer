@@ -31,8 +31,8 @@ export async function saveFeedback(params: SaveFeedbackParams): Promise<Feedback
 }
 
 /**
- * FB3 — the candidate's feedback for their own session. Another candidate's
- * session is a NotFoundError (404, FR-27). Until the worker has written a row,
+ * the candidate's feedback for their own session. Another candidate's
+ * session is a NotFoundError (404). Until the worker has written a row,
  * the feedback is pending.
  */
 export async function getFeedbackForSession(sessionId: string, userId: string): Promise<FeedbackContract> {
@@ -50,10 +50,10 @@ export async function getFeedbackForSession(sessionId: string, userId: string): 
 }
 
 /**
- * FB3 — handler for a `session.ended` job: evaluate the stored transcript and
+ * handler for a `session.ended` job: evaluate the stored transcript and
  * write the feedback. If evaluation fails, the feedback is marked failed and
  * the error rethrown so the job is marked failed too. The transcript is only
- * read, never changed (NFR-04).
+ * read, never changed.
  */
 export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {}): Promise<void> {
   if (!job.sessionId) {

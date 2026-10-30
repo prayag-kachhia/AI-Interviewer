@@ -8,13 +8,9 @@ export interface TranscriptTurnInput {
 /**
  * Clean interface for interview question generation.
  *
- * TEAM BOUNDARY NOTE:
- * - This interface represents the INTERVIEWER question generator (distinct from
- *   the FB4 Feedback Evaluator LLM, which evaluates completed transcripts after
- *   `session.ended`).
- * - Because a live Interviewer LLM is a separate dependency outside LS2/LS4,
- *   `DeterministicQuestionProvider` below provides a deterministic stub for
- *   local development and Sprint 1 verification.
+ * Because a live Interviewer LLM is a separate dependency, the
+ * `DeterministicQuestionProvider` below provides a deterministic stub for
+ * local development and Sprint 1 verification.
  */
 export interface InterviewQuestionProvider {
   getInitialQuestion(role: string): string;

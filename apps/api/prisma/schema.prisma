@@ -35,7 +35,7 @@ model Resume {
 }
 
 // ---------------------------------------------------------------------------
-// Slice A — Live Session (LS2 + LS4)
+// Slice A — Live Session
 // ---------------------------------------------------------------------------
 
 enum SessionStatus {
@@ -79,7 +79,7 @@ model Turn {
   @@map("turns")
 }
 
-// Postgres job queue (FB2). LS4 inserts a `session.ended` row in the same
+// Postgres job queue inserts a `session.ended` row in the same
 // transaction that ends the session; workers claim rows with
 // SELECT ... FOR UPDATE SKIP LOCKED (services/job-queue.service.ts).
 // sessionId is optional so jobs that are not about one session (the

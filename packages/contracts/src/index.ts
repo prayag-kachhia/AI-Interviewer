@@ -32,7 +32,7 @@ export const ROLES: RoleList = [
   },
 ];
 
-// Sessions and transcript turns (LS2, LS4). Dates travel as ISO strings.
+// Sessions and transcript turns. Dates travel as ISO strings.
 export const SessionStatus = z.enum(["LIVE", "ENDED"]);
 export type SessionStatus = z.infer<typeof SessionStatus>;
 
@@ -62,13 +62,13 @@ export const Session = z.object({
 });
 export type Session = z.infer<typeof Session>;
 
-// Short-lived voice provider token (POST /api/sessions/:id/voice-token, LS3).
+// Short-lived voice provider token (POST /api/sessions/:id/voice-token).
 export const VoiceToken = z.object({
   token: z.string().min(1),
 });
 export type VoiceToken = z.infer<typeof VoiceToken>;
 
-// Written feedback for one session (GET /api/sessions/:id/feedback, FB1/FB3/FB4).
+// Written feedback for one session (GET /api/sessions/:id/feedback).
 export const FeedbackStatus = z.enum(["pending", "ready", "failed"]);
 export type FeedbackStatus = z.infer<typeof FeedbackStatus>;
 
