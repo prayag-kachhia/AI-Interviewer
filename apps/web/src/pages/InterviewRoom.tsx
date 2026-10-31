@@ -369,7 +369,7 @@ export const InterviewRoom: React.FC = () => {
           <p style={{ marginBottom: '1.75rem' }}>
             This session may not exist or belongs to a different candidate account.
           </p>
-          <Link className="btn btn-primary" to="/interview/new">
+          <Link className="btn btn-primary" to="/new-interview">
             Start a New Interview
           </Link>
         </div>
@@ -512,7 +512,7 @@ export const InterviewRoom: React.FC = () => {
                 recorded in the database for the Feedback module to evaluate your transcript.
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <Link className="btn btn-primary" to="/interview/new">
+                <Link className="btn btn-primary" to="/new-interview">
                   Practice Another Role
                 </Link>
                 <Link className="btn btn-outline" to="/dashboard">
