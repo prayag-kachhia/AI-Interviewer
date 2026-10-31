@@ -10,6 +10,8 @@ import {
   SessionEndedError,
 } from '../services/session.service';
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
+import { buildBriefing } from '../services/briefing.service';
+import prisma from '../utils/db';
 import { NotFoundError } from '../utils/resource';
 import { RoleList, ROLES, VoiceToken } from '@interview/contracts';
 
@@ -147,7 +149,20 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
       throw new SessionEndedError();
     }
 
-    const token = await mintVoiceToken();
+    // Look up the candidate's latest resume summary if available (FR-08)
+    const resume = await prisma.resume.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      select: { parsedProfile: true },
+    });
+
+    const briefing = buildBriefing({
+      roleId: session.role,
+      focus: (session as any).focus,
+      resumeSummary: resume?.parsedProfile || undefined,
+    });
+
+    const token = await mintVoiceToken({ briefing });
     res.status(200).json({ success: true, data: VoiceToken.parse({ token }) });
   } catch (error) {
     if (error instanceof NotFoundError) {
