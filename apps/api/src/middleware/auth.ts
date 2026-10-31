@@ -1,3 +1,4 @@
+
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import prisma from '../utils/db';
@@ -55,9 +56,7 @@ export const authenticate = async (
       return;
     }
 
-    // Link the Supabase identity to the application's users table. This keeps
-    // resume ownership in the application DB without making the browser query
-    // that table directly.
+    // Link the Supabase identity to the application's users table.
     let localUser = await prisma.user.findUnique({
       where: { supabaseUserId: user.id },
     });
@@ -92,9 +91,6 @@ export const authenticate = async (
               user.user_metadata?.full_name ||
               user.user_metadata?.name ||
               'Candidate',
-            // Passwords belong to Supabase Auth and are never stored by the
-            // application.
-            passwordHash: 'supabase-auth',
           },
         });
       }

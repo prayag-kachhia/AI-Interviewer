@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'crypto';
 
@@ -21,7 +22,7 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
     feedback = await import('../services/feedback.service');
 
     const user = await prisma.user.create({
-      data: { name: 'Queue Test', email: `queue-${runId}@example.com`, passwordHash: 'supabase-auth' },
+      data: { name: 'Queue Test', email: `queue-${runId}@example.com` },
     });
     userId = user.id;
     const session = await prisma.session.create({
@@ -65,8 +66,11 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
       for (;;) {
         const job = await queue.claimNextJob(`worker-${name}`, type);
         if (!job) return;
+
         seen[name]!.push(job.id);
+
         await new Promise((r) => setTimeout(r, 20));
+
         await queue.completeJob(job.id);
       }
     };

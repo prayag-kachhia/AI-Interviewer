@@ -28,9 +28,6 @@ vi.mock('../utils/db', () => ({
       update: vi.fn(),
       delete: vi.fn(),
     },
-    resume: {
-      deleteMany: vi.fn(),
-    },
   },
 }));
 
@@ -102,7 +99,6 @@ describe('Supabase Authentication & Account Management', () => {
         supabaseUserId: 'supabase-1',
         email: 'test@test.com',
         name: 'Test User',
-        passwordHash: 'supabase-auth',
       },
     });
   });
@@ -138,33 +134,37 @@ describe('Supabase Authentication & Account Management', () => {
   });
 
   describe('DELETE /api/auth/account', () => {
-    it('deletes resumes and user data when authenticated with a Supabase token', async () => {
+    it('deletes a user with resumes and sessions, then deletes the Supabase user', async () => {
       __getUserMock.mockResolvedValueOnce({
         data: { user: { id: 'supabase-del', email: 'delete@example.com' } },
         error: null,
       });
+
       (prisma.user.findUnique as any).mockResolvedValueOnce({
         id: 'user-to-delete',
         supabaseUserId: 'supabase-del',
         name: 'To Delete',
         email: 'delete@example.com',
       });
-      (prisma.resume.deleteMany as any).mockResolvedValueOnce({ count: 2 });
-      (prisma.user.delete as any).mockResolvedValueOnce({ id: 'user-to-delete' });
+
+      (prisma.user.delete as any).mockResolvedValueOnce({
+        id: 'user-to-delete',
+      });
 
       const res = await request(app)
         .delete('/api/auth/account')
         .set('Authorization', 'Bearer valid-token');
 
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(prisma.resume.deleteMany).toHaveBeenCalledWith({
-        where: { userId: 'user-to-delete' },
-      });
+      expect(res.status).toBe(204);
+      expect(res.text).toBe('');
+
       expect(prisma.user.delete).toHaveBeenCalledWith({
         where: { id: 'user-to-delete' },
       });
+
       expect(__deleteUserMock).toHaveBeenCalledWith('supabase-del');
+
+      expect(prisma.user.delete).toHaveBeenCalledBefore(__deleteUserMock);
     });
   });
 });
