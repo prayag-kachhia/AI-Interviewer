@@ -10,6 +10,7 @@ dist
 dist-ssr
 *.tgz
 vite.config.*.timestamp-*
+**/src/generated
 
 # code coverage
 coverage

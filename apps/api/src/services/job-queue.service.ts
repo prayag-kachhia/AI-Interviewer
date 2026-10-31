@@ -1,4 +1,4 @@
-import type { Job, Prisma } from '@prisma/client';
+import type { Job, Prisma } from '../generated/prisma/client';
 import prisma from '../utils/db';
 
 // A job whose worker stopped responding is retried until it has been claimed

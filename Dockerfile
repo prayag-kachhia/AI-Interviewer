@@ -2,9 +2,9 @@
 # imports the workspace package packages/contracts, so the build needs the whole workspace.
 FROM oven/bun:1.4.2-slim
 
-# Prisma 5's query engine needs OpenSSL.
+# Outbound HTTPS (Supabase, Gemini) needs ca-certificates.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

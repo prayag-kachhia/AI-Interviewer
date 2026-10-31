@@ -1,4 +1,4 @@
-import type { Feedback, Job, Prisma } from '@prisma/client';
+import type { Feedback, Job, Prisma } from '../generated/prisma/client';
 import { Feedback as FeedbackContract, ROLES } from '@interview/contracts';
 import prisma from '../utils/db';
 import { evaluateTranscript, type EvaluatorOptions } from './evaluator.service';
