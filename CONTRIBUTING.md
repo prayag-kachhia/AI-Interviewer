@@ -64,10 +64,9 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 - **Tests encode the acceptance criteria.** Test names should read like the criteria. Every bug
   fix comes with a test that failed before the fix.
 - **No new dependencies without the lead's approval** in the PR.
-- **Proof is screenshots, not text.** Attach what the issue's "Proof required" section asks
-  for: the feature working in the browser, its failure or empty state, and the Network tab,
-  database or terminal as needed. A short screen recording is even better. Pasted output
-  doesn't count.
+- **Proof is light.** Say in the PR what you checked and that `bun run typecheck` and
+  `bun run test` pass. Add what the issue's "Proof required" section asks for; it won't ask
+  for screenshots or recordings.
 
 ### Automatic rejections
 
@@ -104,6 +103,6 @@ Allowed. The walkthrough is where understanding is checked, so be ready to expla
 tool wrote for you. Some habits that help:
 
 - Ask it to explain code before you accept it, and run the change yourself in small steps.
-- Don't trust a tool's claim that something works; run it and screenshot it yourself.
+- Don't trust a tool's claim that something works; run it yourself.
 - Don't let it touch files outside your task. Point it at this file so it knows the rules;
   whether or not it follows them, they still apply to you.

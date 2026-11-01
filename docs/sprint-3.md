@@ -20,7 +20,7 @@ smaller add-on.
 |---|---|
 | **Start** | Prayag merges the folder move (#66) first. Everyone sets up locally (§5). |
 | **Design** | Everyone posts a half-page design on their issue (§5, step 6). Prayag approves within a day. |
-| **Sprint 3** | Build your **main feature**. **Done means it works on the live site**, with a screen recording in the PR. |
+| **Sprint 3** | Build your **main feature**. **Done means it works on the live site.** |
 | **Sprint 4** | Build your **add-on**, and fix whatever Sprint 3 broke. |
 | **Feature freeze** | After this, bug fixes only. |
 | **Before the final evaluation** | Quality review of 20 sessions (Rahi runs it, everyone reviews), bug fixes, demo rehearsals. |
@@ -32,7 +32,7 @@ smaller add-on.
 2. **Your code merges as your own PR.** Nobody else rewrites or ports your work. Keep PRs under
    about 300 changed lines; split a bigger feature into two PRs.
 3. **Design before code.** Post the half-page design on your issue first (§5, step 6).
-4. **Done = it works on the live site, shown in a screen recording.** Passing tests alone is not done.
+4. **Done = it works on the live site.** Passing tests alone is not done.
 5. **Stay in your own files.** Section 8 lists them. If you must change someone else's file, agree
    it with them first. Section 4 lists the places where two people meet.
 6. The rules in [CONTRIBUTING.md](../CONTRIBUTING.md) still apply. In particular, never run
@@ -103,10 +103,10 @@ placeholder in the right-hand column.
 7. **Build it with your AI assistant** (§7). Commit in small steps with
    [Conventional Commits](https://www.conventionalcommits.org/), e.g. `feat(feedback): add per-role rubrics`.
 8. **Test it locally** (§6) using the checklist in your §8 section, then run `bun run typecheck` and `bun run test`.
-9. **Open a PR** using the template, with a screen recording attached. Prayag reviews it within 24 hours.
+9. **Open a PR** using the template. Prayag reviews it within 24 hours.
    Fix what he asks for yourself; nobody fixes it for you.
 10. **After it merges**, the site redeploys in about 3 minutes. Check your feature on
-    https://ai-interviewer-it314.web.app and add a recording from the live site to the PR.
+    https://ai-interviewer-it314.web.app and note in the PR that it works.
 
 ## 6. How to test locally
 

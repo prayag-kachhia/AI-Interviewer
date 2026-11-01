@@ -1,20 +1,13 @@
 <!--
 PR title: Conventional Commit scoped by module, e.g. feat(sessions): post transcript turns
-Proof is screenshots or a short screen recording, dragged into this box. Pasted text doesn't count.
 See CONTRIBUTING.md.
 -->
 
 Closes #<!-- issue number -->
 
-## Proof
+## What I checked
 
-<!-- Attach everything the issue's "Proof required" section asks for. -->
-
-**Working in the browser:**
-
-**Failure or empty state:**
-
-**Network tab / database / terminal (as the issue asks):**
+<!-- A line or two: what you ran or clicked, and anything the issue's "Proof required" section asks for. -->
 
 ## Checklist
 
