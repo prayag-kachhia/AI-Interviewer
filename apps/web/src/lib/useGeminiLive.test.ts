@@ -313,4 +313,208 @@ describe('useGeminiLive hook (Issue #72)', () => {
     expect(mockMediaStreamTrack.stop).toHaveBeenCalled();
     expect(ws.readyState).toBe(3);
   });
+
+  describe('session resumption and GoAway (Issue #91)', () => {
+    it('stores sessionResumptionUpdate handle in memory and in sessionStorage', async () => {
+      vi.mocked(api.getVoiceToken).mockResolvedValue('test-token-1');
+      sessionStorage.clear();
+
+      const { result } = renderHook(() => useGeminiLive({ sessionId: 'session-resume-1' }));
+
+      let p!: Promise<void>;
+      act(() => {
+        p = result.current.connect();
+      });
+
+      await vi.waitFor(() => {
+        expect(MockWebSocket.instances.length).toBe(1);
+      });
+
+      const ws = MockWebSocket.instances[0];
+      act(() => {
+        ws.simulateOpen();
+        ws.simulateMessage({ setupComplete: {} });
+      });
+      await act(async () => {
+        await p;
+      });
+
+      // Server sends sessionResumptionUpdate
+      act(() => {
+        ws.simulateMessage({
+          sessionResumptionUpdate: { newHandle: 'resumption-handle-xyz' },
+        });
+      });
+
+      expect(sessionStorage.getItem('gemini_resumption_session-resume-1')).toBe('resumption-handle-xyz');
+    });
+
+    it('on page reload with stored handle, sends sessionResumption handle in setup message', async () => {
+      vi.mocked(api.getVoiceToken).mockResolvedValue('test-token-reload');
+      sessionStorage.setItem('gemini_resumption_session-reload', 'saved-handle-456');
+
+      const { result } = renderHook(() => useGeminiLive({ sessionId: 'session-reload' }));
+
+      let p!: Promise<void>;
+      act(() => {
+        p = result.current.connect();
+      });
+
+      await vi.waitFor(() => {
+        expect(MockWebSocket.instances.length).toBe(1);
+      });
+
+      const ws = MockWebSocket.instances[0];
+      act(() => {
+        ws.simulateOpen();
+      });
+
+      // Verify setup message contains sessionResumption with the stored handle
+      expect(ws.sentMessages.length).toBe(1);
+      const sentSetup = JSON.parse(ws.sentMessages[0]);
+      expect(sentSetup.setup.sessionResumption).toEqual({ handle: 'saved-handle-456' });
+
+      act(() => {
+        ws.simulateMessage({ setupComplete: {} });
+      });
+      await act(async () => {
+        await p;
+      });
+
+      expect(result.current.state).toBe('connected');
+    });
+
+    it('on GoAway, requests fresh token and reconnects with resumption handle', async () => {
+      vi.mocked(api.getVoiceToken)
+        .mockResolvedValueOnce('token-first-call')
+        .mockResolvedValueOnce('token-second-call');
+      sessionStorage.clear();
+
+      const { result } = renderHook(() => useGeminiLive({ sessionId: 'session-goaway' }));
+
+      let p!: Promise<void>;
+      act(() => {
+        p = result.current.connect();
+      });
+
+      await vi.waitFor(() => {
+        expect(MockWebSocket.instances.length).toBe(1);
+      });
+
+      const ws1 = MockWebSocket.instances[0];
+      act(() => {
+        ws1.simulateOpen();
+        ws1.simulateMessage({ setupComplete: {} });
+        ws1.simulateMessage({
+          sessionResumptionUpdate: { newHandle: 'goaway-handle-789' },
+        });
+      });
+      await act(async () => {
+        await p;
+      });
+
+      expect(result.current.state).toBe('connected');
+
+      // Server sends GoAway notification
+      act(() => {
+        ws1.simulateMessage({ goAway: {} });
+      });
+
+      // Hook should automatically initiate reconnect with a fresh token
+      await vi.waitFor(() => {
+        expect(MockWebSocket.instances.length).toBe(2);
+      });
+
+      const ws2 = MockWebSocket.instances[1];
+      expect(ws2.url).toContain('access_token=token-second-call');
+
+      act(() => {
+        ws2.simulateOpen();
+      });
+
+      expect(ws2.sentMessages.length).toBe(1);
+      const setup2 = JSON.parse(ws2.sentMessages[0]);
+      expect(setup2.setup.sessionResumption).toEqual({ handle: 'goaway-handle-789' });
+
+      act(() => {
+        ws2.simulateMessage({ setupComplete: {} });
+      });
+
+      expect(result.current.state).toBe('connected');
+    });
+
+    it('caps reconnects at 3 in a row and transitions to failed state', async () => {
+      vi.mocked(api.getVoiceToken).mockResolvedValue('token-fail');
+      sessionStorage.setItem('gemini_resumption_session-cap', 'cap-handle');
+      const onError = vi.fn();
+
+      const { result } = renderHook(() =>
+        useGeminiLive({ sessionId: 'session-cap', onError })
+      );
+
+      act(() => {
+        void result.current.connect();
+      });
+
+      // Socket 1 fails
+      await vi.waitFor(() => expect(MockWebSocket.instances.length).toBe(1));
+      const ws1 = MockWebSocket.instances[0];
+      act(() => {
+        ws1.close();
+      });
+
+      // Socket 2 fails
+      await vi.waitFor(() => expect(MockWebSocket.instances.length).toBe(2));
+      const ws2 = MockWebSocket.instances[1];
+      act(() => {
+        ws2.close();
+      });
+
+      // Reconnect attempt 2 creates socket 3
+      await vi.waitFor(() => expect(MockWebSocket.instances.length).toBe(3));
+      const ws3 = MockWebSocket.instances[2];
+      act(() => {
+        ws3.close();
+      });
+
+      // Reconnect attempt 3 creates socket 4
+      await vi.waitFor(() => expect(MockWebSocket.instances.length).toBe(4));
+      const ws4 = MockWebSocket.instances[3];
+      act(() => {
+        ws4.close();
+      });
+
+      // Reconnect limit reached (3 attempts failed) -> state: failed
+      await vi.waitFor(() => {
+        expect(result.current.state).toBe('failed');
+      });
+      expect(result.current.errorMessage).toContain('Reconnection failed after 3 attempts');
+      expect(onError).toHaveBeenCalled();
+    });
+
+    it('disconnect clears the stored handle from sessionStorage', async () => {
+      vi.mocked(api.getVoiceToken).mockResolvedValue('token-clear');
+      sessionStorage.setItem('gemini_resumption_session-clear', 'handle-to-delete');
+
+      const { result } = renderHook(() => useGeminiLive({ sessionId: 'session-clear' }));
+
+      act(() => {
+        void result.current.connect();
+      });
+
+      await vi.waitFor(() => expect(MockWebSocket.instances.length).toBe(1));
+      const ws = MockWebSocket.instances[0];
+      act(() => {
+        ws.simulateOpen();
+        ws.simulateMessage({ setupComplete: {} });
+      });
+
+      act(() => {
+        result.current.disconnect();
+      });
+
+      expect(sessionStorage.getItem('gemini_resumption_session-clear')).toBeNull();
+      expect(result.current.state).toBe('closed');
+    });
+  });
 });
