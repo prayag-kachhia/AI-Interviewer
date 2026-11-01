@@ -76,6 +76,9 @@ export const FeedbackScore = z.object({
   category: z.string().min(1),
   score: z.number().int().min(1).max(5),
   comment: z.string(),
+  strengths: z.array(z.string()),
+  improvements: z.array(z.string()),
+  quote: z.string(),
 });
 export type FeedbackScore = z.infer<typeof FeedbackScore>;
 
@@ -84,5 +87,6 @@ export const Feedback = z.object({
   status: FeedbackStatus,
   summary: z.string().optional(),
   scores: z.array(FeedbackScore).optional(),
+  error: z.string().optional(),
 });
 export type Feedback = z.infer<typeof Feedback>;

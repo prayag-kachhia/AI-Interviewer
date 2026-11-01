@@ -66,7 +66,10 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
   const roleLabel = ROLES.find((r) => r.id === session.role)?.label ?? session.role;
 
   try {
-    const evaluation = await evaluateTranscript({ roleLabel, turns: session.turns }, options);
+    const evaluation = await evaluateTranscript(
+      { roleId: session.role, roleLabel, turns: session.turns },
+      options
+    );
     await saveFeedback({
       sessionId: session.id,
       status: 'ready',
