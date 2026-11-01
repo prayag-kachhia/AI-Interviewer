@@ -7,8 +7,9 @@ The current plan, with who owns what, is in `docs/sprint-3.md`.
 ## Layout
 
 - `apps/api`: Express 5 + Prisma 5 on Supabase Postgres, run with Bun.
-  - `src/routes/` (URLs) → `src/controllers/` (check the input, choose the HTTP status) →
-    `src/services/` (logic and database) → `prisma/schema.prisma` (tables).
+  - `src/routes/` (one file per resource: URLs, input checks, HTTP statuses) →
+    `src/services/` (logic and database) → `prisma/schema.prisma` (tables). `src/db.ts` is the
+    Prisma client and `src/errors.ts` holds `NotFoundError`.
   - `src/worker.ts`: the feedback job worker. It runs inside the API process.
   - `src/__tests__/`: Vitest + Supertest. Gemini is always mocked.
 - `apps/web`: React 19 + Vite + react-router.
@@ -20,7 +21,7 @@ The current plan, with who owns what, is in `docs/sprint-3.md`.
   here affects both apps.
 - `spike/`: the Gemini Live prototype. Reference only; not part of the apps.
 
-A typical request goes: screen → `lib/api.ts` → route → controller → service → Prisma model.
+A typical request goes: screen → `lib/api.ts` → route → service → Prisma model.
 
 ## Commands
 

@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Router } from 'express';
 import {
   createSession,
   getOwnedSession,
@@ -11,16 +11,21 @@ import {
 } from '../services/session.service';
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
 import { buildBriefing } from '../services/briefing.service';
-import prisma from '../utils/db';
-import { NotFoundError } from '../utils/resource';
+import prisma from '../db';
+import { NotFoundError } from '../errors';
+import { authenticate } from '../middleware/auth';
 import { RoleList, ROLES, VoiceToken } from '@interview/contracts';
 
-export const getRoles = async (_req: Request, res: Response): Promise<void> => {
+const router = Router();
+
+// All session routes require a signed-in candidate.
+
+router.get('/roles', authenticate, async (_req, res) => {
   res.status(200).json({ success: true, data: RoleList.parse(ROLES) });
-};
+});
 
 // POST /api/sessions
-export const postSession = async (req: Request, res: Response): Promise<void> => {
+router.post('/', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const { roleId } = req.body ?? {};
@@ -40,10 +45,10 @@ export const postSession = async (req: Request, res: Response): Promise<void> =>
     console.error('Create session error:', error);
     res.status(500).json({ success: false, message: 'Failed to create session' });
   }
-};
+});
 
 // GET /api/sessions/:id  (session + its turns, for loading/resuming the interview screen)
-export const getSessionById = async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -60,10 +65,10 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
     console.error('Get session error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch session' });
   }
-};
+});
 
 // GET /api/sessions/:id/turns
-export const getTurns = async (req: Request, res: Response): Promise<void> => {
+router.get('/:id/turns', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -78,10 +83,10 @@ export const getTurns = async (req: Request, res: Response): Promise<void> => {
     console.error('Get turns error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch turns' });
   }
-};
+});
 
 // POST /api/sessions/:id/turns
-export const postTurn = async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/turns', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -118,10 +123,10 @@ export const postTurn = async (req: Request, res: Response): Promise<void> => {
     console.error('Post turn error:', error);
     res.status(500).json({ success: false, message: 'Failed to store turn' });
   }
-};
+});
 
 // POST /api/sessions/:id/end
-export const postEndSession = async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/end', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -136,10 +141,10 @@ export const postEndSession = async (req: Request, res: Response): Promise<void>
     console.error('End session error:', error);
     res.status(500).json({ success: false, message: 'Failed to end session' });
   }
-};
+});
 
 // POST /api/sessions/:id/voice-token
-export const postVoiceToken = async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/voice-token', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -181,4 +186,6 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
     console.error('Voice token error:', error);
     res.status(500).json({ success: false, message: 'Failed to start the voice session' });
   }
-};
+});
+
+export default router;

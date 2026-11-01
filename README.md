@@ -45,7 +45,7 @@ After changing `apps/api/prisma/schema.prisma`, run `bun run --filter @interview
 ```
 packages/contracts   @interview/contracts — Zod schemas + inferred types (Role so far)
 apps/api             Express 5 + Prisma 5 on Supabase Postgres, run by Bun; tests with Vitest + Supertest
-  src/routes         /api/auth, /api/resume, /api/sessions → src/controllers → src/services
+  src/routes         one file per resource: /api/auth, /api/resume, /api/sessions → src/services
   src/middleware     auth.ts validates the Supabase access token and links it to a users row
   prisma/            schema.prisma and the committed migrations
 apps/web             React 19 + Vite + react-router
