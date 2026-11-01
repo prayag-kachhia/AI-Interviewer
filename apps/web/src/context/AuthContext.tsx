@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { deleteUserAccount, getMe } from '../lib/api';
 
@@ -20,6 +20,7 @@ export interface AuthContextType {
     email: string,
     password: string
   ) => Promise<{ success: boolean; message?: string; exists?: boolean }>;
+  signInWithGoogle: () => Promise<{ success: boolean; message?: string }>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<{ success: boolean; message?: string }>;
 }
@@ -29,6 +30,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   signIn: async () => ({ success: false }),
   signUp: async () => ({ success: false }),
+  signInWithGoogle: async () => ({ success: false }),
   signOut: async () => {},
   deleteAccount: async () => ({ success: false }),
 });
@@ -48,8 +50,82 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const mountedRef = useRef(true);
+  const syncedUserIdRef = useRef<string | null>(null);
+  const lastSyncedUserRef = useRef<AuthUser | null>(null);
+  const inFlightSyncRef = useRef<string | null>(null);
+  const inFlightPromiseRef = useRef<Promise<AuthUser> | null>(null);
+
+  const resetSyncState = () => {
+    syncedUserIdRef.current = null;
+    lastSyncedUserRef.current = null;
+    inFlightSyncRef.current = null;
+    inFlightPromiseRef.current = null;
+  };
+
+  const syncUserProfile = async (
+    sessionUser: any,
+    fallbackUser: AuthUser
+  ): Promise<AuthUser> => {
+    const userId = sessionUser.id;
+
+    if (syncedUserIdRef.current === userId && lastSyncedUserRef.current) {
+      return lastSyncedUserRef.current;
+    }
+
+    if (inFlightSyncRef.current === userId && inFlightPromiseRef.current) {
+      return inFlightPromiseRef.current;
+    }
+
+    inFlightSyncRef.current = userId;
+
+    const syncPromise = (async (): Promise<AuthUser> => {
+      try {
+        const profile = await getMe();
+        if (!mountedRef.current || inFlightSyncRef.current !== userId) return fallbackUser;
+
+        if (profile.success && profile.data) {
+          syncedUserIdRef.current = userId;
+          const updatedUser: AuthUser = {
+            id: userId,
+            email: profile.data.email || sessionUser.email || fallbackUser.email,
+            name:
+              profile.data.name ||
+              sessionUser.user_metadata?.full_name ||
+              sessionUser.user_metadata?.name ||
+              fallbackUser.name,
+          };
+          lastSyncedUserRef.current = updatedUser;
+          if (mountedRef.current && inFlightSyncRef.current === userId) {
+            setUser(updatedUser);
+          }
+          return updatedUser;
+        } else {
+          if (syncedUserIdRef.current === userId) {
+            syncedUserIdRef.current = null;
+          }
+        }
+      } catch (profileError) {
+        console.warn('Application profile sync failed:', profileError);
+        if (syncedUserIdRef.current === userId) {
+          syncedUserIdRef.current = null;
+        }
+      } finally {
+        if (inFlightSyncRef.current === userId) {
+          inFlightSyncRef.current = null;
+          inFlightPromiseRef.current = null;
+        }
+      }
+      return fallbackUser;
+    })();
+
+    inFlightPromiseRef.current = syncPromise;
+    return syncPromise;
+  };
+
   useEffect(() => {
-    let mounted = true;
+    let isCurrent = true;
+    mountedRef.current = true;
 
     const initialize = async () => {
       try {
@@ -61,22 +137,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (!mounted) return;
+        if (!isCurrent) return;
 
         if (session?.user) {
-          setUser(mapSupabaseUser(session.user));
+          const authUser = mapSupabaseUser(session.user);
+          if (isCurrent) {
+            setUser(authUser);
+          }
+          await syncUserProfile(session.user, authUser);
         } else {
-          setUser(null);
+          resetSyncState();
+          if (isCurrent) {
+            setUser(null);
+          }
           localStorage.removeItem('selectedRole');
         }
       } catch (error) {
         console.error('Failed to initialize Supabase session:', error);
-        if (mounted) {
+        resetSyncState();
+        if (isCurrent) {
           setUser(null);
           localStorage.removeItem('selectedRole');
         }
       } finally {
-        if (mounted) setLoading(false);
+        if (isCurrent) {
+          setLoading(false);
+        }
       }
     };
 
@@ -85,20 +171,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isCurrent) return;
+
       if (session?.user) {
-        setUser(mapSupabaseUser(session.user));
+        if (syncedUserIdRef.current && syncedUserIdRef.current !== session.user.id) {
+          resetSyncState();
+        }
+
+        const authUser = mapSupabaseUser(session.user);
+        if (isCurrent) {
+          setUser(authUser);
+        }
+
+        if (event === 'SIGNED_IN') {
+          void syncUserProfile(session.user, authUser);
+        }
       } else {
-        setUser(null);
+        resetSyncState();
+        if (isCurrent) {
+          setUser(null);
+        }
         localStorage.removeItem('selectedRole');
       }
 
       if (event === 'SIGNED_OUT') {
+        resetSyncState();
         localStorage.removeItem('selectedRole');
       }
     });
 
     return () => {
-      mounted = false;
+      isCurrent = false;
+      mountedRef.current = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -134,26 +238,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       let applicationUser = mapSupabaseUser(data.user);
-
-      try {
-        const profile = await getMe();
-        if (profile.success && profile.data) {
-          applicationUser = {
-            id: data.user.id,
-            email: profile.data.email || data.user.email || '',
-            name:
-              profile.data.name ||
-              data.user.user_metadata?.full_name ||
-              'Candidate',
-          };
-        }
-      } catch (profileError) {
-        // Authentication itself succeeded. The backend profile sync can be
-        // retried by the next authenticated API request.
-        console.warn('Application profile sync failed:', profileError);
+      if (mountedRef.current) {
+        setUser(applicationUser);
       }
 
-      setUser(applicationUser);
+      applicationUser = await syncUserProfile(data.user, applicationUser);
+      if (mountedRef.current) {
+        setUser(applicationUser);
+      }
       return { success: true };
     } catch (err: any) {
       return {
@@ -232,17 +324,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       // Session exists, so create/link the application user row through the
       // authenticated backend endpoint before allowing access to the app.
       let applicationUser = mapSupabaseUser(data.user);
-      try {
-        const profile = await getMe();
-        if (profile.success && profile.data) {
-          applicationUser = {
-            id: data.user.id,
-            email: profile.data.email || normalizedEmail,
-            name: profile.data.name || name.trim() || 'Candidate',
-          };
-        }
-      } catch (profileError) {
+      if (name.trim()) {
+        applicationUser.name = name.trim();
+      }
+
+      applicationUser = await syncUserProfile(data.user, applicationUser);
+      if (!syncedUserIdRef.current) {
         await supabase.auth.signOut();
+        resetSyncState();
         return {
           success: false,
           message:
@@ -250,7 +339,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         };
       }
 
-      setUser(applicationUser);
+      if (mountedRef.current) {
+        setUser(applicationUser);
+      }
       return { success: true };
     } catch (err: any) {
       return {
@@ -260,23 +351,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  /**
+   * Initiate Google OAuth sign-in flow via Supabase.
+   * Redirects user to Google OAuth consent screen, then back to /dashboard.
+   */
+  const signInWithGoogle = async () => {
+    try {
+      if (!isSupabaseConfigured) {
+        return {
+          success: false,
+          message:
+            'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in apps/web/.env.local.',
+        };
+      }
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
+
+      if (error) {
+        return { success: false, message: error.message };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'Google sign-in failed',
+      };
+    }
+  };
+
   const signOut = async () => {
+    resetSyncState();
     try {
       await supabase.auth.signOut();
     } catch (err) {
       console.error('Sign out failed:', err);
     } finally {
       localStorage.removeItem('selectedRole');
-      setUser(null);
+      if (mountedRef.current) {
+        setUser(null);
+      }
     }
   };
 
   const deleteAccount = async () => {
     try {
       const res = await deleteUserAccount();
+      resetSyncState();
       await supabase.auth.signOut();
       localStorage.removeItem('selectedRole');
-      setUser(null);
+      if (mountedRef.current) {
+        setUser(null);
+      }
 
       return {
         success: true,
@@ -298,6 +429,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         loading,
         signIn,
         signUp,
+        signInWithGoogle,
         signOut,
         deleteAccount,
       }}
