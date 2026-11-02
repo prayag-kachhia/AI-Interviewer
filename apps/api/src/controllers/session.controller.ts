@@ -9,6 +9,7 @@ import {
   InvalidTimestampError,
   SessionEndedError,
 } from '../services/session.service';
+import { summarizeProfile } from '../services/resume-summary';
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
 import { buildBriefing } from '../services/briefing.service';
 import prisma from '../utils/db';
@@ -149,17 +150,44 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
       throw new SessionEndedError();
     }
 
-    // Look up the candidate's latest resume summary if available (FR-08)
-    const resume = await prisma.resume.findFirst({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      select: { parsedProfile: true },
-    });
+    // Look up the candidate's resume associated with this session (FR-08, FR-09)
+    let resumeParsedProfile: string | null = null;
+
+    if (session.resumeId && prisma.resume?.findUnique) {
+      const resume = await prisma.resume.findUnique({
+        where: { id: session.resumeId },
+        select: { parsedProfile: true },
+      });
+      resumeParsedProfile = resume?.parsedProfile ?? null;
+    }
+
+    // Fallback if session has no direct resumeId or not found (e.g. legacy sessions or test mocks)
+    if (!resumeParsedProfile && prisma.resume?.findFirst) {
+      const fallbackResume = await prisma.resume.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        select: { parsedProfile: true },
+      });
+      resumeParsedProfile = fallbackResume?.parsedProfile ?? null;
+    }
+
+    let resumeSummary: string | undefined;
+
+    if (resumeParsedProfile) {
+      try {
+        const profile = JSON.parse(resumeParsedProfile);
+        const summary = summarizeProfile(profile);
+        resumeSummary = summary.trim() ? summary : undefined;
+      } catch {
+        // Fallback for raw text profiles (e.g. in test fixtures or legacy records)
+        resumeSummary = resumeParsedProfile.trim() || undefined;
+      }
+    }
 
     const briefing = buildBriefing({
       roleId: session.role,
       focus: (session as any).focus,
-      resumeSummary: resume?.parsedProfile || undefined,
+      resumeSummary,
     });
 
     const token = await mintVoiceToken({ briefing });
