@@ -13,7 +13,7 @@
     "db:generate": "prisma generate",
     "postinstall": "prisma generate",
     "worker": "bun src/worker.ts",
-    "bench": "bun scripts/evaluate.ts"
+    "bench": "bun scripts/bench.ts"
   },
   "keywords": [],
   "author": "",
