@@ -55,6 +55,20 @@ describe('FB4 — evaluator', () => {
     expect(result.scores.map((s) => s.category).sort()).toEqual(RUBRIC.map((r) => r.category).sort());
   });
 
+  it('returns usageMetadata when provided by the generator', async () => {
+    const result = await evaluateTranscript(SAMPLE, {
+      generate: async () => ({
+        text: VALID,
+        usageMetadata: { promptTokenCount: 150, candidatesTokenCount: 80, totalTokenCount: 230 },
+      }),
+    });
+    expect(result.usageMetadata).toEqual({
+      promptTokenCount: 150,
+      candidatesTokenCount: 80,
+      totalTokenCount: 230,
+    });
+  });
+
   it('puts the role, the rubric and both speakers into the prompt', () => {
     const prompt = buildEvaluationPrompt(SAMPLE);
     expect(prompt).toContain('Software Engineer');

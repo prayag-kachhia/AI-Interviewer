@@ -37,15 +37,28 @@ export interface EvaluationInput {
   turns: TranscriptTurn[];
 }
 
+export interface EvaluationUsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+}
+
 const Evaluation = z.object({
   summary: z.string().min(1),
   scores: z.array(FeedbackScore),
 });
-export type Evaluation = z.infer<typeof Evaluation>;
+export type Evaluation = z.infer<typeof Evaluation> & {
+  usageMetadata?: EvaluationUsageMetadata;
+};
+
+export interface GenerateResult {
+  text: string;
+  usageMetadata?: EvaluationUsageMetadata;
+}
 
 export interface EvaluatorOptions {
   // Replaces the Gemini call; tests use it so no test reaches the real API.
-  generate?: (prompt: string) => Promise<string>;
+  generate?: (prompt: string) => Promise<string | GenerateResult>;
   timeoutMs?: number;
 }
 
@@ -69,7 +82,7 @@ Transcript:
 ${transcript}`;
 }
 
-async function generateWithGemini(prompt: string, timeoutMs: number): Promise<string> {
+async function generateWithGemini(prompt: string, timeoutMs: number): Promise<GenerateResult> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured');
@@ -85,7 +98,16 @@ async function generateWithGemini(prompt: string, timeoutMs: number): Promise<st
       abortSignal: AbortSignal.timeout(timeoutMs),
     },
   });
-  return response.text ?? '';
+  return {
+    text: response.text ?? '',
+    usageMetadata: response.usageMetadata
+      ? {
+          promptTokenCount: response.usageMetadata.promptTokenCount,
+          candidatesTokenCount: response.usageMetadata.candidatesTokenCount,
+          totalTokenCount: response.usageMetadata.totalTokenCount,
+        }
+      : undefined,
+  };
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -107,11 +129,13 @@ export async function evaluateTranscript(
   const timeoutMs = options.timeoutMs ?? EVALUATION_TIMEOUT_MS;
   const prompt = buildEvaluationPrompt(input);
   const generate = options.generate ?? ((p: string) => generateWithGemini(p, timeoutMs));
-  const raw = await withTimeout(generate(prompt), timeoutMs);
+  const rawResult = await withTimeout(generate(prompt), timeoutMs);
+  const text = typeof rawResult === 'string' ? rawResult : rawResult.text;
+  const usageMetadata = typeof rawResult === 'string' ? undefined : rawResult.usageMetadata;
 
   let json: unknown;
   try {
-    json = JSON.parse(raw);
+    json = JSON.parse(text);
   } catch {
     throw new Error('The evaluator did not return valid JSON');
   }
@@ -122,5 +146,8 @@ export async function evaluateTranscript(
   if (JSON.stringify(expected) !== JSON.stringify(received)) {
     throw new Error(`The evaluator scored [${received.join(', ')}] instead of the rubric categories`);
   }
-  return evaluation;
+  return {
+    ...evaluation,
+    ...(usageMetadata ? { usageMetadata } : {}),
+  };
 }
