@@ -8,6 +8,7 @@ import {
   postTurn,
   postEndSession,
   postVoiceToken,
+  deleteSessionById,
 } from '../controllers/session.controller';
 
 const router = Router();
@@ -16,6 +17,7 @@ const router = Router();
 router.get('/roles', authenticate, getRoles);
 router.post('/', authenticate, postSession);
 router.get('/:id', authenticate, getSessionById);
+router.delete('/:id', authenticate, deleteSessionById);
 router.get('/:id/turns', authenticate, getTurns);
 router.post('/:id/turns', authenticate, postTurn);
 router.post('/:id/end', authenticate, postEndSession);

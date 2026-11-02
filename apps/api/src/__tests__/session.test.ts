@@ -20,6 +20,7 @@ vi.mock('../utils/db', () => ({
       create: vi.fn(),
       findFirst: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
     },
     resume: {
       findFirst: vi.fn(),
@@ -457,6 +458,73 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
 
       expect(res.status).toBe(404);
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DELETE /api/sessions/:id (FR-28)', () => {
+    // TEST 1: Owner deletes own session
+    it('TEST 1: owner deletes own session successfully', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+        role: 'software-engineer',
+        status: 'ENDED',
+        startedAt: new Date(Date.now() - 60_000),
+        endedAt: new Date(),
+      });
+      (prisma.session.delete as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+      });
+
+      const res = await request(app)
+        .delete('/api/sessions/sess-1')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.message).toContain('deleted');
+      expect(prisma.session.findFirst).toHaveBeenCalledWith({
+        where: { id: 'sess-1', userId: AUTH_USER.id },
+      });
+      expect(prisma.session.delete).toHaveBeenCalledWith({
+        where: { id: 'sess-1' },
+      });
+    });
+
+    // TEST 2: Stranger attempts to delete another user's session
+    it('TEST 2: returns 404 when another user attempts to delete a session', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .delete('/api/sessions/sess-stranger')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe('Resource not found');
+      expect(prisma.session.delete).not.toHaveBeenCalled();
+    });
+
+    // TEST 3: Non-existent session
+    it('TEST 3: returns 404 when deleting a non-existent session', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .delete('/api/sessions/sess-nonexistent')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
+      expect(prisma.session.delete).not.toHaveBeenCalled();
+    });
+
+    // Unauthorized request
+    it('rejects unauthenticated DELETE requests with HTTP 401', async () => {
+      const res = await request(app).delete('/api/sessions/sess-1');
+
+      expect(res.status).toBe(401);
+      expect(prisma.session.delete).not.toHaveBeenCalled();
     });
   });
 });

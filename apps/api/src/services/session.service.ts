@@ -137,3 +137,16 @@ export async function endSession(sessionId: string, userId: string) {
 
   return updatedSession;
 }
+
+/**
+ * Permanently delete an interview session and its cascade data.
+ * Reuses getOwnedSession to verify ownership: non-existent sessions and
+ * sessions owned by another user resolve to NotFoundError (404).
+ */
+export async function deleteSession(sessionId: string, userId: string) {
+  await getOwnedSession(sessionId, userId);
+
+  return prisma.session.delete({
+    where: { id: sessionId },
+  });
+}
