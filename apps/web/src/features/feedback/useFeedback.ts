@@ -1,6 +1,7 @@
 // useFeedback.ts
 import { useEffect, useState } from "react";
-import type { Feedback } from "@interview/contracts";
+import type { Feedback, Turn } from "@interview/contracts";
+import { getTurns } from "../../lib/api";
 import { fetchFeedback } from "./feedbackApi";
 
 const POLL_INTERVAL_MS = 3000;
@@ -33,3 +34,37 @@ export function useFeedback(sessionId: string) {
 
   return feedback;
 }
+
+export function useTurns(sessionId: string): Turn[] {
+  const [turns, setTurns] = useState<Turn[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTurns() {
+      try {
+        const response = await getTurns(sessionId);
+        if (cancelled) return;
+        const data = response?.data ?? [];
+        const sorted = [...data].sort((a, b) => a.turnIndex - b.turnIndex);
+        setTurns(sorted);
+      } catch {
+        if (!cancelled) {
+          setTurns([]);
+        }
+      }
+    }
+
+    if (sessionId) {
+      loadTurns();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  return turns;
+}
+
+export const useTranscript = useTurns;
