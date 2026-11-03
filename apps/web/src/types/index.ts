@@ -44,8 +44,8 @@ export interface ResumeResponse {
 // Slice A — Live Session
 // ---------------------------------------------------------------------------
 
-export type { Role, SessionStatus, TurnSpeaker } from '@interview/contracts';
-import type { Role, Session, Turn } from '@interview/contracts';
+export type { Role, SessionStatus, TurnSpeaker, FeedbackStatus } from '@interview/contracts';
+import type { Role, Session, Turn, FeedbackStatus } from '@interview/contracts';
 
 export type InterviewVoiceState =
   | 'IDLE'
@@ -58,6 +58,19 @@ export type InterviewVoiceState =
 export type TurnData = Turn;
 
 export type SessionData = Session;
+
+export type SessionListItem = Omit<SessionData, 'role'> & {
+  role?: string | { id: string; name: string } | null;
+  roleId?: string;
+  feedbackStatus?: FeedbackStatus;
+  endedEarly?: boolean;
+};
+
+export interface SessionsListResponse {
+  success: boolean;
+  message?: string;
+  data?: SessionListItem[];
+}
 
 export interface RolesResponse {
   success: boolean;

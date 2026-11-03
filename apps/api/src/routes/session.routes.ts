@@ -3,6 +3,7 @@ import { authenticate } from '../middleware/auth';
 import {
   getRoles,
   postSession,
+  getSessions,
   getSessionById,
   getTurns,
   postTurn,
@@ -15,6 +16,7 @@ const router = Router();
 // All session routes require a signed-in candidate.
 router.get('/roles', authenticate, getRoles);
 router.post('/', authenticate, postSession);
+router.get('/', authenticate, getSessions);
 router.get('/:id', authenticate, getSessionById);
 router.get('/:id/turns', authenticate, getTurns);
 router.post('/:id/turns', authenticate, postTurn);
