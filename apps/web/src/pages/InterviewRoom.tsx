@@ -104,8 +104,7 @@ export const InterviewRoom: React.FC = () => {
       setSavingTurn(true);
       setError('');
       try {
-        const timestampSec = computeElapsedSeconds(startedAtRef.current);
-        const res = await postTurn(sessionId, speaker, trimmed, timestampSec);
+        const res = await postTurn(sessionId, speaker, trimmed);
         if (res.success && res.data) {
           const savedTurn = res.data;
           setTurns((prev) => {
