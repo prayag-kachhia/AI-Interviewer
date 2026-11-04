@@ -228,7 +228,7 @@ address). Add-on: #52 and #53.
 
 **Start here:**
 1. `packages/contracts/src/index.ts` → `ROLES`. Add a `focuses` list to each role.
-2. `apps/web/src/features/sessions/NewInterview.tsx`: the role picker.
+2. `apps/web/src/screens/new-interview/NewInterview.tsx`: the role picker.
 3. `apps/web/src/lib/api.ts` → `createSession()`.
 4. `apps/api/src/routes/session.routes.ts` → `POST /`.
 5. `apps/api/src/controllers/session.controller.ts` → `postSession()`: reject an unknown focus with 400.
@@ -335,7 +335,7 @@ Add-on (FR-16): look up the AI questions from the candidate's last 3 sessions an
 `pastQuestions`, so the interviewer doesn't repeat them.
 
 **Start here:**
-1. `apps/web/src/features/profile/Dashboard.tsx`: the resume upload.
+1. `apps/web/src/screens/dashboard/Dashboard.tsx`: the resume upload.
 2. `apps/web/src/lib/api.ts` → `uploadResume()`.
 3. `apps/api/src/routes/resume.routes.ts` → `POST /analyze`.
 4. `apps/api/src/controllers/resume.controller.ts` → `analyzeResume()`.
@@ -369,7 +369,7 @@ Add-on (NFR-16): record the tokens each evaluation uses (`usageMetadata` on the 
 and the interview's length, and work out the cost per interview in ₹ so Prayag can set the limit.
 
 **Start here:**
-1. `apps/web/src/features/feedback/ResultsScreen.tsx`, `useFeedback.ts`, `feedbackApi.ts`.
+1. `apps/web/src/screens/results/ResultsScreen.tsx`, `useFeedback.ts`.
 2. `apps/api/src/routes/feedback.routes.ts` → `GET /:id/feedback`.
 3. `apps/api/src/controllers/feedback.controller.ts`.
 4. `apps/api/src/services/feedback.service.ts`, then `evaluator.service.ts`: the only file that calls Gemini for feedback.
@@ -410,7 +410,7 @@ reviewers per session before the final evaluation.
 1. `apps/api/src/services/evaluator.service.ts` → `RUBRIC`, `buildEvaluationPrompt()`.
 2. `apps/api/src/routes/feedback.routes.ts` and `controllers/feedback.controller.ts`: add the retry route.
 3. `apps/api/src/services/job-queue.service.ts`: how jobs are queued and claimed.
-4. `apps/web/src/features/feedback/ResultsScreen.tsx`: the failed state.
+4. `apps/web/src/screens/results/ResultsScreen.tsx`: the failed state.
 
 **Why it takes this long (2.5 + 1):**
 - Writing 3 rubrics: 1. Thinking work: what makes a strong data-analyst answer versus a strong backend answer?
@@ -470,7 +470,7 @@ Add-on:
 - **NFR-13:** watch 5 classmates who have never used the app start an interview, time them (target: under 5 minutes), and write up what confused them.
 
 **Start here:**
-1. `apps/web/src/features/profile/Profile.tsx`: account deletion.
+1. `apps/web/src/screens/profile/Profile.tsx`: account deletion.
 2. `apps/api/src/routes/auth.routes.ts` → `DELETE /account`, `controllers/auth.controller.ts` → `deleteAccount()`.
 3. `apps/api/src/routes/session.routes.ts`: add `DELETE /:id`.
 4. `apps/api/src/services/session.service.ts` → `getOwnedSession()`. Reuse it for the owner check.
@@ -505,7 +505,7 @@ Add-on (FR-30): a proper **typed interview mode**, a "Type my answers instead" s
 interview room that runs the whole interview by typing.
 
 **Start here:**
-1. `apps/web/src/features/sessions/InterviewRoom.tsx`: the line ranges for each piece are in #69.
+1. `apps/web/src/screens/interview-room/InterviewRoom.tsx`: the line ranges for each piece are in #69.
 2. `apps/web/src/lib/voiceAdapter.ts` → `BrowserWebSpeechVoiceAdapter`: `onresult`, `speakAiQuestion()`, `finishCandidateTurn()`.
 3. `apps/api/src/services/session.service.ts` → `addTurn()`: for B3.
 
@@ -538,7 +538,7 @@ Add-on (#51): upgrade Prisma 5 → 7 (pin `^7`, not `latest`), **after** everyon
 merged. All tests and a full interview must pass afterwards.
 
 **Start here:**
-1. `apps/web/src/features/identity/Login.tsx`.
+1. `apps/web/src/screens/login/Login.tsx`.
 2. `apps/web/src/context/AuthContext.tsx` → `signIn`, `signUp`, and the session setup.
 3. `apps/web/src/lib/supabase.ts`.
 4. Supabase dashboard: Authentication → Providers, URL Configuration, SMTP settings. Ask Prayag for access.

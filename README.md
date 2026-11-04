@@ -50,7 +50,7 @@ apps/api             Express 5 + Prisma 5 on Supabase Postgres, run by Bun; test
   prisma/            schema.prisma and the committed migrations
 apps/web             React 19 + Vite + react-router
   src/lib            supabase.ts (sign-in only), api.ts (every API call; attaches the token)
-  src/pages, src/features/{sessions,feedback,identity,profile}
+  src/screens        one folder per screen: the component, its hook and its tests
 ```
 
 ## Rules
@@ -62,9 +62,6 @@ Current sprint, tasks and deadlines: [docs/sprint-2.md](docs/sprint-2.md) (Sprin
 - **Sign-in is Supabase only.** The browser signs in with Supabase and sends the access token as
   `Authorization: Bearer <token>`; `apps/api/src/middleware/auth.ts` validates it. There is no other
   login or token.
-- **Web: import a feature only through its `index.ts`** (`apps/web/src/features/<name>/index.ts`).
-- **Dependency direction:** `identity ← profile ← sessions ← feedback`. `sessions` never imports
-  `feedback`; ending a session inserts a `session.ended` job instead.
 - **One definition per shape.** New request/response shapes shared by API and web go in
   `packages/contracts`. Don't add a second copy of a shape that already exists in
   `apps/api/src/types` or `apps/web/src/types`. Change a contract in the same PR as the code that needs it.

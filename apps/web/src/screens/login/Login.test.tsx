@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { Login } from "./Login";
-import { AuthProvider, useAuth } from "../context/AuthContext";
-import { ThemeProvider } from "../context/ThemeContext";
+import { AuthProvider, useAuth } from "../../context/AuthContext";
+import { ThemeProvider } from "../../context/ThemeContext";
 
 // Mock Supabase client
 const mockGetSession = vi.fn().mockResolvedValue({ data: { session: null }, error: null });
@@ -14,7 +14,7 @@ const mockOnAuthStateChange = vi.fn((_callback?: any) => {
 const mockSignOut = vi.fn().mockResolvedValue({ error: null });
 const mockSignInWithOAuth = vi.fn().mockResolvedValue({ error: null });
 
-vi.mock("../lib/supabase", () => ({
+vi.mock("../../lib/supabase", () => ({
   isSupabaseConfigured: true,
   supabase: {
     auth: {
@@ -28,7 +28,7 @@ vi.mock("../lib/supabase", () => ({
   },
 }));
 
-vi.mock("../lib/api", () => ({
+vi.mock("../../lib/api", () => ({
   getMe: vi.fn().mockResolvedValue({ success: true, data: { id: "u1", email: "test@example.com", name: "Test User" } }),
   deleteUserAccount: vi.fn().mockResolvedValue({ success: true }),
 }));
@@ -102,7 +102,7 @@ describe("Login Screen - Google Sign In Button Visibility", () => {
       data: { session: { user: mockUser, access_token: "mock-token" } },
       error: null,
     });
-    vi.mocked(await import("../lib/api")).getMe.mockResolvedValueOnce({
+    vi.mocked(await import("../../lib/api")).getMe.mockResolvedValueOnce({
       success: true,
       data: { id: "google-user-123", email: "googleuser@example.com", name: "Google User" },
     });
@@ -211,7 +211,7 @@ describe("Login Screen - Google Sign In Button Visibility", () => {
       data: { session: { user: mockEmailUser, access_token: "mock-pw-token" } },
       error: null,
     });
-    vi.mocked(await import("../lib/api")).getMe.mockResolvedValueOnce({
+    vi.mocked(await import("../../lib/api")).getMe.mockResolvedValueOnce({
       success: true,
       data: { id: "email-user-456", email: "passworduser@example.com", name: "Email User" },
     });

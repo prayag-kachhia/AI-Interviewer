@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { getLatestResume } from '../lib/api';
-import { useAuth } from '../context/AuthContext';
-import type { ResumeData } from '../types';
+import { getLatestResume } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
+import type { ResumeData } from '../../types';
 import { 
   Mail, Phone, Briefcase, GraduationCap, 
   FolderGit2, Code2, Award, Languages, Loader2, ArrowLeft,

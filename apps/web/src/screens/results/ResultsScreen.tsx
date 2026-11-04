@@ -1,12 +1,18 @@
-// ResultsScreen.tsx
+import { Navigate, useParams } from "react-router";
 import { useFeedback } from "./useFeedback";
 
-export function ResultsScreen({ sessionId }: { sessionId: string }) {
+// Route: /interview/:sessionId/feedback — where ending an interview lands.
+export function ResultsScreen() {
+  const { sessionId } = useParams();
   const feedback = useFeedback(sessionId);
+
+  if (!sessionId) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   if (!feedback || feedback.status === "pending") {
     return (
-      <div role="status">
+      <div className="container page-wrapper" role="status">
         <p>Preparing your feedback… this can take a moment.</p>
       </div>
     );
@@ -14,7 +20,7 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
 
   if (feedback.status === "failed") {
     return (
-      <div role="alert">
+      <div className="container page-wrapper" role="alert">
         <p>We couldn't generate feedback for this session.</p>
       </div>
     );
@@ -22,7 +28,7 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
 
   // status === "ready"
   return (
-    <div>
+    <div className="container page-wrapper">
       <h2>Your Feedback</h2>
       <p>{feedback.summary}</p>
       <ul>
