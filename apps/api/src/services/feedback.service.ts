@@ -1,6 +1,6 @@
 import type { Feedback, Job, Prisma } from '../generated/prisma/client';
 import { Feedback as FeedbackContract, ROLES } from '@interview/contracts';
-import prisma from '../utils/db';
+import prisma from '../db';
 import { evaluateTranscript, type EvaluatorOptions } from './evaluator.service';
 import { getOwnedSession } from './session.service';
 

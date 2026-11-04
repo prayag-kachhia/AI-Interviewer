@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
-import prisma from '../utils/db';
+import prisma from '../db';
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
 
 vi.mock('@supabase/supabase-js', () => {
@@ -12,7 +12,7 @@ vi.mock('@supabase/supabase-js', () => {
   };
 });
 
-vi.mock('../utils/db', () => ({
+vi.mock('../db', () => ({
   default: {
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn() },

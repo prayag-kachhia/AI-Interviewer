@@ -1,5 +1,5 @@
-import prisma from '../utils/db';
-import { NotFoundError } from '../utils/resource';
+import prisma from '../db';
+import { NotFoundError } from '../errors';
 import { ROLES } from '@interview/contracts';
 
 // The role list lives in @interview/contracts so the API and the web app share it.

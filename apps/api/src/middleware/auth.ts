@@ -1,7 +1,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import prisma from '../utils/db';
+import prisma from '../db';
 
 const supabase = createClient(
   process.env.SUPABASE_URL || '',

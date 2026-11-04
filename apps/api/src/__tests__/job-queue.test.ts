@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
 describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_DATABASE_URL)', () => {
-  let prisma: typeof import('../utils/db').default;
+  let prisma: typeof import('../db').default;
   let queue: typeof import('../services/job-queue.service');
   let feedback: typeof import('../services/feedback.service');
   const runId = randomUUID().slice(0, 8);
@@ -17,7 +17,7 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
 
   beforeAll(async () => {
     process.env.DATABASE_URL = TEST_DATABASE_URL;
-    prisma = (await import('../utils/db')).default;
+    prisma = (await import('../db')).default;
     queue = await import('../services/job-queue.service');
     feedback = await import('../services/feedback.service');
 

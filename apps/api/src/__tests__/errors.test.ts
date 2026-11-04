@@ -6,7 +6,7 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } })),
 }));
 
-vi.mock('../utils/db', () => ({ default: {} }));
+vi.mock('../db', () => ({ default: {} }));
 
 describe('API error responses', () => {
   it('given an unknown /api path, then a JSON 404', async () => {

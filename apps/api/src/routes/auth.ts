@@ -1,17 +1,24 @@
-import { Request, Response } from 'express';
+import { Router } from 'express';
 import { createClient } from '@supabase/supabase-js';
-import prisma from '../utils/db';
+import prisma from '../db';
+import { authenticate } from '../middleware/auth';
 
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
   process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 );
 
+const router = Router();
+
+// All application auth/profile operations are protected by Supabase Auth.
+// Sign-in, sign-up, and sign-out happen directly through Supabase in the
+// browser and never send passwords to this API.
+
 /**
  * Return the current application's user profile.
  * Authentication is handled by Supabase before this controller runs.
  */
-export const getMe = async (req: Request, res: Response): Promise<void> => {
+router.get('/me', authenticate, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
@@ -45,17 +52,13 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
       message: 'Internal server error',
     });
   }
-};
+});
 
 /**
  * Delete the application user, their resumes, and their Supabase Auth user.
  * The browser only calls this endpoint with its Supabase access token.
  */
-
-export const deleteAccount = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+router.delete('/account', authenticate, async (req, res) => {
   try {
     const userId = req.user?.id;
     const supabaseUserId = req.user?.supabaseUserId;
@@ -95,4 +98,6 @@ export const deleteAccount = async (
       message: 'Failed to delete account',
     });
   }
-};
+});
+
+export default router;
