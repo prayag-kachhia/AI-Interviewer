@@ -1,10 +1,11 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router';
 import { Navbar } from './components/Navbar';
-import { Login } from './pages/Login';
-import { Dashboard } from './pages/Dashboard';
-import { Profile } from './pages/Profile';
-import { NewInterview, InterviewRoom } from './features/sessions';
-import { ResultsPage } from './features/feedback';
+import { Login } from './screens/login/Login';
+import { Dashboard } from './screens/dashboard/Dashboard';
+import { Profile } from './screens/profile/Profile';
+import { NewInterview } from './screens/new-interview/NewInterview';
+import { InterviewRoom } from './screens/interview-room/InterviewRoom';
+import { ResultsScreen } from './screens/results/ResultsScreen';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -25,7 +26,7 @@ function App() {
               <Route path="/profile" element={<Profile />} />
               <Route path="/new-interview" element={<NewInterview />} />
               <Route path="/interview/:sessionId" element={<InterviewRoom />} />
-              <Route path="/interview/:sessionId/feedback" element={<ResultsPage />} />
+              <Route path="/interview/:sessionId/feedback" element={<ResultsScreen />} />
             </Route>
           </Routes>
         </Router>

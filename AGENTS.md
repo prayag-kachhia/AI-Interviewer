@@ -12,7 +12,7 @@ The current plan, with who owns what, is in `docs/sprint-3.md`.
   - `src/worker.ts`: the feedback job worker. It runs inside the API process.
   - `src/__tests__/`: Vitest + Supertest. Gemini is always mocked.
 - `apps/web`: React 19 + Vite + react-router.
-  - `src/features/<name>/`: each feature's screens. Import a feature only through its `index.ts`.
+  - `src/screens/<name>/`: one folder per screen, holding its component, hook and tests.
   - `src/lib/api.ts`: every HTTP call to the API.
   - `src/lib/voiceAdapter.ts`: the browser-speech voice adapter and the `VoiceSessionAdapter` interface.
   - `src/context/AuthContext.tsx`: Supabase sign-in.

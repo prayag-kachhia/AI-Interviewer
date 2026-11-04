@@ -16,19 +16,19 @@ import {
   Sparkles,
   ArrowLeft,
 } from 'lucide-react';
-import { getSession, postTurn, endSession } from '../lib/api';
+import { getSession, postTurn, endSession } from '../../lib/api';
 import { ROLES } from '@interview/contracts';
 import {
   type InterviewVoiceState,
   type SessionStatus,
   type TurnData,
-} from '../types';
-import { interviewQuestionProvider } from '../lib/questionProvider';
+} from '../../types';
+import { interviewQuestionProvider } from '../../lib/questionProvider';
 import {
   createVoiceSessionAdapter,
   type VoiceSessionAdapter,
   type VoiceTranscriptEvent,
-} from '../lib/voiceAdapter';
+} from '../../lib/voiceAdapter';
 
 /**
  * Floors elapsed seconds to 0.1s precision so legitimate live turns never

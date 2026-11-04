@@ -12,7 +12,7 @@ import {
   Mic,
   CheckCircle2,
 } from 'lucide-react';
-import { createSession, getRoles } from '../lib/api';
+import { createSession, getRoles } from '../../lib/api';
 import { RoleList, ROLES, type Role } from '@interview/contracts';
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {
