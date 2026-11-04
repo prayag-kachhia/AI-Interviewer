@@ -1,30 +1,17 @@
-// The only file that calls the evaluation LLM. Given a transcript and a
-// role, it returns written feedback scored against the generic rubric.
+
+// The only file that calls the evaluation LLM (FB4). Given a transcript and a
+// role, it returns written feedback scored against the role-specific rubric (Issue #93).
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
-import { FeedbackScore, type TurnSpeaker } from '@interview/contracts';
+import { FeedbackScore, ROLES, type TurnSpeaker } from '@interview/contracts';
+import { getRubric, SOFTWARE_ENGINEER_RUBRIC } from './rubrics';
 
-// One generic rubric for every role in Sprint 1.
-// Changing it needs the lead's approval.
-export const RUBRIC = [
-  {
-    category: 'Communication',
-    criteria: 'Answers are clear, concise and easy to follow; the candidate explains their thinking.',
-  },
-  {
-    category: 'Technical depth',
-    criteria: 'Answers show correct, specific knowledge for the role, including trade-offs, not just definitions.',
-  },
-  {
-    category: 'Structure',
-    criteria: 'Answers are organised (context, approach, result) and stay on the question asked.',
-  },
-] as const;
+// Backwards compatibility export: default rubric for Software Engineer
+export const RUBRIC = SOFTWARE_ENGINEER_RUBRIC;
 
 // Leaves room inside the 15-second feedback budget for polling and the database.
 export const EVALUATION_TIMEOUT_MS = 12_000;
-// A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
-// Google swaps the model behind the alias.
+// Pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift.
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 export interface TranscriptTurn {
@@ -33,6 +20,7 @@ export interface TranscriptTurn {
 }
 
 export interface EvaluationInput {
+  roleId?: string;
   roleLabel: string;
   turns: TranscriptTurn[];
 }
@@ -49,20 +37,117 @@ export interface EvaluatorOptions {
   timeoutMs?: number;
 }
 
-export function buildEvaluationPrompt({ roleLabel, turns }: EvaluationInput): string {
-  const rubric = RUBRIC.map((r) => `- ${r.category}: ${r.criteria}`).join('\n');
-  const transcript = turns
+/**
+ * Resolves the role ID from EvaluationInput, falling back to label lookup.
+ */
+export function resolveRoleId(input: EvaluationInput): string {
+  if (input.roleId) {
+    return input.roleId;
+  }
+  const normalized = input.roleLabel.trim().toLowerCase();
+  const matched = ROLES.find(
+    (r) => r.id.toLowerCase() === normalized || r.label.toLowerCase() === normalized
+  );
+  return matched?.id ?? input.roleLabel;
+}
+
+/**
+ * Normalizes text by trimming, collapsing consecutive whitespace to single spaces,
+ * and stripping surrounding quotation marks.
+ */
+export function normalizeQuote(text: string): string {
+  return text
+    .trim()
+    .replace(/^["'“”]/, '')
+    .replace(/["'“”]$/, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Validates whether a candidate quote appears verbatim in the candidate's transcript turns.
+ */
+export function isQuoteInCandidateTurns(quote: string, candidateTurns: TranscriptTurn[]): boolean {
+  const normalizedQuote = normalizeQuote(quote);
+  if (!normalizedQuote) {
+    return false;
+  }
+  return candidateTurns.some((turn) => {
+    const normalizedTurn = turn.text.replace(/\s+/g, ' ');
+    return normalizedTurn.includes(normalizedQuote);
+  });
+}
+
+/**
+ * Strict server-side quote validation against candidate transcript text.
+ * Throws an Error if any quote is missing, empty, or not found verbatim in candidate turns.
+ */
+export function validateEvaluationQuotes(scores: FeedbackScore[], turns: TranscriptTurn[]): void {
+  const candidateTurns = turns.filter((t) => t.speaker === 'CANDIDATE');
+
+  for (const item of scores) {
+    if (!item.quote || !normalizeQuote(item.quote)) {
+      throw new Error(`Quote validation failed: Quote for category "${item.category}" is empty`);
+    }
+
+    if (!isQuoteInCandidateTurns(item.quote, candidateTurns)) {
+      throw new Error(
+        `Quote validation failed: Quote for category "${item.category}" was not found in candidate transcript: "${item.quote}"`
+      );
+    }
+  }
+}
+
+export function buildEvaluationPrompt(input: EvaluationInput): string {
+  const roleId = resolveRoleId(input);
+  const rubric = getRubric(roleId);
+
+  const rubricText = rubric.map((r) => `- ${r.category}: ${r.criteria}`).join('\n');
+  const transcript = input.turns
     .map((t) => `${t.speaker === 'AI' ? 'Interviewer' : 'Candidate'}: ${t.text}`)
     .join('\n');
-  return `You are evaluating a mock job interview for the role "${roleLabel}".
-Score ONLY the candidate's answers, using this rubric. Each score is an integer from 1 (poor) to 5 (excellent).
-${rubric}
 
-Base every comment on what the candidate actually said in the transcript. Do not invent answers.
+  return `You are evaluating a mock job interview for the role "${input.roleLabel}".
+Score ONLY the candidate's answers, using this role-specific rubric. Each score is an integer from 1 (poor) to 5 (excellent).
+${rubricText}
+
+Evaluation Instructions:
+1. Technical & Role-Specific Evaluation:
+   - Score the candidate strictly on the criteria listed for each category above.
+   - Differentiate strong, concrete answers with specific depth and trade-offs from surface-level or vague explanations.
+
+2. Behavioural Evaluation (STAR Methodology):
+   - For questions and answers that are behavioural (e.g. discussing past experiences, conflicts, challenges, leadership, or teamwork), assess the answer structure using the STAR framework:
+     * Situation: Did the candidate clearly establish the context and background?
+     * Task: Did the candidate define their specific responsibility or goal?
+     * Action: Did the candidate explain the concrete actions they personally took?
+     * Result: Did the candidate share the quantifiable outcome or business impact?
+   - DO NOT force STAR onto purely technical, architectural, coding, or conceptual questions where STAR is irrelevant. Do NOT penalize candidates for omitting STAR components in technical answers.
+
+3. Feedback & Transcript Evidence:
+   - Base every evaluation, strength, improvement, and quote strictly on what the candidate actually said.
+   - For every category, provide:
+     * category: the rubric category name exactly as written above.
+     * score: integer from 1 (poor) to 5 (excellent).
+     * comment: one or two concise sentences summarizing the evaluation.
+     * strengths: array of 1-2 specific things the candidate did well.
+     * improvements: array of 1-2 actionable recommendations for improvement.
+     * quote: an exact, verbatim excerpt from the candidate's transcript answers providing direct evidence for this category. Never use interviewer statements. Never fabricate or paraphrase quotes.
 
 Return ONLY JSON of this shape:
-{"summary": "<2-3 sentences of overall feedback addressed to the candidate>",
- "scores": [{"category": "<rubric category, exactly as written above>", "score": <1-5>, "comment": "<one or two sentences>"}]}
+{
+  "summary": "<2-3 sentences of overall feedback addressed to the candidate>",
+  "scores": [
+    {
+      "category": "<rubric category, exactly as written above>",
+      "score": <1-5>,
+      "comment": "<one or two sentences>",
+      "strengths": ["<strength 1>", "<strength 2>"],
+      "improvements": ["<improvement 1>"],
+      "quote": "<exact verbatim quote from candidate transcript text>"
+    }
+  ]
+}
 Include every rubric category exactly once.
 
 Transcript:
@@ -104,6 +189,9 @@ export async function evaluateTranscript(
     throw new Error('The transcript has no candidate answers to evaluate');
   }
 
+  const roleId = resolveRoleId(input);
+  const rubric = getRubric(roleId);
+
   const timeoutMs = options.timeoutMs ?? EVALUATION_TIMEOUT_MS;
   const prompt = buildEvaluationPrompt(input);
   const generate = options.generate ?? ((p: string) => generateWithGemini(p, timeoutMs));
@@ -117,10 +205,14 @@ export async function evaluateTranscript(
   }
   const evaluation = Evaluation.parse(json);
 
-  const expected = RUBRIC.map((r) => r.category).sort();
+  const expected = rubric.map((r) => r.category).sort();
   const received = evaluation.scores.map((s) => s.category).sort();
   if (JSON.stringify(expected) !== JSON.stringify(received)) {
     throw new Error(`The evaluator scored [${received.join(', ')}] instead of the rubric categories`);
   }
+
+  // Strict server-side quote validation against candidate transcript
+  validateEvaluationQuotes(evaluation.scores, input.turns);
+
   return evaluation;
 }

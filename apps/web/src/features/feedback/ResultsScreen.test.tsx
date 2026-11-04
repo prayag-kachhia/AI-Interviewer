@@ -28,7 +28,16 @@ test("given feedback is ready, then it is displayed", async () => {
     sessionId: "s1",
     status: "ready",
     summary: "Great job.",
-    scores: [{ category: "Communication", score: 5, comment: "Excellent." }],
+    scores: [
+      {
+        category: "Communication",
+        score: 5,
+        comment: "Excellent.",
+        strengths: ["Clear communication"],
+        improvements: ["Keep it up"],
+        quote: "I would decouple the notification requests",
+      },
+    ],
   });
 
   render(<ResultsScreen sessionId="s1" />);
