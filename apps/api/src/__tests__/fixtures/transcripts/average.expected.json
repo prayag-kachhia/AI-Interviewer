@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "scores": [
+    {
+      "category": "Communication",
+      "min": 2,
+      "max": 4,
+      "reason": "Answers are understandable but lack precision; candidate identifies options without fully explaining them."
+    },
+    {
+      "category": "Technical depth",
+      "min": 2,
+      "max": 3,
+      "reason": "Basic knowledge of Redis and transactions shown; edge cases and mechanism details are missing or imprecise."
+    },
+    {
+      "category": "Structure",
+      "min": 2,
+      "max": 4,
+      "reason": "Some structure present but answers often trail off without a clear conclusion or trade-off summary."
+    }
+  ]
+}
+
