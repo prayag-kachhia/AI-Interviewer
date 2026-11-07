@@ -5,6 +5,7 @@ import type {
   ResumeResponse,
   RolesResponse,
   SessionResponse,
+  SessionsListResponse,
   TurnResponse,
   TurnsListResponse,
   TurnSpeaker,
@@ -83,6 +84,13 @@ export const getRoles = async (): Promise<RolesResponse> => {
   return data;
 };
 
+export const getSessions = async (): Promise<SessionsListResponse> => {
+  const { data } = await api.get<SessionsListResponse>('/sessions');
+  return data;
+};
+
+export const listSessions = getSessions;
+
 export const createSession = async (roleId: string): Promise<SessionResponse> => {
   const { data } = await api.post<SessionResponse>('/sessions', { roleId });
   return data;
@@ -130,6 +138,15 @@ export const getVoiceToken = async (sessionId: string): Promise<string> => {
 export const getFeedback = async (sessionId: string): Promise<Feedback> => {
   const { data } = await api.get<{ success: boolean; data?: unknown }>(`/sessions/${sessionId}/feedback`);
   return Feedback.parse(data.data);
+};
+
+export const retryFeedback = async (
+  sessionId: string
+): Promise<{ success: boolean; message?: string }> => {
+  const { data } = await api.post<{ success: boolean; message?: string }>(
+    `/sessions/${sessionId}/feedback/retry`
+  );
+  return data;
 };
 
 export default api;

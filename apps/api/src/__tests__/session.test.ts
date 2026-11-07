@@ -19,6 +19,7 @@ vi.mock('../utils/db', () => ({
     session: {
       create: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
     },
     turn: {
@@ -175,6 +176,80 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
     it('requires authentication for POST /api/sessions', async () => {
       const res = await request(app).post('/api/sessions').send({ roleId: 'software-engineer' });
       expect(res.status).toBe(401);
+    });
+
+    it('requires authentication for GET /api/sessions', async () => {
+      const res = await request(app).get('/api/sessions');
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /api/sessions: returns only sessions belonging to the authenticated user sorted newest first with endedEarly and feedbackStatus', async () => {
+      const now = Date.now();
+      const mockSessions = [
+        {
+          id: 'sess-new',
+          userId: AUTH_USER.id,
+          role: 'backend-developer',
+          status: 'ENDED',
+          startedAt: new Date(now - 1000 * 60 * 5), // 5 min ago
+          endedAt: new Date(now - 1000 * 60 * 1), // ended after 4 mins (<15 min -> endedEarly true)
+          createdAt: new Date(now - 1000 * 60 * 5),
+          feedback: { status: 'ready' },
+        },
+        {
+          id: 'sess-old',
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          status: 'ENDED',
+          startedAt: new Date(now - 1000 * 60 * 30), // 30 min ago
+          endedAt: new Date(now - 1000 * 60 * 10), // ended after 20 mins (>=15 min -> endedEarly false)
+          createdAt: new Date(now - 1000 * 60 * 30),
+          feedback: { status: 'failed' },
+        },
+      ];
+
+      (prisma.session.findMany as any).mockResolvedValueOnce(mockSessions);
+
+      const res = await request(app)
+        .get('/api/sessions')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(2);
+      expect(prisma.session.findMany).toHaveBeenCalledWith({
+        where: { userId: AUTH_USER.id },
+        orderBy: { createdAt: 'desc' },
+        include: { feedback: { select: { status: true } } },
+      });
+
+      const [first, second] = res.body.data;
+      expect(first.id).toBe('sess-new');
+      expect(first.role).toBe('backend-developer');
+      expect(first.status).toBe('ENDED');
+      expect(first.feedbackStatus).toBe('ready');
+      expect(first.endedEarly).toBe(true);
+
+      expect(second.id).toBe('sess-old');
+      expect(second.role).toBe('software-engineer');
+      expect(second.feedbackStatus).toBe('failed');
+      expect(second.endedEarly).toBe(false);
+    });
+
+    it('GET /api/sessions: never returns another user\'s sessions (always scopes by userId)', async () => {
+      (prisma.session.findMany as any).mockResolvedValueOnce([]);
+
+      const res = await request(app)
+        .get('/api/sessions')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+      expect(prisma.session.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: AUTH_USER.id },
+        })
+      );
     });
   });
 

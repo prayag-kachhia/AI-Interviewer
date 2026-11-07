@@ -60,6 +60,47 @@ export async function getOwnedSession(sessionId: string, userId: string) {
   return session;
 }
 
+/**
+ * List all sessions belonging to the authenticated user, sorted newest first.
+ * Includes role, date, session status, feedback status, and endedEarly flag.
+ */
+export async function listSessions(userId: string) {
+  const sessions = await prisma.session.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      feedback: {
+        select: { status: true },
+      },
+    },
+  });
+
+  return sessions.map((s) => {
+    let endedEarly = false;
+    if (s.status === 'ENDED' && s.startedAt && s.endedAt) {
+      const start = new Date(s.startedAt).getTime();
+      const end = new Date(s.endedAt).getTime();
+      if (!isNaN(start) && !isNaN(end) && end > start) {
+        const durationSec = (end - start) / 1000;
+        if (durationSec < 15 * 60) {
+          endedEarly = true;
+        }
+      }
+    }
+
+    return {
+      id: s.id,
+      role: s.role,
+      status: s.status,
+      startedAt: s.startedAt instanceof Date ? s.startedAt.toISOString() : String(s.startedAt),
+      endedAt: s.endedAt ? (s.endedAt instanceof Date ? s.endedAt.toISOString() : String(s.endedAt)) : null,
+      createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : String(s.createdAt),
+      feedbackStatus: (s.feedback?.status as any) ?? (s.status === 'ENDED' ? 'pending' : null),
+      endedEarly,
+    };
+  });
+}
+
 export async function listTurns(sessionId: string, userId: string) {
   await getOwnedSession(sessionId, userId);
   return prisma.turn.findMany({

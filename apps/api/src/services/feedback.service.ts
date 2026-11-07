@@ -6,6 +6,13 @@ import { getOwnedSession } from './session.service';
 
 export type FeedbackStatus = 'pending' | 'ready' | 'failed';
 
+export class FeedbackNotFailedError extends Error {
+  constructor(message: string = 'Feedback has not failed and cannot be retried') {
+    super(message);
+    this.name = 'FeedbackNotFailedError';
+  }
+}
+
 export interface SaveFeedbackParams {
   sessionId: string;
   status: FeedbackStatus;
@@ -46,6 +53,36 @@ export async function getFeedbackForSession(sessionId: string, userId: string): 
     status: row.status,
     summary: row.summary ?? undefined,
     scores: row.status === 'ready' ? row.scores : undefined,
+    error: (row as any).error ?? undefined,
+  });
+}
+
+/**
+ * Retries feedback for a session whose feedback has failed.
+ * Resets the feedback status to pending and queues a new session.ended job.
+ */
+export async function retryFeedbackForSession(sessionId: string, userId: string): Promise<void> {
+  await getOwnedSession(sessionId, userId);
+  const row = await prisma.feedback.findUnique({ where: { sessionId } });
+  if (!row || row.status !== 'failed') {
+    throw new FeedbackNotFailedError();
+  }
+
+  await prisma.feedback.update({
+    where: { sessionId },
+    data: {
+      status: 'pending',
+      summary: null,
+      scores: [],
+    },
+  });
+
+  await prisma.job.create({
+    data: {
+      type: 'session.ended',
+      sessionId,
+      status: 'pending',
+    },
   });
 }
 
