@@ -33,13 +33,24 @@ export class SessionEndedError extends Error {
 /**
  * Create a session for a signed-in candidate + a validated role.
  */
+
 export async function createSession(userId: string, roleId: string) {
   if (!isValidRoleId(roleId)) {
     throw new InvalidRoleError(`Unknown role id: ${roleId}`);
   }
 
+  const latestResume = await prisma.resume.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+
   return prisma.session.create({
-    data: { userId, role: roleId },
+    data: {
+      userId,
+      role: roleId,
+      resumeId: latestResume?.id ?? null,
+    },
   });
 }
 

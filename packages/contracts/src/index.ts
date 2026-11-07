@@ -53,6 +53,7 @@ export type Turn = z.infer<typeof Turn>;
 export const Session = z.object({
   id: z.string(),
   userId: z.string(),
+  resumeId: z.string().nullable().optional(),
   role: z.string(),
   status: SessionStatus,
   startedAt: z.string(),
