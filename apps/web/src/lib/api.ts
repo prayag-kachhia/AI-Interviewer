@@ -126,8 +126,6 @@ export const deleteSession = async (
   return data;
 };
 
-export const deleteInterviewSession = deleteSession;
-
 // Feedback — the results screen polls this until the status is not 'pending'.
 // Short-lived voice token for Gemini Live (POST /api/sessions/:id/voice-token, LS3)
 export const getVoiceToken = async (sessionId: string): Promise<string> => {
