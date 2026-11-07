@@ -16,13 +16,13 @@ vi.mock('../utils/db', () => ({
   default: {
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn() },
-    resume: { findFirst: vi.fn() },
+    resume: { findFirst: vi.fn(), findUnique: vi.fn() },
   },
 }));
 
 // Route tests never reach the provider; the real function is tested below.
-vi.mock('../services/voice-provider.service', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../services/voice-provider.service')>();
+vi.mock('../services/voice-provider.service', async (importOriginal: () => Promise<any>) => {
+  const actual = await importOriginal();
   return { ...actual, mintVoiceToken: vi.fn() };
 });
 
@@ -93,6 +93,45 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
     expect(mintVoiceToken).toHaveBeenCalledWith(
       expect.objectContaining({
         briefing: expect.stringContaining('Experienced with Kubernetes, Go, and Kafka microservices.'),
+      })
+    );
+  });
+
+  it('given a session with attached resumeId, retrieves the associated resume, summarizes it, and passes it into briefing (FR-08, FR-09)', async () => {
+    const sessionWithResume = {
+      ...OWN_LIVE_SESSION,
+      id: 'sess-with-resume',
+      resumeId: 'resume-123',
+    };
+    (prisma.session.findFirst as any).mockResolvedValueOnce(sessionWithResume);
+    (prisma.resume.findUnique as any).mockResolvedValueOnce({
+      parsedProfile: JSON.stringify({
+        name: 'Vishwa Trivedi',
+        skills: ['TypeScript', 'Node.js', 'PostgreSQL'],
+        projects: ['Cloud Gateway: Built resilient microservice gateway'],
+        experience: ['Backend Engineer at Nexus Labs'],
+      }),
+    });
+    vi.mocked(mintVoiceToken).mockResolvedValueOnce('auth_tokens/ephemeral-structured');
+
+    const res = await request(app)
+      .post('/api/sessions/sess-with-resume/voice-token')
+      .set('Authorization', 'Bearer valid-supabase-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, data: { token: 'auth_tokens/ephemeral-structured' } });
+    expect(prisma.resume.findUnique).toHaveBeenCalledWith({
+      where: { id: 'resume-123' },
+      select: { parsedProfile: true },
+    });
+    expect(mintVoiceToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        briefing: expect.stringContaining('Vishwa Trivedi'),
+      })
+    );
+    expect(mintVoiceToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        briefing: expect.stringContaining('Cloud Gateway'),
       })
     );
   });

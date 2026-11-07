@@ -21,6 +21,9 @@ vi.mock('../utils/db', () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
     },
+    resume: {
+      findFirst: vi.fn(),
+    },
     turn: {
       create: vi.fn(),
       findMany: vi.fn(),
@@ -63,11 +66,12 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    (prisma.resume.findFirst as any).mockResolvedValue(null);
   });
 
   describe('POST /api/sessions & GET /api/sessions (LS2)', () => {
     // TEST 1: valid role creates session
-    it('TEST 1: creates a session for a valid role', async () => {
+    it('TEST 1: creates a session for a valid role (without resume)', async () => {
       (prisma.session.create as any).mockResolvedValueOnce({
         id: 'sess-1',
         userId: AUTH_USER.id,
@@ -89,7 +93,40 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(res.body.data.role).toBe('software-engineer');
       expect(res.body.data.status).toBe('LIVE');
       expect(prisma.session.create).toHaveBeenCalledWith({
-        data: { userId: AUTH_USER.id, role: 'software-engineer' },
+        data: { userId: AUTH_USER.id, role: 'software-engineer', resumeId: null },
+      });
+    });
+
+    it('creates a session attaching the latest resumeId when user has a resume', async () => {
+      (prisma.resume.findFirst as any).mockResolvedValueOnce({
+        id: 'res-latest',
+      });
+      (prisma.session.create as any).mockResolvedValueOnce({
+        id: 'sess-2',
+        userId: AUTH_USER.id,
+        role: 'software-engineer',
+        resumeId: 'res-latest',
+        status: 'LIVE',
+        startedAt: new Date(),
+        endedAt: null,
+        createdAt: new Date(),
+      });
+
+      const res = await request(app)
+        .post('/api/sessions')
+        .set('Authorization', authHeader())
+        .send({ roleId: 'software-engineer' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.id).toBe('sess-2');
+      expect(prisma.resume.findFirst).toHaveBeenCalledWith({
+        where: { userId: AUTH_USER.id },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      expect(prisma.session.create).toHaveBeenCalledWith({
+        data: { userId: AUTH_USER.id, role: 'software-engineer', resumeId: 'res-latest' },
       });
     });
 
