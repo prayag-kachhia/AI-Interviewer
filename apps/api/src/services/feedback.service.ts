@@ -6,11 +6,19 @@ import { getOwnedSession } from './session.service';
 
 export type FeedbackStatus = 'pending' | 'ready' | 'failed';
 
+export class FeedbackRetryConflictError extends Error {
+  constructor(message: string = 'Only failed feedback evaluations can be retried') {
+    super(message);
+    this.name = 'FeedbackRetryConflictError';
+  }
+}
+
 export interface SaveFeedbackParams {
   sessionId: string;
   status: FeedbackStatus;
   summary?: string;
   scores?: Prisma.InputJsonArray;
+  error?: string;
 }
 
 /**
@@ -22,6 +30,7 @@ export async function saveFeedback(params: SaveFeedbackParams): Promise<Feedback
     status: params.status,
     summary: params.summary ?? null,
     scores: params.scores ?? [],
+    error: params.error ?? null,
   };
   return prisma.feedback.upsert({
     where: { sessionId: params.sessionId },
@@ -74,7 +83,56 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
       scores: evaluation.scores,
     });
   } catch (error) {
-    await saveFeedback({ sessionId: session.id, status: 'failed' });
+    const message = error instanceof Error ? error.message : String(error);
+    await saveFeedback({
+      sessionId: session.id,
+      status: 'failed',
+      error: message,
+    });
     throw error;
   }
+}
+
+/**
+ * Retries feedback evaluation for a session whose previous evaluation failed.
+ * Enforces ownership (404 if not owned), status precondition (409 if not failed),
+ * and creates a session.ended job in the queue atomically.
+ */
+export async function retryFeedbackEvaluation(
+  sessionId: string,
+  userId: string
+): Promise<FeedbackContract> {
+  const session = await getOwnedSession(sessionId, userId);
+
+  await prisma.$transaction(async (tx) => {
+    const updateResult = await tx.feedback.updateMany({
+      where: {
+        sessionId,
+        status: 'failed',
+      },
+      data: {
+        status: 'pending',
+        summary: null,
+        scores: [],
+        error: null,
+      },
+    });
+
+    if (updateResult.count === 0) {
+      throw new FeedbackRetryConflictError('Only failed feedback evaluations can be retried');
+    }
+
+    await tx.job.create({
+      data: {
+        type: 'session.ended',
+        sessionId,
+        status: 'pending',
+      },
+    });
+  });
+
+  return FeedbackContract.parse({
+    sessionId,
+    status: 'pending',
+  });
 }
