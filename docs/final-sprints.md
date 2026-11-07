@@ -8,6 +8,7 @@ with its catalogue ID (for example `K-4`). To change a task, tell the lead (or c
 - [3. Decisions](#3-decisions)
 - [4. Balance at a glance](#4-balance-at-a-glance)
 - [5. The catalogue, person by person](#5-the-catalogue-person-by-person)
+- [5a. Required documents (not counted)](#5a-required-documents-not-counted)
 - [6. Critical path](#6-critical-path)
 - [7. If we fall behind](#7-if-we-fall-behind)
 - [8. Deferred](#8-deferred)
@@ -18,14 +19,18 @@ with its catalogue ID (for example `K-4`). To change a task, tell the lead (or c
 - **Simpler code that keeps the good architecture.**
   - Keep: the layered API, shared contracts, migrations, the job queue, ephemeral voice tokens, ownership checks, tests and CI/CD.
   - Remove: wrappers, repetition and unused code.
-- **Even, visible contributions**: at least 8 merged PRs per person (stretch 10), with a fair mix of easy, medium and hard work.
+- **Even, visible contributions**: at least 8 merged, counted PRs per person (stretch 10), with a fair mix of easy, medium and hard work.
 - **A UI that looks like a real product**: one design system (Tailwind + `components/ui`), led by Prayag.
 
 ## 2. Rules
 
 **PRs**
-- A PR is one complete, useful change with its test or doc, and CI green.
-- Deletions, tests, ADRs and docs count. Typo-only PRs, formatting-only PRs, and one change split across PRs don't.
+- **A PR counts** when it changes the product's code (API, web, contracts, database, worker, or a script the team runs) and ships a feature, a fix, a meaningful removal or a new automated test suite, with CI green.
+- **A PR doesn't count** when it only changes docs, ADRs, the README, comments, formatting or config, or when one change is split across several PRs.
+- **Docs are still graded, so they ride along:**
+  - an ADR or doc update goes inside the code PR it describes;
+  - every PR fills in its own rows of the traceability matrix (`docs/requirements.md`, from D-2);
+  - the four bigger documents are issues D-1 to D-4: required, owned, but not counted (§5a).
 - Keep PRs under about 300 changed lines.
 
 **Review pairs.** Your partner reviews within 24 h:
@@ -68,26 +73,26 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 
 ## 4. Balance at a glance
 
-| Person | Days | Issues | Hard | Medium | Easy |
-|---|---|---|---|---|---|
-| Prayag | 6.6 | 12 | 2 | 6 | 4 |
-| Vishwa | 5.5 | 7 | 2 | 3 | 2 |
-| Kishan | 5.25 | 9 | 1 | 6 | 2 |
-| Prakriti | 5 | 8 | 1 | 4 | 3 |
-| Shaurya | 5 | 8 | 2 | 3 | 3 |
-| Praneel | 5 | 7 | 1 | 4 | 2 |
-| Rahi | 5 | 8 | 1 | 3 | 4 |
-| Ved | 5 | 8 | 1 | 4 | 3 |
-| Vismay | 5.1 | 8 | 1 | 4 | 3 |
-| Raj | 5.5 | 8 | 1 | 4 | 3 |
+| Person | Counted PRs | Hard | Medium | Easy | Days | Required doc (not counted) |
+|---|---|---|---|---|---|---|
+| Prayag | 11 | 2 | 6 | 3 | 6.75 | – |
+| Vishwa | 8 | 2 | 5 | 1 | 5.5 | – |
+| Kishan | 9 | 1 | 6 | 2 | 4.75 | D-1 (1 day) |
+| Prakriti | 8 | 1 | 4 | 3 | 5 | – |
+| Shaurya | 8 | 2 | 4 | 2 | 5.5 | – |
+| Praneel | 8 | 1 | 5 | 2 | 5.75 | – |
+| Rahi | 8 | 1 | 3 | 4 | 5 | D-4 (1 day) |
+| Ved | 8 | 1 | 5 | 2 | 5.5 | – |
+| Vismay | 8 | 1 | 4 | 3 | 5 | D-2 (1 day) |
+| Raj | 8 | 2 | 3 | 3 | 5.25 | D-3 (1 day) |
 
-VI-1 and PN-2 each ship as two PRs, so everyone has at least 8 PRs.
+Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
 ## 5. The catalogue, person by person
 
 ### Prayag: lead: UI revamp, structure, interview setup
 
-About 6.6 days · 12 issues · 2 Hard, 6 Medium, 4 Easy · review partner: Raj
+About 6.75 days · 11 counted PRs · 2 Hard, 6 Medium, 3 Easy · review partner: Raj
 
 **`P-1` · Merge the API flatten (#118)** · Medium · 0.5 days · Sprint 4
 
@@ -100,24 +105,17 @@ One file per API resource under `routes/`, no controllers layer, merged before t
 - **Done when:** `git grep controllers/ -- apps/api/src` finds nothing, CI is green, and one live golden-path check passes after deploy.
 - **Depends on:** nothing (the first PR of the sprint)
 
-**`P-2` · Merge the web flatten (#128) and sweep dead code** · Medium · 0.75 days · Sprint 4
+**`P-2` · Merge the web flatten (#128) and sweep dead code** · Medium · 1 day · Sprint 4
 
 One folder per screen under `apps/web/src/screens/`, no barrels, and the unused code gone.
 
 - Rebase #128 on main, applying #106's 3-line edit to `screens/interview-room/InterviewRoom.tsx`.
 - Delete `spike/`, `extractTextFromPdfFile` (pdf.service.ts), `InvalidTimestampError` and its imports, the `endInterviewSession` alias (lib/api.ts), the `AuthResponse` type (web types), `"main": "index.js"` (apps/api/package.json), the uncalled `GET /api/resume/:id`, and the `(session as any).focus` cast.
+- Remove the 16 ticket-ID comments that #76's grep prints, and put "Closes #76" in the PR.
+- In the same PR, update AGENTS.md: the `routes/` and `screens/` layout, Prisma 7, a link to docs/final-sprints.md, and CONTRIBUTING.md's automatic-rejection list (no aliases or pass-throughs, no one-caller abstractions, no unexplained `as` casts, no swallowed catches, no static inline styles).
 - Merge right after P-1.
-- **Done when:** `git grep` finds none of the removed names, typecheck and tests are green, and the app behaves the same.
+- **Done when:** `git grep` finds none of the removed names, #76's grep prints nothing, typecheck and tests are green, and the app behaves the same.
 - **Depends on:** P-1
-
-**`P-3` · Anti-complexity rules in AGENTS.md** · Easy · 0.1 days · Sprint 4
-
-AI coding agents read the same rules reviewers enforce, so they stop adding aliases, wrappers and inline-CSS modals.
-
-- Copy CONTRIBUTING.md's automatic-rejection list into AGENTS.md: no aliases or pass-through functions, no one-caller abstractions, no unexplained `as` casts, no swallowed catches, no static inline style objects.
-- Fix 'Prisma 5' → 'Prisma 7', describe the `routes/` and `screens/` layout and the `components/ui` primitives, and link docs/final-sprints.md.
-- **Done when:** AGENTS.md matches the code after P-1 and P-2.
-- **Depends on:** P-1, P-2
 
 **`P-4` · Tailwind v4 foundation (no preflight yet)** · Hard · 0.75 days · Sprint 4
 
@@ -196,7 +194,7 @@ The interview feels alive: an orb that breathes with the voice, and smooth trans
 - Transcript bubbles slide up, and scores reveal one after another on the results screen (with RH-4).
 - Respect `prefers-reduced-motion`.
 - **Done when:** The orb reacts to speaking and listening in a live interview, and reduced-motion users get a still orb. This is the lead's first cut if time runs short.
-- **Depends on:** VI-1 (state and level), PK-5
+- **Depends on:** VI-8 (state and level), PK-5
 
 **`P-12` · Delete the old CSS, turn on preflight, design-system ADR** · Hard · 0.5 days · Sprint 5
 
@@ -204,23 +202,34 @@ One styling system: the old stylesheet and static inline styles are gone.
 
 - After every screen is migrated, delete the legacy classes from `index.css` and switch to `@import "tailwindcss"` (preflight on).
 - Remove the remaining static inline styles and fix regressions on every screen in light and dark.
-- Write docs/adr/0011-design-system.md.
+- Include docs/adr/0011-design-system.md in this PR.
 - **Done when:** `git grep "style={{" -- apps/web/src` finds only dynamic values, and every screen is checked in light and dark.
 - **Depends on:** P-8, P-9, P-10, PK-5, RH-4, RJ-5, V-5 (all screen migrations)
 
 ### Vishwa: voice transport
 
-About 5.5 days · 7 issues · 2 Hard, 3 Medium, 2 Easy · review partner: Kishan
+About 5.5 days · 8 counted PRs · 2 Hard, 5 Medium, 1 Easy · review partner: Kishan
 
-**`VI-1` · Gemini Live adapter with automatic browser-speech fallback (2 PRs)** · Hard · 2 days · Sprint 4
+**`VI-1` · Gemini Live voice adapter** · Hard · 1 day · Sprint 4
 
-The interview room talks to a real AI interviewer through Gemini Live, and falls back to browser speech if Live fails.
+A voice adapter that holds a real spoken conversation with Gemini Live, ready for the room to plug in.
 
-- PR 1: `lib/geminiLiveAdapter.ts` implements `VoiceSessionAdapter` on top of `useGeminiLive`'s connection code. Slim the interface to what the room needs: `connect`, `disconnect`, `setMuted`, `sendText`, plus callbacks for transcript, state, level and error. Question-asking moves inside each adapter. `sendText` sends a text cue into the Live session (used by K-6 and VI-6).
-- PR 2: wire it into `screens/interview-room/useInterview.ts`. Use model `gemini-3.8-live`, wait for `setupComplete` before streaming, and send no `systemInstruction` from the browser (the token carries it). `interrupted` stops playback.
+- `lib/geminiLiveAdapter.ts` implements `VoiceSessionAdapter` on top of `useGeminiLive`'s connection code.
+- Slim the interface to what the room needs: `connect`, `disconnect`, `setMuted`, `sendText`, plus callbacks for transcript, state, level and error. Question-asking moves inside each adapter, so update `BrowserWebSpeechVoiceAdapter` to the same interface.
+- Use model `gemini-3.8-live`, wait for `setupComplete` before streaming, and send no `systemInstruction` from the browser (the token carries it). `interrupted` stops playback. `sendText` sends a text cue into the Live session (used by K-6 and VI-6).
+- Add mock-socket tests.
+- **Done when:** Mock-socket tests cover setup, a spoken turn, an interruption and `sendText`, and typecheck and tests are green.
+- **Depends on:** nothing (it's a new file; start on day 1)
+
+**`VI-8` · Wire Gemini Live into the interview room, with automatic fallback** · Medium · 1 day · Sprint 4
+
+The live site's interview room uses the real AI interviewer and never gets stuck if Live fails.
+
+- Wire VI-1's adapter into `screens/interview-room/useInterview.ts`.
 - If the token or socket fails, switch to `BrowserWebSpeechVoiceAdapter`, which asks `POST /api/sessions/:id/next-question` (PK-3) for questions instead of the fixed script.
+- Include the voice ADR in this PR (docs/adr/): the adapter pattern with Gemini Live plus browser fallback, ephemeral tokens, and the server-side brain (`briefingFor`).
 - **Done when:** On the live site in Chrome with headphones, a 3-question spoken interview works, interrupting stops the AI, and a forced token failure falls back to browser speech without crashing.
-- **Depends on:** PK-2 (if it isn't merged by day 2, start on main's InterviewRoom with Prakriti's agreement), PK-3 for the fallback's questions
+- **Depends on:** VI-1, PK-2, PK-3
 
 **`VI-2` · Save voice turns through the transcript accumulator** · Medium · 0.5 days · Sprint 4
 
@@ -230,7 +239,7 @@ Every finished voice turn is stored, so feedback has a real transcript.
 - Post one turn per finished speaker turn with `postTurn`, one post at a time (no parallel posts).
 - Pair with Prakriti, who owns the accumulator.
 - **Done when:** After a voice interview, the database shows alternating AI and CANDIDATE turns, and feedback uses them.
-- **Depends on:** VI-1, PK-1
+- **Depends on:** VI-8, PK-1
 
 **`VI-3` · Reconnect after a network blink or GoAway (NFR-05)** · Hard · 0.75 days · Sprint 4
 
@@ -262,7 +271,7 @@ The fallback path is reliable when it has to take over.
 - Raise the silence auto-submit from 2.4 s to about 5 s (keep the Done button).
 - Warn when the browser has no speaking voices.
 - **Done when:** Unit tests cover the late-result and no-voices cases, and a fallback interview in Chrome no longer refills the previous answer.
-- **Depends on:** VI-1
+- **Depends on:** VI-8
 
 **`VI-6` · Thinking-silence prompts** · Medium · 0.5 days · Sprint 5
 
@@ -271,21 +280,23 @@ When a candidate pauses to think, the interviewer offers brief encouragement ins
 - In voice mode, if the input level stays below a threshold for about 8–10 s after a question, send one `sendText` cue for that question (for example '[the candidate is thinking; offer brief encouragement]').
 - Kishan's briefing defines how the interviewer replies.
 - **Done when:** In a live voice interview, a silent pause triggers exactly one gentle prompt per question.
-- **Depends on:** VI-1 (sendText), K-4, K-5
+- **Depends on:** VI-8 (sendText), K-4, K-5
 
-**`VI-7` · NFR-01 latency measurement and the voice ADR** · Easy · 0.5 days · Sprint 5
+**`VI-7` · Measure the interviewer's response time in the app (NFR-01)** · Medium · 0.5 days · Sprint 5
 
-A real number for the interviewer's response time, and the voice design written down for the evaluation.
+Every voice turn records how long the interviewer took to answer, so NFR-01 is measured on real interviews.
 
-- Measure the time from the end of the candidate's speech to the first AI audio over 20 live turns (use the hook's first-response timing).
-- Report p95 against the **5 s** target (the SRS says 5 s, not 2 s) in docs/evaluation-benchmark.md.
-- Write a voice ADR: the adapter pattern with Gemini Live plus browser fallback, ephemeral tokens, and the server-side brain (`briefingFor`).
-- **Done when:** The p95 is published and the ADR is merged.
-- **Depends on:** VI-1
+- In the Live adapter, time from the end of the candidate's turn to the first AI audio chunk.
+- Send it with the AI turn as `latencyMs`: a new nullable `Turn.latencyMs` column (migration) and contract field, validated 0–60,000 by the API.
+- `apps/api/scripts/latency.ts` prints p50 and p95 over recent sessions. Put the p95 against the **5 s** target (the SRS says 5 s, not 2 s) in docs/evaluation-benchmark.md in the same PR.
+- **Done when:** AI turns on the live site carry `latencyMs`, the script prints the p95, and the number is in the benchmark doc.
+- **Depends on:** VI-8, VI-2
 
 ### Kishan: the interviewer brain
 
-About 5.25 days · 9 issues · 1 Hard, 6 Medium, 2 Easy · review partner: Vishwa
+About 4.75 days · 9 counted PRs · 1 Hard, 6 Medium, 2 Easy · review partner: Vishwa
+
+Also owns the required document `D-1` (not counted, see §5a).
 
 **`K-1` · Extract briefingFor(session): one place that builds the interviewer briefing** · Easy · 0.25 days · Sprint 4
 
@@ -304,7 +315,7 @@ The candidate sees the time left, and ending the interview is deliberate.
 - End opens an AlertDialog confirmation.
 - When time is up, end the interview gracefully. Once K-6 lands, the AI wraps up first.
 - **Done when:** The countdown is visible, End asks for confirmation, and at zero the session ends and feedback starts.
-- **Depends on:** P-6, VI-1 (merge after it)
+- **Depends on:** P-6, VI-8 (merge after it)
 
 **`K-3` · Interview failure screen with Retry and Type instead** · Medium · 0.75 days · Sprint 4
 
@@ -312,7 +323,7 @@ A failed connection never leaves the candidate stuck.
 
 - When the adapter reports `failed` and the fallback also fails, show an Alert-based screen with Retry (reconnect), Type instead (switch to PK-4's typed mode) and End interview.
 - **Done when:** Forcing both voice paths to fail shows the screen, and each button works.
-- **Depends on:** VI-1, VI-3, PK-4
+- **Depends on:** VI-8, VI-3, PK-4
 
 **`K-4` · 3-phase question progression in the briefing** · Medium · 0.5 days · Sprint 4
 
@@ -342,7 +353,7 @@ The interview closes naturally instead of cutting off at zero.
 - The briefing says how to close: one final question, invite closing remarks, thank the candidate.
 - Typed mode passes the remaining time to `next-question`.
 - **Done when:** A live interview with 2 minutes left wraps up naturally.
-- **Depends on:** VI-1 (sendText), K-2, PK-3
+- **Depends on:** VI-8 (sendText), K-2, PK-3
 
 **`K-7` · AudioWorklet microphone capture** · Hard · 0.75 days · Sprint 5
 
@@ -361,21 +372,22 @@ No hard-coded question bank anywhere: every path asks the server brain.
 - Remove `lib/questionProvider.ts` and its imports.
 - Remove the `TurnData` / `SessionData` aliases if nothing else uses them.
 - **Done when:** `git grep questionProvider` finds nothing, and the fallback and typed mode still ask AI questions.
-- **Depends on:** VI-1, PK-3, PK-4
+- **Depends on:** VI-8, PK-3, PK-4
 
-**`K-9` · Design document with diagrams** · Medium · 1 day · Sprint 5
+**`K-10` · Ask why the candidate ended early (FR-19)** · Medium · 0.5 days · Sprint 5
 
-Graders can see the architecture at a glance.
+Ending early records a reason, so a dropped call isn't read as a finished interview.
 
-- docs/design.md with mermaid diagrams: deployment (Firebase, Cloud Run, Supabase, Gemini), ER (from schema.prisma), the interview sequence (token → Live → turns → end → job → worker → evaluator → results), and state machines for Session, Feedback (with retry) and Job.
-- One PrepForge-style request-chain walkthrough with sample JSON.
-- Mark the sections of codebase-guide.md it replaces as archived.
-- **Done when:** The diagrams render on GitHub and match the code after the freeze.
-- **Depends on:** P-2 (layout freeze), VI-1, V-1
+- When End is pressed before the time limit, K-2's confirmation dialog offers reasons: finished early, technical problem, need to stop, other.
+- Add a nullable `Session.endReason` (migration and contract enum). The end route accepts and validates it.
+- Results and History show the reason next to the score.
+- Add route tests.
+- **Done when:** Ending early with a reason stores it, and Results shows it.
+- **Depends on:** K-2, RH-2
 
 ### Prakriti: typed mode, integrity, context
 
-About 5 days · 8 issues · 1 Hard, 4 Medium, 3 Easy · review partner: Vismay
+About 5 days · 8 counted PRs · 1 Hard, 4 Medium, 3 Easy · review partner: Vismay
 
 **`PK-1` · Finish the transcript accumulator (#105)** · Easy · 0.25 days · Sprint 4
 
@@ -431,6 +443,7 @@ Forged or broken turn submissions are rejected without ever rejecting a legitima
 - Migration: de-duplicate any existing `(sessionId, turnIndex)` rows, then add `@@unique([sessionId, turnIndex])`. `addTurn` retries on a unique-index conflict.
 - Reject turns on non-LIVE or ended sessions (409) and text over 4,000 characters (400).
 - Never reject on alternating speakers or timing (Live interruptions make those legitimate). Log them as warnings.
+- Include docs/adr/0012-transcript-integrity.md in this PR: the NFR-10 vs NFR-01 conflict, what is enforced, and the residual risk (audio goes from the browser straight to Google).
 - **Done when:** There is a test for each rule, and the migration runs cleanly on a local copy that has duplicates.
 - **Depends on:** P-1
 
@@ -443,27 +456,30 @@ A returning candidate gets fresh questions.
 - **Done when:** Tests show past questions reach the briefing.
 - **Depends on:** K-1
 
-**`PK-8` · ADRs: context storage and transcript integrity** · Medium · 0.75 days · Sprint 5
+**`PK-9` · Paste a job description at setup (FR-11)** · Medium · 0.75 days · Sprint 5
 
-The two design questions graders will ask, answered in writing.
+The interviewer tailors its questions to the job the candidate is applying for.
 
-- docs/adr/0010-context-storage.md: why relational Postgres with JSON columns rather than NoSQL (the TA's question), and how interview context is assembled in `briefingFor`.
-- docs/adr/0012-transcript-integrity.md: the NFR-10 vs NFR-01 conflict, what PK-6 enforces, and the residual risk (audio goes from the browser straight to Google).
-- **Done when:** Both ADRs are merged.
-- **Depends on:** PK-6, PK-7
+- Setup gets an optional 'Job description' box (up to 4,000 characters), stored as a nullable `Session.jobContext` (migration and contract field). Longer text gets a 400.
+- `briefingFor` adds it to the briefing as candidate-supplied text that K-5's guardrails still apply to, and the evaluator receives it too.
+- Add tests for the validation and for it reaching the briefing.
+- Include docs/adr/0010-context-storage.md in this PR: relational Postgres with JSON columns rather than NoSQL (the TA's question), and how context is assembled in `briefingFor`.
+- **Done when:** A pasted job description changes the interviewer's questions on the live site, and the tests pass.
+- **Depends on:** P-7, P-8, K-1, K-5
 
 ### Shaurya: feedback scoring
 
-About 5 days · 8 issues · 2 Hard, 3 Medium, 3 Easy · review partner: Praneel
+About 5.5 days · 8 counted PRs · 2 Hard, 4 Medium, 2 Easy · review partner: Praneel
 
-**`S-1` · Find and fix why feedback fails on the live site** · Hard · 1 day · Sprint 4
+**`S-1` · Find and fix why feedback fails on the live site** · Hard · 1.25 days · Sprint 4
 
 Feedback appears after every interview on the live site. It has not been seen working since 25 Oct.
 
 - In the Supabase SQL editor, read the failed jobs: `select "sessionId", "lastError", "updatedAt" from jobs where status = 'failed' order by "updatedAt" desc limit 20;`. Also check the Cloud Run logs for 'job failed:'.
 - Run `bun scripts/evaluate.ts` on a fixture with the production key and model.
 - Fix the root cause. Likely candidates: the model id, structured output with an enum of the rubric categories, case-insensitive category matching, or clamping scores to integers.
-- **Done when:** A live interview produces feedback, and the PR states the root cause.
+- In the same PR, pin `GEMINI_EVAL_MODEL`, `GEMINI_RESUME_MODEL` and `GEMINI_LIVE_MODEL` in `deploy.yml`'s `--set-env-vars` (that flag wipes anything set by hand in the console), and document them in apps/api/.env.example.
+- **Done when:** A live interview produces feedback, the deploy keeps the three model variables, and the PR states the root cause.
 - **Depends on:** Supabase and Cloud Run access from Prayag (day 1)
 
 **`S-2` · Retry transient Gemini errors in the worker** · Medium · 0.5 days · Sprint 4
@@ -476,16 +492,7 @@ One temporary Gemini error no longer fails feedback for good.
 - **Done when:** Tests show a transient error retries and a permanent one fails after 3 attempts.
 - **Depends on:** S-1
 
-**`S-3` · Pin the Gemini models in the deploy workflow** · Easy · 0.25 days · Sprint 4
-
-The live API runs the models we tested, and every deploy keeps them.
-
-- Add `GEMINI_EVAL_MODEL`, `GEMINI_RESUME_MODEL` and `GEMINI_LIVE_MODEL` to `deploy.yml`'s `--set-env-vars`, using the values S-1 confirmed. That flag wipes any setting changed by hand in the console.
-- Document all three in apps/api/.env.example.
-- **Done when:** After a deploy, the Cloud Run service shows the three variables.
-- **Depends on:** S-1
-
-**`S-4` · Benchmark fixes and the first real run** · Easy · 0.5 days · Sprint 4
+**`S-4` · Land the benchmark script (#95) with real numbers** · Easy · 0.5 days · Sprint 4
 
 The benchmark produces real numbers.
 
@@ -522,19 +529,29 @@ Similar answers get similar scores every time.
 - **Done when:** The spread table is published and meets the threshold, or the limitations are documented.
 - **Depends on:** S-5, PN-1
 
-**`S-8` · Cost per interview (NFR-16)** · Medium · 0.5 days · Sprint 5
+**`S-8` · Record Gemini token usage and cost per interview (NFR-16)** · Medium · 0.5 days · Sprint 5
 
-A real ₹ figure per interview and a proposed ceiling.
+Every interview's Gemini cost is recorded, so the ₹ ceiling comes from real data.
 
-- Work out the evaluator's token cost from the bench `usageMetadata`.
-- Estimate the Gemini Live audio cost for a 15-minute interview from Google's pricing.
-- Propose the ₹ ceiling (open item OI-2) in docs/evaluation-benchmark.md.
-- **Done when:** The cost table and proposed ceiling are in the docs.
-- **Depends on:** S-4
+- Save the evaluator's `usageMetadata` (prompt and output tokens) on the feedback row: a nullable `Feedback.usage` JSON column (migration). Add the `next-question` calls' usage to the same record.
+- `apps/api/scripts/cost.ts` turns the stored usage into ₹ per interview at current prices, plus an estimate for 15 minutes of Gemini Live audio.
+- Put the cost table and the proposed ceiling (open item OI-2) in docs/evaluation-benchmark.md in the same PR. Add tests for saving the usage.
+- **Done when:** New feedback rows carry token usage, and the script prints ₹ per interview.
+- **Depends on:** S-1, PK-3
+
+**`S-9` · Rate-limit the Gemini-backed endpoints (NFR-16)** · Medium · 0.5 days · Sprint 5
+
+One user, or a bug stuck in a loop, can't run up the Gemini bill.
+
+- Add per-user limits on `POST /voice-token`, `POST /next-question`, resume analysis and feedback retry (for example 5 interviews an hour and 60 next-question calls an hour), keyed by user id. The API runs at most 2 instances, so note that the limits are per instance.
+- Return 429 with a clear message, and show it on the web.
+- Add tests for the limit and the 429.
+- **Done when:** Tests show a 429 after the limit, and normal use is unaffected.
+- **Depends on:** PK-3, V-1
 
 ### Praneel: role-wise evaluation
 
-About 5 days · 7 issues · 1 Hard, 4 Medium, 2 Easy · review partner: Shaurya
+About 5.75 days · 8 counted PRs · 1 Hard, 5 Medium, 2 Easy · review partner: Shaurya
 
 **`PN-1` · Land per-role rubrics (#121)** · Hard · 1 day · Sprint 4
 
@@ -547,13 +564,13 @@ Each role is judged on its own rubric, with strengths, improvements and quotes, 
 - **Done when:** A test shows an old-format feedback row still loads, and CI is green.
 - **Depends on:** S-1 (rebase after it if it touches the evaluator)
 
-**`PN-2` · Rubric calibration and technology-independent criteria (2 PRs)** · Medium · 0.75 days · Sprint 5
+**`PN-2` · Calibrate each role's rubric** · Medium · 0.5 days · Sprint 5
 
-Each role is scored on the right things, and a valid answer in a different technology isn't penalised.
+Each role is scored on the right things.
 
-- PR 1: review and tune each role's categories and criteria in `rubrics.ts`.
-- PR 2: state that any valid technology or approach earns full credit when the concept and reasoning are right. Add fixtures where the same question is answered with two different stacks.
-- **Done when:** The bench shows both stacks scoring within 1 point of each other.
+- Review and tune each role's categories and criteria in `rubrics.ts` against the bench fixtures.
+- Adjust fixture expected ranges where the old categories no longer apply.
+- **Done when:** The bench passes for every role with the tuned rubrics.
 - **Depends on:** PN-1
 
 **`PN-3` · Difficulty-aware expectations** · Easy · 0.5 days · Sprint 5
@@ -562,6 +579,15 @@ A basic question isn't held to the depth of an advanced one.
 
 - Add rubric wording that scales the expected depth with question difficulty, plus 2 fixtures (a basic and an advanced question).
 - **Done when:** The bench shows a full-marks basic answer isn't marked down for lacking advanced depth.
+- **Depends on:** PN-2
+
+**`PN-8` · Technology-independent scoring** · Easy · 0.5 days · Sprint 5
+
+A valid answer in a different technology isn't penalised.
+
+- State in the rubric that any valid technology or approach earns full credit when the concept and reasoning are right.
+- Add fixtures where the same question is answered with two different stacks.
+- **Done when:** The bench shows both stacks scoring within 1 point of each other.
 - **Depends on:** PN-2
 
 **`PN-4` · Cross-role validation test set** · Medium · 1 day · Sprint 5
@@ -573,14 +599,14 @@ Evidence that scores match each role's rubric across roles and difficulty levels
 - **Done when:** The validation results are published.
 - **Depends on:** PN-2, S-4
 
-**`PN-5` · Accessibility and cross-browser verification** · Medium · 0.75 days · Sprint 5
+**`PN-5` · Automated accessibility checks on every screen (NFR-14)** · Medium · 0.75 days · Sprint 5
 
-Proof that the revamped UI is accessible and works across browsers.
+Accessibility problems fail CI instead of reaching the evaluation.
 
-- Run Lighthouse or axe on every screen. Fix the issues, or file them.
-- Run the golden path in Chrome, Firefox and Edge (Safari if available).
-- Produce a results table for RJ-8's test report.
-- **Done when:** The audit and browser table are done, and the high-severity issues are fixed.
+- Add `vitest-axe` and an accessibility test for each screen, rendered with test data.
+- Fix what it finds: labels, contrast, focus order, button names.
+- Run the golden path in Chrome, Firefox and Edge (Safari if available) and give the results to Rahi for the test report (D-4).
+- **Done when:** Every screen has an axe test with no serious violations, running in CI.
 - **Depends on:** the UI migrations (P-8 to P-12)
 
 **`PN-6` · Quality review kit (NFR-18/19)** · Medium · 0.75 days · Sprint 5
@@ -589,20 +615,25 @@ The team can judge question relevance and feedback quality on 20 real sessions.
 
 - `scripts/export-review.ts` exports ended sessions (transcript plus feedback) to a review sheet with two checklist columns: is each question relevant, and is the feedback specific and actionable?
 - Assign 2 reviewers per session across the team.
-- **Done when:** The sheet is generated, and the reviews are assigned.
-- **Depends on:** VI-1
+- `--summarize` reads the filled sheet back and prints the percentages against the 80% targets. Add them to docs/quality-review.md afterwards (that follow-up doesn't count as a PR).
+- **Done when:** The sheet is generated, the reviews are assigned, and `--summarize` prints the percentages.
+- **Depends on:** VI-8
 
-**`PN-7` · Quality review results** · Easy · 0.25 days · Sprint 5
+**`PN-9` · Feedback for each answer** · Medium · 0.75 days · Sprint 5
 
-The 80% targets are measured.
+Candidates see what was good and what to improve in each answer, not only overall scores.
 
-- Collect the sheet and publish the percentages against the 80% targets in docs/quality-review.md.
-- **Done when:** Results published.
-- **Depends on:** PN-6
+- The evaluator also returns, for each question, a one-line summary of the answer, what was good and what to improve: an optional `perAnswer` list in the feedback contract, so old rows still load.
+- Results shows it as an expandable list under the transcript (agree the layout with Rahi's RH-4).
+- Add fixture and contract tests.
+- **Done when:** A live interview's results show per-answer notes, and an old feedback row still loads.
+- **Depends on:** PN-1, RH-4
 
 ### Rahi: history and analytics
 
-About 5 days · 8 issues · 1 Hard, 3 Medium, 4 Easy · review partner: Ved
+About 5 days · 8 counted PRs · 1 Hard, 3 Medium, 4 Easy · review partner: Ved
+
+Also owns the required document `D-4` (not counted, see §5a).
 
 **`RH-1` · Land the transcript on the results screen (#125)** · Easy · 0.25 days · Sprint 4
 
@@ -684,7 +715,7 @@ A quick summary and a copy the candidate can keep.
 
 ### Ved: improvement guide
 
-About 5 days · 8 issues · 1 Hard, 4 Medium, 3 Easy · review partner: Rahi
+About 5.5 days · 8 counted PRs · 1 Hard, 5 Medium, 2 Easy · review partner: Rahi
 
 **`V-1` · Retry failed feedback (#129 rebuilt)** · Medium · 1 day · Sprint 4
 
@@ -697,7 +728,7 @@ A failed evaluation can be retried safely, with the job queue kept.
 - **Done when:** The tests pass, and on the live site Try again turns a failed feedback into a ready one.
 - **Depends on:** P-1, PN-1
 
-**`V-2` · Topic weaknesses from your interviews** · Hard · 1 day · Sprint 4
+**`V-2` · Topic weaknesses from your interviews** · Hard · 1.25 days · Sprint 4
 
 The app knows which subjects a candidate is weak in.
 
@@ -705,6 +736,7 @@ The app knows which subjects a candidate is weak in.
 - `insights.service.ts` asks Gemini (JSON mode, Zod-validated) to map recent feedback and transcripts to topics (DBMS, OOP, OS, CN, DSA, SQL, System Design), each with a strength score.
 - Store them in a new `ImprovementPlan` table (`userId` unique, `topics` JSON).
 - Add tests with Gemini mocked.
+- Include docs/adr/0013-job-queue.md in this PR: why a Postgres queue (restart-safe, retryable, `SKIP LOCKED`) rather than evaluating directly, the #112 / #129 history, and why there are now three job types.
 - **Done when:** After a session's feedback is ready, an ImprovementPlan row holds topic scores.
 - **Depends on:** S-1, P-1
 
@@ -752,17 +784,21 @@ The plan adapts as the candidate improves.
 - **Done when:** A test shows an improved topic drops out of the plan.
 - **Depends on:** V-6
 
-**`V-8` · ADR: keep the job queue** · Easy · 0.25 days · Sprint 5
+**`V-9` · Practise a weak topic** · Medium · 0.5 days · Sprint 5
 
-The queue decision is written down for the evaluation.
+From the guide, one click starts an interview focused on a weak topic.
 
-- docs/adr/0013-job-queue.md covers why a Postgres queue (restart-safe, retryable, `SKIP LOCKED`) rather than direct evaluation, the #112 / #129 history, and why there are now three job types.
-- **Done when:** The ADR is merged.
-- **Depends on:** V-2
+- Each weak topic on the guide page gets 'Practise this', which opens New Interview with the matching role and focus filled in. Map topics to P-7's focuses, adding focuses where they're missing (lead review for contracts).
+- The briefing tells the interviewer to concentrate on that topic.
+- Add a test for the topic → focus mapping.
+- **Done when:** 'Practise this' starts an interview whose questions target that topic.
+- **Depends on:** V-5, P-7, P-8
 
 ### Vismay: data, privacy, SRS
 
-About 5.1 days · 8 issues · 1 Hard, 4 Medium, 3 Easy · review partner: Prakriti
+About 5 days · 8 counted PRs · 1 Hard, 4 Medium, 3 Easy · review partner: Prakriti
+
+Also owns the required document `D-2` (not counted, see §5a).
 
 **`VM-1` · Land resume-aware sessions (#123)** · Medium · 0.5 days · Sprint 4
 
@@ -782,15 +818,6 @@ Candidates can delete a single interview.
 - Build the confirmation with the AlertDialog primitive, drop the `useNavigate` try/catch and the aliases, and add 'Closes #97'.
 - **Done when:** Deleting an interview removes its turns and feedback, and another user gets 404.
 - **Depends on:** VM-1, P-6
-
-**`VM-3` · Remove the remaining ticket IDs and close #76 / #77** · Easy · 0.1 days · Sprint 4
-
-Code comments describe the code, not the tracker.
-
-- Run the grep from #76 and clean the 16 lines it prints.
-- Close #76, and close #77 (it was done by #116).
-- **Done when:** The grep prints nothing, and #76 and #77 are closed.
-- **Depends on:** P-2
 
 **`VM-4` · Global API error handler** · Medium · 0.75 days · Sprint 4
 
@@ -829,18 +856,31 @@ A candidate can protect an interview from the 30-day purge.
 - **Done when:** A kept session survives the purge test.
 - **Depends on:** VM-6
 
-**`VM-8` · SRS and traceability matrix in the repo** · Hard · 1.5 days · Sprint 5
+**`VM-9` · Download my data** · Easy · 0.5 days · Sprint 5
 
-Graders can trace every requirement to code, tests and status.
+Candidates can take a copy of everything the app stores about them.
 
-- docs/requirements.md holds the Notion SRS (all 57 requirements with priorities), plus a matrix: requirement → issue/PR → file → test → status. Deferrals carry their reasons.
-- Fix NFR-01 '2 s' → '5 s' everywhere in the docs.
-- **Done when:** Every Must is either done with evidence or deferred with a reason.
-- **Depends on:** most of Sprint 4 merged
+- `GET /api/me/export` returns the caller's profile, resume analysis, sessions, turns and feedback as one JSON file.
+- Add a 'Download my data' button on Profile.
+- Test that only the caller's data is included.
+- **Done when:** The download contains the caller's data and nobody else's.
+- **Depends on:** P-1
+
+**`VM-10` · Delete my account** · Hard · 1 day · Sprint 5
+
+Candidates can remove their account and all their data.
+
+- `DELETE /api/me` deletes the caller's resumes and sessions (turns, feedback and jobs cascade) and their improvement plan in one transaction, then deletes the Supabase Auth user with the service-role key (server only).
+- Profile gets 'Delete account' behind an AlertDialog where the user types DELETE. Afterwards they're signed out.
+- Tests: everything for that user is gone, other users are untouched, and a failed Supabase call leaves no half-deleted data (delete the auth user last, and make the request safe to repeat).
+- **Done when:** A test account deleted on the live site can't sign in and has no rows left.
+- **Depends on:** VM-9, P-6
 
 ### Raj: identity, docs, tests
 
-About 5.5 days · 8 issues · 1 Hard, 4 Medium, 3 Easy · review partner: Prayag
+About 5.25 days · 8 counted PRs · 2 Hard, 3 Medium, 3 Easy · review partner: Prayag
+
+Also owns the required document `D-3` (not counted, see §5a).
 
 **`RJ-1` · Show when resume AI analysis fell back** · Easy · 0.5 days · Sprint 4
 
@@ -898,7 +938,51 @@ A first impression for signed-out visitors.
 - **Done when:** Signed-out visitors see the landing page, and signed-in users go to the Dashboard.
 - **Depends on:** P-5
 
-**`RJ-7` · README, user guide, contribution table and AI-use note** · Medium · 1 day · Sprint 5
+**`RJ-9` · End-to-end golden-path test in CI** · Hard · 1 day · Sprint 5
+
+CI proves the main flow works in a real browser, not only in unit tests.
+
+- Add Playwright to apps/web with one test: sign in → upload a resume → set up → a typed interview (PK-4) with 2 answers → end → results show feedback.
+- Run it in CI against the local dev servers, with a dedicated test user whose credentials are CI secrets (Prayag adds them) and Gemini replaced by a fake behind a test-only env flag that production never sets.
+- Add it as a CI job.
+- **Done when:** The CI job passes on main and fails when the golden path breaks.
+- **Depends on:** PK-4, V-1, the UI migrations
+
+**`RJ-10` · Owner dashboard (FR-32)** · Medium · 0.75 days · Sprint 5
+
+The project owner can see how the product is used and where it fails.
+
+- `GET /api/admin/stats`, allowed only for emails in an `ADMIN_EMAILS` env var (404 for everyone else): users, interviews per day for the last 14 days, feedback ready/failed counts, and average score by role.
+- `screens/admin/` shows them with Cards and one chart. The navbar link appears only for admins.
+- Add tests for access and the counts.
+- **Done when:** An admin sees the numbers on the live site, and a normal user gets 404.
+- **Depends on:** RH-2, P-5
+
+## 5a. Required documents (not counted)
+
+These are graded deliverables, so each has an owner, but they don't count toward the PR target. Most of their content comes from the feature PRs (ADRs, benchmark numbers, traceability rows), so the owner mainly assembles and checks.
+
+**`D-1` · Design document with diagrams** · Kishan · Medium · 1 day · Sprint 5
+
+Graders can see the architecture at a glance.
+
+- docs/design.md with mermaid diagrams: deployment (Firebase, Cloud Run, Supabase, Gemini), ER (from schema.prisma), the interview sequence (token → Live → turns → end → job → worker → evaluator → results), and state machines for Session, Feedback (with retry) and Job.
+- One PrepForge-style request-chain walkthrough with sample JSON.
+- Mark the sections of codebase-guide.md it replaces as archived.
+- **Done when:** The diagrams render on GitHub and match the code after the freeze.
+- **Depends on:** P-2 (layout freeze), VI-8, V-1
+
+**`D-2` · SRS and traceability matrix in the repo** · Vismay · Medium · 1 day · Sprint 5
+
+Graders can trace every requirement to code, tests and status.
+
+- By day 5, create docs/requirements.md with the Notion SRS (all 57 requirements with priorities) and an empty matrix: requirement → issue/PR → file → test → status. From then on, every PR author fills in their own rows.
+- At the end, check every row, chase the gaps, and give each deferral its reason.
+- Fix NFR-01 '2 s' → '5 s' everywhere in the docs.
+- **Done when:** Every Must is either done with evidence or deferred with a reason.
+- **Depends on:** nothing for the skeleton; most of the work merged for the final check
+
+**`D-3` · README, user guide, contribution table and AI-use note** · Raj · Medium · 1 day · Sprint 5
 
 The repo explains itself and records who did what.
 
@@ -909,14 +993,14 @@ The repo explains itself and records who did what.
 - **Done when:** The docs match the frozen product.
 - **Depends on:** the feature freeze
 
-**`RJ-8` · Test plan and test report** · Medium · 1 day · Sprint 5
+**`D-4` · Test plan and test report** · Rahi · Medium · 1 day · Sprint 5
 
 Testing is documented as a Software Engineering deliverable.
 
 - docs/test-plan.md covers the levels: unit, integration, CI, benchmark, manual voice checks and cross-browser.
 - docs/test-report.md holds the CI results, the S-4 and S-7 numbers, and PN-5's results.
 - **Done when:** Both documents are merged, with real numbers.
-- **Depends on:** S-7, PN-5
+- **Depends on:** S-7, PN-5, RJ-9
 
 
 ## 6. Critical path
@@ -929,12 +1013,12 @@ Testing is documented as a Software Engineering deliverable.
   - the global error handler (VM-4);
   - the UI foundation (P-4 to P-6). Until it lands, do the backend part of your work first;
   - VM-1 → K-1 → P-7;
-  - PK-2 → VI-1 (Vishwa can start the adapter in its own new file on day 1).
+  - PK-2 → VI-8 (Vishwa builds the adapter, VI-1, in its own new file from day 1).
 - **By day 4:** `next-question` (PK-3). The fallback, typed mode and Kishan's "Type instead" all use it.
 - **Feedback chain:** PN-1 → V-1 → RH-3 (Rahi starts RH-1 and RH-2 on day 1).
 - **Interview-room merge order:**
   1. PK-2
-  2. VI-1
+  2. VI-8
   3. K-2 / K-3
   4. PK-4
   5. K-8
@@ -943,24 +1027,22 @@ Testing is documented as a Software Engineering deliverable.
 ## 7. If we fall behind
 
 **Never cut:**
-- VI-1 to VI-3;
+- VI-1 to VI-3 and VI-8;
 - S-1 and S-2;
 - PN-1, V-1, RH-3;
 - PK-3 and PK-4;
-- VM-8, K-9, RJ-8.
+- the documents D-1 to D-4.
 
 **Cut first:**
 - P-11, RH-7, RH-8, VI-6, K-7 and V-6;
-- then RJ-6 and PN-5;
+- then RJ-6, RJ-10 and PN-5;
 - then VM-6 and VM-7, documenting the deferral in the SRS.
 
 ## 8. Deferred
 
 These are recorded in the SRS with reasons:
-- FR-10 and FR-11 (GitHub or pasted context);
-- FR-19 (reason for ending early);
+- FR-10 (GitHub context; the pasted job description, FR-11, is PK-9);
 - FR-31 and NFR-17 (roles without code changes);
-- FR-32 (owner dashboard);
 - NFR-06 (load test);
 - points and a cosmetic store;
 - a coding/DSA round;
