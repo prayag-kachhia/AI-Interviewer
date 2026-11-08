@@ -1,5 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { buildBriefing } from '../services/briefing.service';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import prisma from '../utils/db';
+import { buildBriefing, briefingFor } from '../services/briefing.service';
+
+vi.mock('../utils/db', () => ({
+  default: {
+    resume: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+    },
+  },
+}));
 
 describe('Briefing Service — buildBriefing (FR-13, FR-15, FR-17, DR-01)', () => {
   it('builds a briefing for a Software Engineer session with structure, timing, and persona', () => {
@@ -72,5 +82,115 @@ describe('Briefing Service — buildBriefing (FR-13, FR-15, FR-17, DR-01)', () =
     expect(briefing).toContain('- How do you design a URL shortener?');
     expect(briefing).toContain('- Explain how indexing improves B-tree performance.');
     expect(briefing).toContain('Never ask any of the questions listed above');
+  });
+
+  it('includes company and seniority level when provided (P-7)', () => {
+    const briefing = buildBriefing({
+      roleId: 'software-engineer',
+      company: 'Google',
+      level: 'senior',
+    });
+
+    expect(briefing).toContain('TARGET COMPANY / ORGANIZATION:');
+    expect(briefing).toContain('Google');
+    expect(briefing).toContain('TARGET SENIORITY LEVEL:');
+    expect(briefing).toContain('senior');
+  });
+});
+
+describe('Briefing Service — briefingFor(session) (K-1, FR-17, DR-01)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('builds a briefing for a session without a resume', async () => {
+    (prisma.resume.findFirst as any).mockResolvedValueOnce(null);
+
+    const session = {
+      id: 'sess-no-resume',
+      role: 'software-engineer',
+      userId: 'user-1',
+      resumeId: null,
+    };
+
+    const briefing = await briefingFor(session);
+
+    expect(briefing).toContain('Software Engineer');
+    expect(briefing).toContain('1. Introduction');
+    expect(briefing).toContain('15 minutes');
+    expect(briefing).not.toContain('CANDIDATE RESUME SUMMARY:');
+  });
+
+  it('builds a briefing for a session with an attached resumeId (VM-1, FR-08)', async () => {
+    (prisma.resume.findUnique as any).mockResolvedValueOnce({
+      parsedProfile: JSON.stringify({
+        name: 'Jane Doe',
+        skills: ['TypeScript', 'Bun', 'PostgreSQL'],
+        projects: [{ title: 'Chat Engine', description: 'Real-time WebSocket server' }],
+      }),
+    });
+
+    const session = {
+      id: 'sess-with-resume',
+      role: 'backend-developer',
+      userId: 'user-2',
+      resumeId: 'resume-456',
+    };
+
+    const briefing = await briefingFor(session);
+
+    expect(prisma.resume.findUnique).toHaveBeenCalledWith({
+      where: { id: 'resume-456' },
+      select: { parsedProfile: true },
+    });
+    expect(briefing).toContain('Backend Developer');
+    expect(briefing).toContain('CANDIDATE RESUME SUMMARY:');
+    expect(briefing).toContain('Strongest skills: TypeScript, Bun, PostgreSQL');
+    expect(briefing).toContain('Project 1: Chat Engine: Real-time WebSocket server');
+  });
+
+  it('falls back to latest user resume when session has no direct resumeId', async () => {
+    (prisma.resume.findFirst as any).mockResolvedValueOnce({
+      parsedProfile: 'Experienced Systems Programmer in Rust and Go.',
+    });
+
+    const session = {
+      id: 'sess-fallback',
+      role: 'software-engineer',
+      userId: 'user-fallback',
+      resumeId: null,
+    };
+
+    const briefing = await briefingFor(session);
+
+    expect(prisma.resume.findFirst).toHaveBeenCalledWith({
+      where: { userId: 'user-fallback' },
+      orderBy: { createdAt: 'desc' },
+      select: { parsedProfile: true },
+    });
+    expect(briefing).toContain('CANDIDATE RESUME SUMMARY:');
+    expect(briefing).toContain('Experienced Systems Programmer in Rust and Go.');
+  });
+
+  it('passes focus, company, level, and custom time limit to briefing', async () => {
+    (prisma.resume.findFirst as any).mockResolvedValueOnce(null);
+
+    const session = {
+      id: 'sess-full-setup',
+      role: 'software-engineer',
+      userId: 'user-3',
+      resumeId: null,
+      focus: 'Distributed Systems',
+      company: 'Stripe',
+      level: 'staff',
+      timeLimitMin: 30,
+    };
+
+    const briefing = await briefingFor(session);
+
+    expect(briefing).toContain('Distributed Systems');
+    expect(briefing).toContain('Stripe');
+    expect(briefing).toContain('staff');
+    expect(briefing).toContain('30 minutes');
   });
 });

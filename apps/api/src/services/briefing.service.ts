@@ -1,10 +1,25 @@
 import { ROLES } from '@interview/contracts';
+import prisma from '../utils/db';
+import { summarizeProfile } from './resume-summary';
 
 export interface BriefingInput {
   roleId: string;
   focus?: string;
+  company?: string;
+  level?: string;
   resumeSummary?: string;
   pastQuestions?: string[];
+  timeLimitMin?: number;
+}
+
+export interface SessionLike {
+  id?: string;
+  role: string;
+  userId?: string;
+  resumeId?: string | null;
+  focus?: string | null;
+  company?: string | null;
+  level?: string | null;
   timeLimitMin?: number;
 }
 
@@ -32,7 +47,7 @@ const ROLE_PERSONAS: Record<string, { label: string; description: string }> = {
  * alter or view them (NFR-09).
  */
 export function buildBriefing(input: BriefingInput): string {
-  const { roleId, focus, resumeSummary, pastQuestions = [], timeLimitMin = 15 } = input;
+  const { roleId, focus, company, level, resumeSummary, pastQuestions = [], timeLimitMin = 15 } = input;
 
   const roleInfo = ROLE_PERSONAS[roleId] ?? {
     label: ROLES.find((r) => r.id === roleId)?.label || roleId,
@@ -48,7 +63,7 @@ You are conducting a professional mock technical interview for the position of "
 ${roleInfo.description}`
   );
 
-  // 2. Focus area (if provided)
+  // 2. Focus area (if provided, FR-07)
   if (focus && focus.trim()) {
     sections.push(
       `PRIMARY FOCUS AREA:
@@ -57,7 +72,25 @@ Concentrate your technical evaluation and question scenarios primarily around th
     );
   }
 
-  // 3. Candidate Resume Context (if provided, FR-08)
+  // 3. Target Company / Organization (if provided, P-7)
+  if (company && company.trim()) {
+    sections.push(
+      `TARGET COMPANY / ORGANIZATION:
+The candidate is interviewing for a position at "${company.trim()}".
+Tailor your questions, engineering culture expectations, and technical scenarios to the standards typical of ${company.trim()}.`
+    );
+  }
+
+  // 4. Seniority Level (if provided, P-7)
+  if (level && level.trim()) {
+    sections.push(
+      `TARGET SENIORITY LEVEL:
+The position level is "${level.trim()}".
+Calibrate the depth, complexity, and architectural expectations of your questions to a ${level.trim()}-level engineer.`
+    );
+  }
+
+  // 5. Candidate Resume Context (if provided, FR-08)
   if (resumeSummary && resumeSummary.trim()) {
     sections.push(
       `CANDIDATE RESUME SUMMARY:
@@ -104,4 +137,64 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
   );
 
   return sections.join('\n\n');
+}
+
+/**
+ * Loads role, resume summary (from VM-1's resumeId), focus, company, level,
+ * past questions, and time limit for a given session, and builds the unified briefing (K-1, FR-17, DR-01).
+ * Powers all interviewer paths: Gemini Live voice tokens, browser-speech fallback, and typed mode (PK-3).
+ */
+export async function briefingFor(session: SessionLike): Promise<string> {
+  const roleId = session.role;
+  const focus = session.focus?.trim() || undefined;
+  const company = session.company?.trim() || undefined;
+  const level = session.level?.trim() || undefined;
+  const timeLimitMin = session.timeLimitMin ?? 15;
+
+  let resumeParsedProfile: string | null = null;
+
+  // 1. Look up resume by direct resumeId link (VM-1, FR-08, FR-09)
+  if (session.resumeId && prisma.resume?.findUnique) {
+    const resume = await prisma.resume.findUnique({
+      where: { id: session.resumeId },
+      select: { parsedProfile: true },
+    });
+    resumeParsedProfile = resume?.parsedProfile ?? null;
+  }
+
+  // 2. Fallback if session has no direct resumeId or not found (e.g. legacy sessions or test mocks)
+  if (!resumeParsedProfile && session.userId && prisma.resume?.findFirst) {
+    const fallbackResume = await prisma.resume.findFirst({
+      where: { userId: session.userId },
+      orderBy: { createdAt: 'desc' },
+      select: { parsedProfile: true },
+    });
+    resumeParsedProfile = fallbackResume?.parsedProfile ?? null;
+  }
+
+  let resumeSummary: string | undefined;
+
+  if (resumeParsedProfile) {
+    try {
+      const profile = JSON.parse(resumeParsedProfile);
+      const summary = summarizeProfile(profile);
+      resumeSummary = summary.trim() ? summary : undefined;
+    } catch {
+      // Fallback for raw text profiles (e.g. in test fixtures or legacy records)
+      resumeSummary = resumeParsedProfile.trim() || undefined;
+    }
+  }
+
+  // Past questions will be populated by PK-7; empty until then
+  const pastQuestions: string[] = [];
+
+  return buildBriefing({
+    roleId,
+    focus,
+    company,
+    level,
+    resumeSummary,
+    pastQuestions,
+    timeLimitMin,
+  });
 }
