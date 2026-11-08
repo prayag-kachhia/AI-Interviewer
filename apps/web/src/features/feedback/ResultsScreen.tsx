@@ -19,38 +19,35 @@ export function formatElapsedTime(seconds: number): string {
 
 export function ResultsScreen({ sessionId }: { sessionId: string }) {
   const feedback = useFeedback(sessionId);
-  const turns = useTurns(sessionId);
+  const { turns, isLoading, error } = useTurns(sessionId);
 
-  if (!feedback || feedback.status === "pending") {
-    return (
-      <div role="status">
-        <p>Preparing your feedback… this can take a moment.</p>
-      </div>
-    );
-  }
-
-  if (feedback.status === "failed") {
-    const errorMsg = "error" in feedback ? (feedback as { error?: string }).error : undefined;
-    return (
-      <div role="alert">
-        <p>We couldn't generate feedback for this session.</p>
-        {errorMsg && <p>{errorMsg}</p>}
-      </div>
-    );
-  }
-
-  // status === "ready"
   return (
     <div>
-      <h2>Your Feedback</h2>
-      <p>{feedback.summary}</p>
-      <ul>
-        {feedback.scores?.map((s) => (
-          <li key={s.category}>
-            <strong>{s.category}:</strong> {s.score}/5 — {s.comment}
-          </li>
-        ))}
-      </ul>
+      {(!feedback || feedback.status === "pending") && (
+        <div role="status">
+          <p>Preparing your feedback… this can take a moment.</p>
+        </div>
+      )}
+
+      {feedback?.status === "failed" && (
+        <div role="alert">
+          <p>We couldn't generate feedback for this session.</p>
+        </div>
+      )}
+
+      {feedback?.status === "ready" && (
+        <div>
+          <h2>Your Feedback</h2>
+          <p>{feedback.summary}</p>
+          <ul>
+            {feedback.scores?.map((s) => (
+              <li key={s.category}>
+                <strong>{s.category}:</strong> {s.score}/5 — {s.comment}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <details open className="transcript-section" style={{ marginTop: "1.5rem" }}>
         <summary
@@ -63,7 +60,13 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
         >
           Transcript
         </summary>
-        {turns.length === 0 ? (
+        {isLoading ? (
+          <p className="loading-state">Loading transcript…</p>
+        ) : error ? (
+          <p className="error-state" role="alert">
+            {error}
+          </p>
+        ) : turns.length === 0 ? (
           <p className="empty-state">No transcript turns recorded.</p>
         ) : (
           <ol
