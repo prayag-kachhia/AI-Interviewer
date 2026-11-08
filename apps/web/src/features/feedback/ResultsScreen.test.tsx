@@ -350,3 +350,169 @@ test("handles retry API failure gracefully", async () => {
   // Button re-enabled
   expect(screen.getByRole("button", { name: /Try again/i })).not.toBeDisabled();
 });
+
+test("feedback fetch error displays error state alert", async () => {
+  vi.spyOn(api, "fetchFeedback").mockRejectedValue(new Error("Unable to fetch feedback from server"));
+
+  render(<ResultsScreen sessionId="s1" />);
+
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect(screen.getByText("Unable to fetch feedback from server")).toBeInTheDocument();
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+test("a later successful fetch clears the error state", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(api, "fetchFeedback")
+    .mockRejectedValueOnce(new Error("Temporary network glitch"))
+    .mockResolvedValue({
+      sessionId: "s1",
+      status: "ready",
+      summary: "Ready after reconnect.",
+      scores: [],
+    });
+
+  render(<ResultsScreen sessionId="s1" />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+
+  expect(screen.getByRole("alert")).toBeInTheDocument();
+  expect(screen.getByText("Temporary network glitch")).toBeInTheDocument();
+
+  // Advance timer by 3000ms for next poll
+  await act(() => vi.advanceTimersByTimeAsync(3000));
+
+  expect(screen.getByText("Ready after reconnect.")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("60-second waiting message appears only after threshold and disappears when ready", async () => {
+  vi.useFakeTimers();
+  const fetchSpy = vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+    sessionId: "s1",
+    status: "pending",
+  });
+
+  render(<ResultsScreen sessionId="s1" />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+
+  expect(screen.getByRole("status")).toBeInTheDocument();
+  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
+
+  // Advance by 30 seconds (before 60s threshold)
+  await act(() => vi.advanceTimersByTimeAsync(30000));
+  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
+
+  // Advance by another 30 seconds (reaching 60s threshold)
+  await act(() => vi.advanceTimersByTimeAsync(30000));
+  expect(screen.getByText("Taking longer than usual")).toBeInTheDocument();
+
+  // Now resolve feedback to ready on next poll
+  fetchSpy.mockResolvedValueOnce({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Finally ready.",
+    scores: [],
+  });
+
+  await act(() => vi.advanceTimersByTimeAsync(3000));
+
+  expect(screen.getByText("Finally ready.")).toBeInTheDocument();
+  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
+});
+
+test("60-second waiting message disappears when feedback becomes failed", async () => {
+  vi.useFakeTimers();
+  const fetchSpy = vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+    sessionId: "s1",
+    status: "pending",
+  });
+
+  render(<ResultsScreen sessionId="s1" />);
+  await act(() => vi.advanceTimersByTimeAsync(60000));
+
+  expect(screen.getByText("Taking longer than usual")).toBeInTheDocument();
+
+  // Resolves to failed on next poll
+  fetchSpy.mockResolvedValueOnce({
+    sessionId: "s1",
+    status: "failed",
+  });
+
+  await act(() => vi.advanceTimersByTimeAsync(3000));
+
+  expect(screen.getByText("We couldn't generate feedback for this session.")).toBeInTheDocument();
+  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
+});
+
+test("retry resets the 60-second waiting timer, clears error, and resumes polling", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(api, "retryFeedback").mockResolvedValue({
+    sessionId: "s1",
+    status: "pending",
+  });
+
+  const fetchSpy = vi.spyOn(api, "fetchFeedback")
+    .mockResolvedValueOnce({ sessionId: "s1", status: "pending" })
+    .mockResolvedValue({ sessionId: "s1", status: "failed" });
+
+  render(<ResultsScreen sessionId="s1" />);
+  await act(() => vi.advanceTimersByTimeAsync(3000));
+
+  expect(screen.getByRole("alert")).toBeInTheDocument();
+  const tryAgainButton = screen.getByRole("button", { name: /Try again/i });
+
+  // Now when clicking retry, it resets to pending
+  fetchSpy.mockResolvedValue({ sessionId: "s1", status: "pending" });
+
+  await act(async () => {
+    fireEvent.click(tryAgainButton);
+  });
+
+  expect(screen.getByRole("status")).toBeInTheDocument();
+  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
+
+  // Advance by 30 seconds: still pending, but under 60s from retry reset
+  await act(() => vi.advanceTimersByTimeAsync(30000));
+  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
+
+  // Advance another 30 seconds (total 60s after retry): now message appears
+  await act(() => vi.advanceTimersByTimeAsync(30000));
+  expect(screen.getByText("Taking longer than usual")).toBeInTheDocument();
+});
+
+test("retry on fetch error resets error state and resumes polling", async () => {
+  vi.useFakeTimers();
+  const retrySpy = vi.spyOn(api, "retryFeedback").mockResolvedValue({
+    sessionId: "s1",
+    status: "pending",
+  });
+
+  vi.spyOn(api, "fetchFeedback")
+    .mockRejectedValueOnce(new Error("Initial fetch failure"))
+    .mockResolvedValueOnce({ sessionId: "s1", status: "pending" })
+    .mockResolvedValue({
+      sessionId: "s1",
+      status: "ready",
+      summary: "Success after retry button.",
+      scores: [],
+    });
+
+  render(<ResultsScreen sessionId="s1" />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+
+  expect(screen.getByText("Initial fetch failure")).toBeInTheDocument();
+  const tryAgainBtn = screen.getByRole("button", { name: /Try again/i });
+
+  await act(async () => {
+    fireEvent.click(tryAgainBtn);
+  });
+
+  expect(retrySpy).toHaveBeenCalledWith("s1");
+  // Retry resets error state to pending status
+  expect(screen.getByRole("status")).toBeInTheDocument();
+  expect(screen.queryByText("Initial fetch failure")).not.toBeInTheDocument();
+
+  // Advance timer for next polling iteration
+  await act(() => vi.advanceTimersByTimeAsync(3000));
+  expect(screen.getByText("Success after retry button.")).toBeInTheDocument();
+});

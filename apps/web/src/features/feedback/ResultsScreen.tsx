@@ -93,7 +93,7 @@ export function ResultsScreen({
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
 
-  const feedback = useFeedback(sessionId, reloadTrigger);
+  const { feedback, error, isLongWaiting } = useFeedback(sessionId, reloadTrigger);
   const turns = useTurns(sessionId);
   const fetchedSession = useSessionDetails(sessionId);
   const session = initialSession ?? fetchedSession;
@@ -114,10 +114,41 @@ export function ResultsScreen({
     }
   };
 
+  if (error && (!feedback || feedback.status === "pending")) {
+    return (
+      <div>
+        <div role="alert" style={{ marginBottom: "1.5rem" }}>
+          <p>{error}</p>
+          {retryError && (
+            <p style={{ color: "var(--error-color, #ef4444)", marginTop: "0.5rem" }}>
+              {retryError}
+            </p>
+          )}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleRetry}
+            disabled={retrying}
+            style={{ marginTop: "1rem" }}
+          >
+            {retrying ? "Retrying…" : "Try again"}
+          </button>
+        </div>
+
+        <TranscriptSection turns={turns} />
+      </div>
+    );
+  }
+
   if (!feedback || feedback.status === "pending") {
     return (
-      <div role="status">
-        <p>Preparing your feedback… this can take a moment.</p>
+      <div>
+        <div role="status">
+          <p>Preparing your feedback… this can take a moment.</p>
+          {isLongWaiting && <p>Taking longer than usual</p>}
+        </div>
+
+        <TranscriptSection turns={turns} />
       </div>
     );
   }
