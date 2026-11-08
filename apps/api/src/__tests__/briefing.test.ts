@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import prisma from '../utils/db';
-import { buildBriefing, briefingFor } from '../services/briefing.service';
+import {
+  buildBriefing,
+  briefingFor,
+  calculatePhaseTiming,
+} from '../services/briefing.service';
 
 vi.mock('../utils/db', () => ({
   default: {
@@ -192,5 +196,140 @@ describe('Briefing Service — briefingFor(session) (K-1, FR-17, DR-01)', () => 
     expect(briefing).toContain('Stripe');
     expect(briefing).toContain('staff');
     expect(briefing).toContain('30 minutes');
+  });
+});
+
+describe('Briefing Service — 3-Phase Question Progression (K-4, DR-01, FR-17)', () => {
+  describe('calculatePhaseTiming()', () => {
+    it('calculates the timing split for a standard 15-minute interview', () => {
+      const timing = calculatePhaseTiming(15);
+      expect(timing.warmUpMin).toBe(3);
+      expect(timing.deepDiveMin).toBe(8);
+      expect(timing.pressureTestMin).toBe(4);
+      expect(timing.warmUpMin + timing.deepDiveMin + timing.pressureTestMin).toBe(15);
+    });
+
+    it('calculates the timing split for a 10-minute short interview', () => {
+      const timing = calculatePhaseTiming(10);
+      expect(timing.warmUpMin).toBe(2);
+      expect(timing.deepDiveMin).toBe(6);
+      expect(timing.pressureTestMin).toBe(2);
+      expect(timing.warmUpMin + timing.deepDiveMin + timing.pressureTestMin).toBe(10);
+    });
+
+    it('calculates the timing split for an extended 30-minute interview', () => {
+      const timing = calculatePhaseTiming(30);
+      expect(timing.warmUpMin).toBe(6);
+      expect(timing.deepDiveMin).toBe(17);
+      expect(timing.pressureTestMin).toBe(7);
+      expect(timing.warmUpMin + timing.deepDiveMin + timing.pressureTestMin).toBe(30);
+    });
+
+    it('calculates the timing split for an extended 45-minute interview', () => {
+      const timing = calculatePhaseTiming(45);
+      expect(timing.warmUpMin).toBe(9);
+      expect(timing.deepDiveMin).toBe(25);
+      expect(timing.pressureTestMin).toBe(11);
+      expect(timing.warmUpMin + timing.deepDiveMin + timing.pressureTestMin).toBe(45);
+    });
+  });
+
+  describe('3-Phase structure and content in buildBriefing()', () => {
+    it('contains all 3 phases clearly labeled in sequence', () => {
+      const briefing = buildBriefing({ roleId: 'software-engineer', timeLimitMin: 15 });
+
+      expect(briefing).toContain('Phase 1: Warm-up & Architecture Overview');
+      expect(briefing).toContain('Phase 2: Technical Deep-Dive into Trade-offs');
+      expect(briefing).toContain('Phase 3: Pressure-Testing & Edge-Case Failure Scenarios');
+    });
+
+    it('includes explicit minute split allocated to each phase in the prompt text', () => {
+      const briefing = buildBriefing({ roleId: 'software-engineer', timeLimitMin: 15 });
+
+      expect(briefing).toContain('~3 minutes');
+      expect(briefing).toContain('~8 minutes');
+      expect(briefing).toContain('~4 minutes');
+    });
+
+    it('dynamically recalculates phase minutes when a different time limit is set', () => {
+      const briefing30 = buildBriefing({ roleId: 'software-engineer', timeLimitMin: 30 });
+
+      expect(briefing30).toContain('~6 minutes');
+      expect(briefing30).toContain('~17 minutes');
+      expect(briefing30).toContain('~7 minutes');
+    });
+
+    it('includes role-specific deep-dive trade-offs and pressure-test failure scenarios for Backend Developer', () => {
+      const briefing = buildBriefing({ roleId: 'backend-developer' });
+
+      // Phase 2 deep-dive trade-offs
+      expect(briefing).toContain('database indexing (B-Tree vs Hash)');
+      expect(briefing).toContain('connection pooling');
+      expect(briefing).toContain('distributed caching');
+      expect(briefing).toContain('REST vs gRPC');
+
+      // Phase 3 pressure-testing scenarios
+      expect(briefing).toContain('network partitions');
+      expect(briefing).toContain('split-brain scenarios');
+      expect(briefing).toContain('cascading microservice timeouts');
+    });
+
+    it('includes role-specific deep-dive trade-offs and pressure-test failure scenarios for Data Analyst', () => {
+      const briefing = buildBriefing({ roleId: 'data-analyst' });
+
+      // Phase 2 deep-dive trade-offs
+      expect(briefing).toContain('SQL query optimization');
+      expect(briefing).toContain('indexing strategies');
+      expect(briefing).toContain('handling skewed data distributions');
+
+      // Phase 3 pressure-testing scenarios
+      expect(briefing).toContain('missing or corrupt data at scale');
+      expect(briefing).toContain('conflicting metrics from upstream pipelines');
+    });
+
+    it('includes role-specific deep-dive trade-offs and pressure-test failure scenarios for Software Engineer', () => {
+      const briefing = buildBriefing({ roleId: 'software-engineer' });
+
+      // Phase 2 deep-dive trade-offs
+      expect(briefing).toContain('data structures');
+      expect(briefing).toContain('memory management vs CPU efficiency');
+      expect(briefing).toContain('async I/O');
+
+      // Phase 3 pressure-testing scenarios
+      expect(briefing).toContain('sudden 10x traffic spikes');
+      expect(briefing).toContain('race conditions in multi-threaded workflows');
+    });
+
+    it('instructs interviewer to ground Phase 1 in candidate resume projects and architecture', () => {
+      const briefing = buildBriefing({
+        roleId: 'software-engineer',
+        resumeSummary: 'Built an e-commerce platform using Next.js, Redis, and PostgreSQL.',
+      });
+
+      expect(briefing).toContain('Phase 1: Warm-up & Architecture Overview');
+      expect(briefing).toContain('resume projects, technologies, and system architecture');
+      expect(briefing).toContain('Built an e-commerce platform using Next.js, Redis, and PostgreSQL.');
+    });
+
+    it('ensures session briefing generated via briefingFor() integrates the 3-phase progression', async () => {
+      (prisma.resume.findFirst as any).mockResolvedValueOnce(null);
+
+      const session = {
+        id: 'sess-progression',
+        role: 'backend-developer',
+        userId: 'user-prog',
+        resumeId: null,
+        focus: 'High Throughput Message Queues',
+        timeLimitMin: 20,
+      };
+
+      const briefing = await briefingFor(session);
+
+      expect(briefing).toContain('INTERVIEW STRUCTURE & 3-PHASE QUESTION PROGRESSION');
+      expect(briefing).toContain('Phase 1: Warm-up & Architecture Overview');
+      expect(briefing).toContain('Phase 2: Technical Deep-Dive into Trade-offs');
+      expect(briefing).toContain('Phase 3: Pressure-Testing & Edge-Case Failure Scenarios');
+      expect(briefing).toContain('High Throughput Message Queues');
+    });
   });
 });

@@ -41,6 +41,52 @@ const ROLE_PERSONAS: Record<string, { label: string; description: string }> = {
   },
 };
 
+export interface RoleProgression {
+  deepDiveTopics: string;
+  pressureTestTopics: string;
+}
+
+export const ROLE_PROGRESSION: Record<string, RoleProgression> = {
+  'software-engineer': {
+    deepDiveTopics:
+      'data structures, memory management vs CPU efficiency, async I/O, clean API design, and caching layers',
+    pressureTestTopics:
+      'sudden 10x traffic spikes, race conditions in multi-threaded workflows, degraded external dependencies, and memory leaks',
+  },
+  'data-analyst': {
+    deepDiveTopics:
+      'SQL query optimization, indexing strategies, handling skewed data distributions, metric drift, and ETL schema normalization vs denormalization',
+    pressureTestTopics:
+      'missing or corrupt data at scale, conflicting metrics from upstream pipelines, and reconciling anomalies during executive reporting',
+  },
+  'backend-developer': {
+    deepDiveTopics:
+      'database indexing (B-Tree vs Hash), connection pooling, distributed caching (Redis/Memcached), REST vs gRPC, idempotent endpoints, and transaction isolation levels',
+    pressureTestTopics:
+      'network partitions, split-brain scenarios, cascading microservice timeouts, poison-pill queue messages, and primary database failover under load',
+  },
+};
+
+export interface PhaseTiming {
+  warmUpMin: number;
+  deepDiveMin: number;
+  pressureTestMin: number;
+}
+
+/**
+ * Calculates the time allocation across the three interview phases (K-4, DR-01, FR-17).
+ * Phase 1 (Warm-up): ~20%
+ * Phase 2 (Deep-dive): ~55%
+ * Phase 3 (Pressure-test): ~25%
+ */
+export function calculatePhaseTiming(totalMin: number): PhaseTiming {
+  const safeTotal = Math.max(5, totalMin);
+  const warmUpMin = Math.max(2, Math.round(safeTotal * 0.2));
+  const deepDiveMin = Math.max(2, Math.round(safeTotal * 0.55));
+  const pressureTestMin = Math.max(1, safeTotal - warmUpMin - deepDiveMin);
+  return { warmUpMin, deepDiveMin, pressureTestMin };
+}
+
 /**
  * Builds the server-side system instructions for the AI voice interviewer (FR-13, FR-15, FR-17, DR-01).
  * These instructions are locked into the ephemeral token minted for Gemini Live so the browser cannot
@@ -110,17 +156,38 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
     );
   }
 
-  // 5. Structure & Timing (DR-01, FR-17)
+  // 5. Structure & Timing — 3-Phase Question Progression (K-4, DR-01, FR-17)
+  const { warmUpMin, deepDiveMin, pressureTestMin } = calculatePhaseTiming(timeLimitMin);
+  const progression = ROLE_PROGRESSION[roleId] ?? {
+    deepDiveTopics: 'core technical trade-offs, architecture patterns, and algorithmic performance',
+    pressureTestTopics: 'production failure modes, edge-case bottlenecks, and incident debugging under scale',
+  };
+
   sections.push(
-    `INTERVIEW STRUCTURE & TIMING (Target duration: ${timeLimitMin} minutes):
+    `INTERVIEW STRUCTURE & 3-PHASE QUESTION PROGRESSION (Total target duration: ${timeLimitMin} minutes):
+
 1. Introduction (Start immediately):
    - Introduce yourself warmly as the AI Technical Interviewer.
-   - Announce the role ("${roleInfo.label}"${focus ? ` - ${focus}` : ''}) and mention that the interview will take about ${timeLimitMin} minutes.
-   - Immediately ask your first technical or introductory question to begin.
-2. Core Technical Questions (3 to 4 questions total):
-   - Ask strictly ONE question at a time. Never bundle multiple questions into a single turn.
-   - Actively listen to the candidate's answer. Ask a relevant, thoughtful follow-up question exploring their technical trade-offs, debugging approach, or architectural decisions before moving to a new topic.
-   - Maintain appropriate technical depth for a campus placement / industry candidate.
+   - Announce the role ("${roleInfo.label}"${focus ? ` - ${focus}` : ''}${company ? ` at ${company}` : ''}) and state that the interview will take about ${timeLimitMin} minutes.
+   - Immediately ask your first technical or introductory question to begin Phase 1.
+
+2. Core Technical Questions — 3-Phase Progression (Ask strictly ONE question at a time):
+   You MUST guide the candidate sequentially through three distinct phases:
+
+   • Phase 1: Warm-up & Architecture Overview (~${warmUpMin} minutes)
+     - Ground questions in the candidate's resume projects, technologies, and system architecture. If no resume summary is present, ask about a notable system, web application, or project they have designed and implemented.
+     - Evaluate how clearly the candidate articulates architectural decisions, system boundaries, component responsibilities, and technology trade-offs.
+
+   • Phase 2: Technical Deep-Dive into Trade-offs (~${deepDiveMin} minutes)
+     - Drive into rigorous technical depth tailored to the "${roleInfo.label}" role${focus ? ` and the focus area: "${focus}"` : ''}.
+     - Actively evaluate key engineering trade-offs: focus on ${progression.deepDiveTopics}.
+     - Listen carefully to the candidate's response. Ask a relevant, thoughtful follow-up question exploring their technical trade-offs, debugging approach, or architectural decisions before moving to a new topic.
+     - Maintain appropriate technical depth for a campus placement / industry candidate.
+
+   • Phase 3: Pressure-Testing & Edge-Case Failure Scenarios (~${pressureTestMin} minutes)
+     - Challenge the candidate with real-world failure modes, scale limits, and edge cases: focus on ${progression.pressureTestTopics}.
+     - Evaluate their debugging methodology, fault-tolerance design, graceful degradation, and composure under difficult failure scenarios (e.g., "What happens if this component fails under peak traffic?", "How would you trace an intermittent data corruption or timeout?").
+
 3. Wrap-up & Closing:
    - When approaching the ${timeLimitMin}-minute mark, inform the candidate that it is time to wrap up.
    - Give them an opportunity to ask any final questions or share parting thoughts.
