@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../utils/db';
+import { EARLY_END_THRESHOLD_MINUTES } from '../services/session.service';
 
 vi.mock('@supabase/supabase-js', () => {
   const getUserMock = vi.fn();
@@ -191,9 +192,9 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           userId: AUTH_USER.id,
           role: 'backend-developer',
           status: 'ENDED',
-          startedAt: new Date(now - 1000 * 60 * 5), // 5 min ago
-          endedAt: new Date(now - 1000 * 60 * 1), // ended after 4 mins (<15 min -> endedEarly true)
-          createdAt: new Date(now - 1000 * 60 * 5),
+          startedAt: new Date(now - 1000 * 60 * EARLY_END_THRESHOLD_MINUTES),
+          endedAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES - 4)), // 4 mins (< EARLY_END_THRESHOLD_MINUTES -> endedEarly true)
+          createdAt: new Date(now - 1000 * 60 * EARLY_END_THRESHOLD_MINUTES),
           feedback: { status: 'ready' },
         },
         {
@@ -201,9 +202,9 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           userId: AUTH_USER.id,
           role: 'software-engineer',
           status: 'ENDED',
-          startedAt: new Date(now - 1000 * 60 * 30), // 30 min ago
-          endedAt: new Date(now - 1000 * 60 * 10), // ended after 20 mins (>=15 min -> endedEarly false)
-          createdAt: new Date(now - 1000 * 60 * 30),
+          startedAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES + 15)),
+          endedAt: new Date(now - 1000 * 60 * 5), // (EARLY_END_THRESHOLD_MINUTES + 10) mins (>= EARLY_END_THRESHOLD_MINUTES -> endedEarly false)
+          createdAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES + 15)),
           feedback: { status: 'failed' },
         },
       ];

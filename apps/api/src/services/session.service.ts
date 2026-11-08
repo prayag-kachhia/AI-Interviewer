@@ -60,6 +60,8 @@ export async function getOwnedSession(sessionId: string, userId: string) {
   return session;
 }
 
+export const EARLY_END_THRESHOLD_MINUTES = 15;
+
 /**
  * List all sessions belonging to the authenticated user, sorted newest first.
  * Includes role, date, session status, feedback status, and endedEarly flag.
@@ -82,7 +84,7 @@ export async function listSessions(userId: string) {
       const end = new Date(s.endedAt).getTime();
       if (!isNaN(start) && !isNaN(end) && end > start) {
         const durationSec = (end - start) / 1000;
-        if (durationSec < 15 * 60) {
+        if (durationSec < EARLY_END_THRESHOLD_MINUTES * 60) {
           endedEarly = true;
         }
       }

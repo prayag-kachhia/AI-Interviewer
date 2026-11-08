@@ -11,7 +11,7 @@ vi.mock("../../lib/api", () => ({
   getFeedback: vi.fn(),
   getTurns: vi.fn().mockResolvedValue({ success: true, data: [] }),
   getSession: vi.fn().mockResolvedValue({ success: true, data: null }),
-  retryFeedback: vi.fn().mockResolvedValue({ success: true }),
+  retryFeedback: vi.fn().mockResolvedValue({ sessionId: "s1", status: "pending" }),
 }));
 
 afterEach(() => {
@@ -49,18 +49,6 @@ test("given feedback failed, then the screen says so", async () => {
 
   render(<ResultsScreen sessionId="s1" />);
   expect(await screen.findByRole("alert")).toBeInTheDocument();
-});
-
-test("given feedback failed with error details, then the screen displays the error", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "failed",
-    error: "Evaluation timed out after 12000 ms",
-  } as any);
-
-  render(<ResultsScreen sessionId="s1" />);
-  expect(await screen.findByRole("alert")).toBeInTheDocument();
-  expect(await screen.findByText("Evaluation timed out after 12000 ms")).toBeInTheDocument();
 });
 
 test("given feedback is pending, then it polls again and shows it once ready, then stops", async () => {
@@ -199,7 +187,7 @@ test("collapsible transcript section is open by default", async () => {
   expect(details).toHaveAttribute("open");
 });
 
-test("displays feedback scores with strengths, improvements, and quote", async () => {
+test("displays feedback scores", async () => {
   vi.spyOn(api, "fetchFeedback").mockResolvedValue({
     sessionId: "s1",
     status: "ready",
@@ -209,9 +197,6 @@ test("displays feedback scores with strengths, improvements, and quote", async (
         category: "System Design",
         score: 4,
         comment: "Solid architecture explanation.",
-        strengths: ["Clear component modularity", "Understands horizontal scaling"],
-        improvements: ["Discuss failure recovery more thoroughly"],
-        quote: "We split the service into workers and an event log.",
       },
     ],
   });
@@ -220,10 +205,8 @@ test("displays feedback scores with strengths, improvements, and quote", async (
 
   expect(await screen.findByText("Detailed interview assessment.")).toBeInTheDocument();
   expect(screen.getByText(/System Design:/)).toBeInTheDocument();
-  expect(screen.getByText("Clear component modularity")).toBeInTheDocument();
-  expect(screen.getByText("Understands horizontal scaling")).toBeInTheDocument();
-  expect(screen.getByText("Discuss failure recovery more thoroughly")).toBeInTheDocument();
-  expect(screen.getByText(/"We split the service into workers and an event log."/)).toBeInTheDocument();
+  expect(screen.getByText(/4\/5/)).toBeInTheDocument();
+  expect(screen.getByText(/Solid architecture explanation/)).toBeInTheDocument();
 });
 
 test("displays 'Ended early' badge when session ended before limit", async () => {
@@ -286,8 +269,7 @@ test("given feedback failed, then 'Try again' button is shown and transcript is 
   vi.spyOn(api, "fetchFeedback").mockResolvedValue({
     sessionId: "s1",
     status: "failed",
-    error: "Service unavailable",
-  } as any);
+  });
 
   vi.mocked(getTurns).mockResolvedValue({
     success: true,
@@ -317,7 +299,10 @@ test("given feedback failed, then 'Try again' button is shown and transcript is 
 
 test("clicking 'Try again' calls retry endpoint, transitions to preparing state, and resumes polling", async () => {
   vi.useFakeTimers();
-  const retrySpy = vi.spyOn(api, "retryFeedback").mockResolvedValue({ success: true });
+  const retrySpy = vi.spyOn(api, "retryFeedback").mockResolvedValue({
+    sessionId: "s1",
+    status: "pending",
+  });
 
   vi.spyOn(api, "fetchFeedback")
     .mockResolvedValueOnce({ sessionId: "s1", status: "failed" })

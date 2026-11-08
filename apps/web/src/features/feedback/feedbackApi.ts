@@ -6,8 +6,6 @@ export async function fetchFeedback(sessionId: string): Promise<Feedback> {
   return getFeedback(sessionId);
 }
 
-export async function retryFeedback(
-  sessionId: string
-): Promise<{ success: boolean; message?: string }> {
+export async function retryFeedback(sessionId: string): Promise<Feedback> {
   return apiRetryFeedback(sessionId);
 }

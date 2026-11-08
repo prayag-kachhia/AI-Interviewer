@@ -123,12 +123,10 @@ export function ResultsScreen({
   }
 
   if (feedback.status === "failed") {
-    const errorMsg = "error" in feedback ? (feedback as { error?: string }).error : undefined;
     return (
       <div>
         <div role="alert" style={{ marginBottom: "1.5rem" }}>
           <p>We couldn't generate feedback for this session.</p>
-          {errorMsg && <p>{errorMsg}</p>}
           {retryError && (
             <p style={{ color: "var(--error-color, #ef4444)", marginTop: "0.5rem" }}>
               {retryError}
@@ -206,50 +204,6 @@ export function ResultsScreen({
             <div>
               <strong>{s.category}:</strong> {s.score}/5 — {s.comment}
             </div>
-
-            {s.strengths && s.strengths.length > 0 && (
-              <div style={{ marginTop: "0.5rem" }}>
-                <strong style={{ fontSize: "0.9rem", color: "var(--success-color, #10b981)" }}>
-                  Strengths:
-                </strong>
-                <ul style={{ margin: "0.25rem 0 0.25rem 1.25rem" }}>
-                  {s.strengths.map((str, idx) => (
-                    <li key={idx} style={{ color: "var(--text-main)", fontSize: "0.9rem" }}>
-                      {str}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {s.improvements && s.improvements.length > 0 && (
-              <div style={{ marginTop: "0.5rem" }}>
-                <strong style={{ fontSize: "0.9rem", color: "var(--warning-color, #f59e0b)" }}>
-                  Areas for Improvement:
-                </strong>
-                <ul style={{ margin: "0.25rem 0 0.25rem 1.25rem" }}>
-                  {s.improvements.map((imp, idx) => (
-                    <li key={idx} style={{ color: "var(--text-main)", fontSize: "0.9rem" }}>
-                      {imp}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {s.quote && (
-              <div
-                style={{
-                  marginTop: "0.5rem",
-                  fontStyle: "italic",
-                  color: "var(--text-muted)",
-                  fontSize: "0.9rem",
-                }}
-              >
-                <span>Supporting Quote: </span>
-                <span>"{s.quote}"</span>
-              </div>
-            )}
           </li>
         ))}
       </ul>

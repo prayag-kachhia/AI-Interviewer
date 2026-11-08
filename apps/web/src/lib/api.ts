@@ -142,13 +142,12 @@ export const getFeedback = async (sessionId: string): Promise<Feedback> => {
   return Feedback.parse(data.data);
 };
 
-export const retryFeedback = async (
-  sessionId: string
-): Promise<{ success: boolean; message?: string }> => {
-  const { data } = await api.post<{ success: boolean; message?: string }>(
+export const retryFeedback = async (sessionId: string): Promise<Feedback> => {
+  const { data } = await api.post<{ success: boolean; data?: unknown } | Feedback>(
     `/sessions/${sessionId}/feedback/retry`
   );
-  return data;
+  const payload = (data && typeof data === 'object' && 'data' in data && data.data) ? data.data : data;
+  return Feedback.parse(payload);
 };
 
 export default api;

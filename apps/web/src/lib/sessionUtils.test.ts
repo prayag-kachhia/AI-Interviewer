@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isEndedEarly } from "./sessionUtils";
+import { isEndedEarly, EARLY_END_THRESHOLD_MINUTES } from "./sessionUtils";
 
 describe("isEndedEarly", () => {
   it("returns false for null or undefined session", () => {
@@ -36,18 +36,18 @@ describe("isEndedEarly", () => {
     expect(isEndedEarly({ status: "ENDED", startedAt: started, endedAt: started })).toBe(false);
   });
 
-  it("returns true when session duration is less than configured limit (15 mins default)", () => {
+  it(`returns true when session duration is less than configured limit (${EARLY_END_THRESHOLD_MINUTES} mins default)`, () => {
     const started = "2026-11-01T10:00:00Z";
-    const ended = "2026-11-01T10:10:00Z"; // 10 minutes < 15 minutes
+    const ended = "2026-11-01T10:10:00Z"; // 10 minutes < EARLY_END_THRESHOLD_MINUTES minutes
     expect(isEndedEarly({ status: "ENDED", startedAt: started, endedAt: ended })).toBe(true);
   });
 
   it("returns false when session duration is equal to or greater than limit", () => {
     const started = "2026-11-01T10:00:00Z";
-    const exact15 = "2026-11-01T10:15:00Z"; // 15 mins
-    const past15 = "2026-11-01T10:20:00Z"; // 20 mins
-    expect(isEndedEarly({ status: "ENDED", startedAt: started, endedAt: exact15 })).toBe(false);
-    expect(isEndedEarly({ status: "ENDED", startedAt: started, endedAt: past15 })).toBe(false);
+    const exactThreshold = new Date(new Date(started).getTime() + EARLY_END_THRESHOLD_MINUTES * 60 * 1000).toISOString();
+    const pastThreshold = new Date(new Date(started).getTime() + (EARLY_END_THRESHOLD_MINUTES + 5) * 60 * 1000).toISOString();
+    expect(isEndedEarly({ status: "ENDED", startedAt: started, endedAt: exactThreshold })).toBe(false);
+    expect(isEndedEarly({ status: "ENDED", startedAt: started, endedAt: pastThreshold })).toBe(false);
   });
 
   it("supports custom configuredMinutes", () => {

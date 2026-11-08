@@ -1,3 +1,5 @@
+export const EARLY_END_THRESHOLD_MINUTES = 15;
+
 export interface SessionTimingInfo {
   status?: string | null;
   startedAt?: string | Date | null;
@@ -10,7 +12,10 @@ export interface SessionTimingInfo {
  *
  * Defaults to 15 minutes (900 seconds). Handles missing, invalid, or reversed timestamps safely.
  */
-export function isEndedEarly(session?: SessionTimingInfo | null, configuredMinutes = 15): boolean {
+export function isEndedEarly(
+  session?: SessionTimingInfo | null,
+  configuredMinutes = EARLY_END_THRESHOLD_MINUTES
+): boolean {
   if (!session) return false;
 
   // If the server explicitly calculated endedEarly, respect it

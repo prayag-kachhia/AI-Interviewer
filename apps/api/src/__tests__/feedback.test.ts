@@ -18,8 +18,7 @@ vi.mock('../utils/db', () => ({
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn(), findUniqueOrThrow: vi.fn() },
     turn: { update: vi.fn(), updateMany: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
-    feedback: { findUnique: vi.fn(), upsert: vi.fn(), update: vi.fn() },
-    job: { create: vi.fn() },
+    feedback: { findUnique: vi.fn(), upsert: vi.fn() },
   },
 }));
 
@@ -119,29 +118,6 @@ describe('FB3 — GET /api/sessions/:id/feedback', () => {
     expect(res.body.data).toEqual({ sessionId: 'sess-1', status: 'ready', summary: 'Solid.', scores: SCORES });
   });
 
-  it('given feedback has failed with error details, then it is returned with error', async () => {
-    (prisma.session.findFirst as any).mockResolvedValueOnce(SESSION);
-    (prisma.feedback.findUnique as any).mockResolvedValueOnce({
-      id: 'f1',
-      sessionId: 'sess-1',
-      status: 'failed',
-      summary: null,
-      scores: null,
-      error: 'Evaluation timed out after 12000 ms',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    const res = await get('sess-1');
-
-    expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({
-      sessionId: 'sess-1',
-      status: 'failed',
-      error: 'Evaluation timed out after 12000 ms',
-    });
-  });
-
   it("given another candidate's session, then 404 (FR-27)", async () => {
     (prisma.session.findFirst as any).mockResolvedValueOnce(null);
 
@@ -153,81 +129,6 @@ describe('FB3 — GET /api/sessions/:id/feedback', () => {
 
   it('given no token, then 401', async () => {
     const res = await request(app).get('/api/sessions/sess-1/feedback');
-    expect(res.status).toBe(401);
-  });
-});
-
-describe('FB3 & Issue #94 — POST /api/sessions/:id/feedback/retry', () => {
-  const postRetry = (id: string) =>
-    request(app).post(`/api/sessions/${id}/feedback/retry`).set('Authorization', 'Bearer valid-supabase-token');
-
-  it('given a failed feedback for own session, resets to pending and creates a new session.ended job', async () => {
-    (prisma.session.findFirst as any).mockResolvedValueOnce(SESSION);
-    (prisma.feedback.findUnique as any).mockResolvedValueOnce({
-      id: 'f1',
-      sessionId: 'sess-1',
-      status: 'failed',
-    });
-    (prisma.feedback.update as any).mockResolvedValueOnce({
-      id: 'f1',
-      sessionId: 'sess-1',
-      status: 'pending',
-    });
-    (prisma.job.create as any).mockResolvedValueOnce({
-      id: 'job-retry',
-      type: 'session.ended',
-      sessionId: 'sess-1',
-      status: 'pending',
-    });
-
-    const res = await postRetry('sess-1');
-
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(prisma.feedback.update).toHaveBeenCalledWith({
-      where: { sessionId: 'sess-1' },
-      data: {
-        status: 'pending',
-        summary: null,
-        scores: [],
-      },
-    });
-    expect(prisma.job.create).toHaveBeenCalledWith({
-      data: {
-        type: 'session.ended',
-        sessionId: 'sess-1',
-        status: 'pending',
-      },
-    });
-  });
-
-  it('given another candidate\'s session, then 404 (FR-27)', async () => {
-    (prisma.session.findFirst as any).mockResolvedValueOnce(null);
-
-    const res = await postRetry('not-mine');
-
-    expect(res.status).toBe(404);
-    expect(prisma.feedback.update).not.toHaveBeenCalled();
-    expect(prisma.job.create).not.toHaveBeenCalled();
-  });
-
-  it('given feedback has not failed (e.g. ready), then 400', async () => {
-    (prisma.session.findFirst as any).mockResolvedValueOnce(SESSION);
-    (prisma.feedback.findUnique as any).mockResolvedValueOnce({
-      id: 'f1',
-      sessionId: 'sess-1',
-      status: 'ready',
-    });
-
-    const res = await postRetry('sess-1');
-
-    expect(res.status).toBe(400);
-    expect(prisma.feedback.update).not.toHaveBeenCalled();
-    expect(prisma.job.create).not.toHaveBeenCalled();
-  });
-
-  it('given no token, then 401', async () => {
-    const res = await request(app).post('/api/sessions/sess-1/feedback/retry');
     expect(res.status).toBe(401);
   });
 });

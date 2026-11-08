@@ -31,8 +31,8 @@ export function useFeedback(sessionId: string, reloadTrigger = 0) {
       }
     }
 
-    poll(); // fetch immediately on mount
     intervalId = setInterval(poll, POLL_INTERVAL_MS);
+    poll(); // fetch immediately on mount
 
     return () => {
       cancelled = true;
