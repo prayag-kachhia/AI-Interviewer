@@ -77,14 +77,14 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 |---|---|---|---|---|---|---|
 | Prayag | 11 | 2 | 6 | 3 | 6.75 | – |
 | Vishwa | 8 | 2 | 5 | 1 | 5.5 | – |
-| Kishan | 9 | 1 | 6 | 2 | 4.75 | D-1 (1 day) |
-| Prakriti | 8 | 1 | 4 | 3 | 5 | – |
+| Kishan | 10 | 1 | 7 | 2 | 5.5 | D-1 (1 day) |
+| Prakriti | 8 | 1 | 4 | 3 | 5 | D-2 (1 day) |
 | Shaurya | 8 | 2 | 4 | 2 | 5.5 | – |
 | Praneel | 8 | 1 | 5 | 2 | 5.75 | – |
-| Rahi | 8 | 1 | 3 | 4 | 5 | D-4 (1 day) |
-| Ved | 8 | 1 | 5 | 2 | 5.5 | – |
-| Vismay | 8 | 1 | 4 | 3 | 5 | D-2 (1 day) |
-| Raj | 8 | 2 | 3 | 3 | 5.25 | D-3 (1 day) |
+| Rahi | 9 | 1 | 3 | 5 | 5.25 | D-4 (1 day) |
+| Ved | 8 | 1 | 5 | 2 | 5.5 | D-3 (1 day) |
+| Vismay | 9 | 2 | 4 | 3 | 6.25 | – |
+| Raj | 8 | 2 | 3 | 3 | 5.75 | – |
 
 Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
@@ -92,7 +92,7 @@ Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
 ### Prayag: lead: UI revamp, structure, interview setup
 
-About 6.75 days · 11 counted PRs · 2 Hard, 6 Medium, 3 Easy · review partner: Raj
+About 6.75 days · 11 counted PRs (0 already merged) · 2 Hard, 6 Medium, 3 Easy · review partner: Raj
 
 **`P-1` · Merge the API flatten (#118)** · Medium · 0.5 days · Sprint 4
 
@@ -208,7 +208,7 @@ One styling system: the old stylesheet and static inline styles are gone.
 
 ### Vishwa: voice transport
 
-About 5.5 days · 8 counted PRs · 2 Hard, 5 Medium, 1 Easy · review partner: Kishan
+About 5.5 days · 8 counted PRs (0 already merged) · 2 Hard, 5 Medium, 1 Easy · review partner: Kishan
 
 **`VI-1` · Gemini Live voice adapter** · Hard · 1 day · Sprint 4
 
@@ -294,7 +294,7 @@ Every voice turn records how long the interviewer took to answer, so NFR-01 is m
 
 ### Kishan: the interviewer brain
 
-About 4.75 days · 9 counted PRs · 1 Hard, 6 Medium, 2 Easy · review partner: Vishwa
+About 5.5 days · 10 counted PRs (0 already merged) · 1 Hard, 7 Medium, 2 Easy · review partner: Vishwa
 
 Also owns the required document `D-1` (not counted, see §5a).
 
@@ -385,11 +385,24 @@ Ending early records a reason, so a dropped call isn't read as a finished interv
 - **Done when:** Ending early with a reason stores it, and Results shows it.
 - **Depends on:** K-2, RH-2
 
-### Prakriti: typed mode, integrity, context
+**`K-11` · Global API error handler** · Medium · 0.75 days · Sprint 4
 
-About 5 days · 8 counted PRs · 1 Hard, 4 Medium, 3 Easy · review partner: Vismay
+Route handlers keep only their happy path. One handler maps errors to HTTP status codes.
 
-**`PK-1` · Finish the transcript accumulator (#105)** · Easy · 0.25 days · Sprint 4
+- Give each error class a `status`: `NotFoundError` 404, `SessionEndedError` 409, `InvalidRoleError` 400, `VoiceProviderTimeoutError` 503.
+- The error handler in `server.ts` sends their message.
+- Remove the 12 per-route try/catch blocks (Express 5 forwards async errors to the handler).
+- Merge right after the flatten (day 2–3), because every route file changes.
+- **Done when:** The existing tests pass, and `git grep -c '} catch' -- apps/api/src/routes` drops to 0 or close to it.
+- **Depends on:** P-1
+
+### Prakriti: typed mode, integrity, context, SRS
+
+About 5 days · 8 counted PRs (2 already merged) · 1 Hard, 4 Medium, 3 Easy · review partner: Vismay
+
+Also owns the required document `D-2` (not counted, see §5a).
+
+**`PK-1` · Finish the transcript accumulator (#105)** · **✅ merged in [#105](https://github.com/prayag-kachhia/AI-Interviewer/pull/105)** · Easy · 0.25 days · Sprint 4
 
 The accumulator that turns Gemini Live chunks into whole turns is merged and correct.
 
@@ -398,7 +411,7 @@ The accumulator that turns Gemini Live chunks into whole turns is merged and cor
 - Change 'Resolves #88' to 'Part of #88'.
 - **Done when:** #105 is merged, and a test covers a chunk plus `turnComplete` in one message.
 
-**`PK-2` · Land the interview-room split (#126)** · Medium · 0.5 days · Sprint 4
+**`PK-2` · Land the interview-room split (#126)** · **✅ merged in [#126](https://github.com/prayag-kachhia/AI-Interviewer/pull/126)** · Medium · 0.5 days · Sprint 4
 
 The 937-line room becomes a hook plus small cards, so the voice wiring lands in a readable place.
 
@@ -447,7 +460,7 @@ Forged or broken turn submissions are rejected without ever rejecting a legitima
 - **Done when:** There is a test for each rule, and the migration runs cleanly on a local copy that has duplicates.
 - **Depends on:** P-1
 
-**`PK-7` · No repeated questions from your last 3 interviews (FR-16)** · Easy · 0.5 days · Sprint 5
+**`PK-7` · No repeated questions from your last 3 interviews (FR-16)** · Easy · 0.5 days · Sprint 4
 
 A returning candidate gets fresh questions.
 
@@ -469,7 +482,7 @@ The interviewer tailors its questions to the job the candidate is applying for.
 
 ### Shaurya: feedback scoring
 
-About 5.5 days · 8 counted PRs · 2 Hard, 4 Medium, 2 Easy · review partner: Praneel
+About 5.5 days · 8 counted PRs (0 already merged) · 2 Hard, 4 Medium, 2 Easy · review partner: Praneel
 
 **`S-1` · Find and fix why feedback fails on the live site** · Hard · 1.25 days · Sprint 4
 
@@ -551,7 +564,7 @@ One user, or a bug stuck in a loop, can't run up the Gemini bill.
 
 ### Praneel: role-wise evaluation
 
-About 5.75 days · 8 counted PRs · 1 Hard, 5 Medium, 2 Easy · review partner: Shaurya
+About 5.75 days · 8 counted PRs (0 already merged) · 1 Hard, 5 Medium, 2 Easy · review partner: Shaurya
 
 **`PN-1` · Land per-role rubrics (#121)** · Hard · 1 day · Sprint 4
 
@@ -564,7 +577,7 @@ Each role is judged on its own rubric, with strengths, improvements and quotes, 
 - **Done when:** A test shows an old-format feedback row still loads, and CI is green.
 - **Depends on:** S-1 (rebase after it if it touches the evaluator)
 
-**`PN-2` · Calibrate each role's rubric** · Medium · 0.5 days · Sprint 5
+**`PN-2` · Calibrate each role's rubric** · Medium · 0.5 days · Sprint 4
 
 Each role is scored on the right things.
 
@@ -581,7 +594,7 @@ A basic question isn't held to the depth of an advanced one.
 - **Done when:** The bench shows a full-marks basic answer isn't marked down for lacking advanced depth.
 - **Depends on:** PN-2
 
-**`PN-8` · Technology-independent scoring** · Easy · 0.5 days · Sprint 5
+**`PN-8` · Technology-independent scoring** · Easy · 0.5 days · Sprint 4
 
 A valid answer in a different technology isn't penalised.
 
@@ -631,7 +644,7 @@ Candidates see what was good and what to improve in each answer, not only overal
 
 ### Rahi: history and analytics
 
-About 5 days · 8 counted PRs · 1 Hard, 3 Medium, 4 Easy · review partner: Ved
+About 5.25 days · 9 counted PRs (0 already merged) · 1 Hard, 3 Medium, 5 Easy · review partner: Ved
 
 Also owns the required document `D-4` (not counted, see §5a).
 
@@ -713,11 +726,21 @@ A quick summary and a copy the candidate can keep.
 - **Done when:** The stats are correct and the download works.
 - **Depends on:** RH-4
 
-### Ved: improvement guide
+**`RH-9` · Delete buttons on History rows** · Easy · 0.25 days · Sprint 5
 
-About 5.5 days · 8 counted PRs · 1 Hard, 5 Medium, 2 Easy · review partner: Rahi
+Delete straight from the History list.
 
-**`V-1` · Retry failed feedback (#129 rebuilt)** · Medium · 1 day · Sprint 4
+- Add a Delete button with an AlertDialog confirmation on each History row, reusing VM-2's API call.
+- **Done when:** Deleting from History removes the row.
+- **Depends on:** RH-3, VM-2
+
+### Ved: improvement guide, user docs
+
+About 5.5 days · 8 counted PRs (1 already merged) · 1 Hard, 5 Medium, 2 Easy · review partner: Rahi
+
+Also owns the required document `D-3` (not counted, see §5a).
+
+**`V-1` · Retry failed feedback (#129 rebuilt)** · **✅ merged in [#129](https://github.com/prayag-kachhia/AI-Interviewer/pull/129)** · Medium · 1 day · Sprint 4
 
 A failed evaluation can be retried safely, with the job queue kept.
 
@@ -740,7 +763,7 @@ The app knows which subjects a candidate is weak in.
 - **Done when:** After a session's feedback is ready, an ImprovementPlan row holds topic scores.
 - **Depends on:** S-1, P-1
 
-**`V-3` · Curated learning-resource map** · Easy · 0.5 days · Sprint 5
+**`V-3` · Curated learning-resource map** · Easy · 0.5 days · Sprint 4
 
 Trustworthy study links per topic.
 
@@ -794,13 +817,11 @@ From the guide, one click starts an interview focused on a weak topic.
 - **Done when:** 'Practise this' starts an interview whose questions target that topic.
 - **Depends on:** V-5, P-7, P-8
 
-### Vismay: data, privacy, SRS
+### Vismay: data, privacy, GitHub
 
-About 5 days · 8 counted PRs · 1 Hard, 4 Medium, 3 Easy · review partner: Prakriti
+About 6.25 days · 9 counted PRs (1 already merged) · 2 Hard, 4 Medium, 3 Easy · review partner: Prakriti
 
-Also owns the required document `D-2` (not counted, see §5a).
-
-**`VM-1` · Land resume-aware sessions (#123)** · Medium · 0.5 days · Sprint 4
+**`VM-1` · Land resume-aware sessions (#123)** · **✅ merged in [#123](https://github.com/prayag-kachhia/AI-Interviewer/pull/123)** · Medium · 0.5 days · Sprint 4
 
 Each session is linked to the candidate's resume, and the interviewer gets a short summary. Merge this first.
 
@@ -819,25 +840,6 @@ Candidates can delete a single interview.
 - **Done when:** Deleting an interview removes its turns and feedback, and another user gets 404.
 - **Depends on:** VM-1, P-6
 
-**`VM-4` · Global API error handler** · Medium · 0.75 days · Sprint 4
-
-Route handlers keep only their happy path. One handler maps errors to HTTP status codes.
-
-- Give each error class a `status`: `NotFoundError` 404, `SessionEndedError` 409, `InvalidRoleError` 400, `VoiceProviderTimeoutError` 503.
-- The error handler in `server.ts` sends their message.
-- Remove the 12 per-route try/catch blocks (Express 5 forwards async errors to the handler).
-- Merge right after the flatten (day 2–3), because every route file changes.
-- **Done when:** The existing tests pass, and `git grep -c '} catch' -- apps/api/src/routes` drops to 0 or close to it.
-- **Depends on:** P-1
-
-**`VM-5` · Delete buttons on History rows** · Easy · 0.25 days · Sprint 5
-
-Delete straight from the History list.
-
-- Add a Delete button with an AlertDialog confirmation on each History row, reusing VM-2's API call.
-- **Done when:** Deleting from History removes the row.
-- **Depends on:** RH-3, VM-2
-
 **`VM-6` · Retention purge after 30 days (NFR-11)** · Medium · 1 day · Sprint 5
 
 Old interviews are deleted automatically, as the SRS requires.
@@ -846,7 +848,7 @@ Old interviews are deleted automatically, as the SRS requires.
 - It deletes sessions ended more than 30 days ago (the cascade removes turns, feedback and jobs), unless they are kept (VM-7).
 - Test it with a date-shifted session.
 - **Done when:** The test shows an old session purged and a recent one kept.
-- **Depends on:** VM-4
+- **Depends on:** K-11
 
 **`VM-7` · Keep this interview (FR-29)** · Easy · 0.5 days · Sprint 5
 
@@ -856,7 +858,7 @@ A candidate can protect an interview from the 30-day purge.
 - **Done when:** A kept session survives the purge test.
 - **Depends on:** VM-6
 
-**`VM-9` · Download my data** · Easy · 0.5 days · Sprint 5
+**`VM-9` · Download my data** · Easy · 0.5 days · Sprint 4
 
 Candidates can take a copy of everything the app stores about them.
 
@@ -876,11 +878,42 @@ Candidates can remove their account and all their data.
 - **Done when:** A test account deleted on the live site can't sign in and has no rows left.
 - **Depends on:** VM-9, P-6
 
-### Raj: identity, docs, tests
+**`VM-11` · Sign in with GitHub** · Easy · 0.5 days · Sprint 4
 
-About 5.25 days · 8 counted PRs · 2 Hard, 3 Medium, 3 Easy · review partner: Prayag
+Candidates can sign in with GitHub, which also proves which GitHub account is theirs (VM-12 needs that).
 
-Also owns the required document `D-3` (not counted, see §5a).
+- Create a GitHub OAuth app and enable the GitHub provider in Supabase, with the callback URL for localhost and the live site.
+- Add 'Continue with GitHub' next to Google, using the same `signInWithOAuth` pattern as Google sign-in (#119).
+- Users who signed up with email or Google can connect GitHub from Profile with `linkIdentity({ provider: 'github' })` (turn on manual linking in Supabase).
+- The GitHub username comes from the linked identity, never from a text box, so nobody can claim someone else's account. Extend `Login.test.tsx` the same way the Google tests do.
+- **Done when:** Signing in with GitHub works on the live site, and an existing user can link GitHub from Profile.
+- **Depends on:** Supabase and GitHub OAuth app access from Prayag
+
+**`VM-12` · Fetch a candidate's open-source contributions from GitHub (FR-10)** · Hard · 1 day · Sprint 4
+
+The app knows which public repositories, outside their own, a candidate has contributed to, with the facts needed to judge them.
+
+- Use GitHub's official REST API, not HTML scraping (scraping breaks GitHub's terms and gets rate-limited). Call it from the server with a `GITHUB_TOKEN` kept in apps/api/.env and the deploy secrets.
+- `github.service.ts` finds the candidate's pull requests to repositories they don't own (search `type:pr author:<login> -user:<login> is:public`), and for each records the repo, its stars, merged or not, additions and deletions, files changed and the title.
+- Run it as a new job type, `github.analyze`, on the existing queue (it's slow and rate-limited, so it shouldn't block a request). Store the result in a new `GithubProfile` table (`userId` unique, `login`, `fetchedAt`, `contributions` JSON) and refresh it at most once a day.
+- Add tests with the GitHub API mocked, including a user with no contributions and a rate-limit response.
+- **Done when:** For a linked GitHub account, a GithubProfile row lists the external PRs with their facts, and the tests pass.
+- **Depends on:** VM-11, P-1
+
+**`VM-13` · Judge whether the contributions are meaningful, and use them** · Medium · 0.75 days · Sprint 5
+
+Candidates see an honest summary of their open-source work, and the interviewer asks about the real highlights.
+
+- For each contribution, decide whether it's meaningful: merged code changes of real size in an active repository count; typo, README-only, formatting and unmerged drive-by PRs don't. Use simple rules first, and Gemini (JSON mode, Zod-validated) only to summarise what each meaningful PR did.
+- Profile shows a 'GitHub contributions' card: how many meaningful contributions, to which repos, and one line on each.
+- `briefingFor` passes the top 3 highlights so the interviewer can ask about them.
+- Add tests for the meaningful / not-meaningful rules and for the highlights reaching the briefing.
+- **Done when:** On the live site, a candidate with merged open-source PRs sees them summarised, and the interviewer asks about one.
+- **Depends on:** VM-12, K-1
+
+### Raj: identity, end-to-end tests
+
+About 5.75 days · 8 counted PRs (0 already merged) · 2 Hard, 3 Medium, 3 Easy · review partner: Prayag
 
 **`RJ-1` · Show when resume AI analysis fell back** · Easy · 0.5 days · Sprint 4
 
@@ -902,14 +935,17 @@ The resume profile shape is defined once and checked at the boundary.
 - **Done when:** Both apps import the shared schema, and typecheck and tests are green.
 - **Depends on:** RJ-1
 
-**`RJ-3` · Password reset (FR-04)** · Hard · 0.75 days · Sprint 4
+**`RJ-3` · Working password reset, with a password-strength check** · Hard · 1.25 days · Sprint 4
 
-A candidate who forgets their password can reset it by email.
+A candidate who forgets their password can reset it by email, and nobody can sign up or reset with a weak password.
 
 - Set up custom SMTP in Supabase (for example Resend or a Gmail app password). The default mailer is rate-limited.
 - 'Forgot password?' calls `resetPasswordForEmail` with a redirect to `/reset-password`. That screen calls `updateUser({ password })`.
 - Add the redirect URLs for localhost and https://ai-interviewer-it314.web.app in Supabase.
-- **Done when:** A reset email arrives, and the new password works, locally and on the live site.
+- Password strength: one function, `checkPasswordStrength(password, email)` in `apps/web/src/lib/passwordStrength.ts`, returns weak / fair / strong plus the rules not yet met: at least 8 characters, upper and lower case, a number, a symbol, doesn't contain the email's name part, and isn't on a short list of common passwords. Add unit tests for it.
+- On sign-up and on the reset screen, show a strength meter and the unmet rules under the password field. The submit button stays disabled until the password is strong. This replaces the current `password.length < 6` check.
+- Enforce the same minimum on the server: in Supabase Auth settings, set the minimum length to 8 and require lower case, upper case, digits and symbols, so the rule can't be bypassed by calling Supabase directly. Show Supabase's weak-password error as a readable message.
+- **Done when:** A reset email arrives and the new password works, locally and on the live site. A weak password is blocked on sign-up and on reset, by the form and by Supabase, and the strength tests pass.
 - **Depends on:** Supabase access from Prayag
 
 **`RJ-4` · Stay signed in (FR-05)** · Easy · 0.25 days · Sprint 4
@@ -972,7 +1008,7 @@ Graders can see the architecture at a glance.
 - **Done when:** The diagrams render on GitHub and match the code after the freeze.
 - **Depends on:** P-2 (layout freeze), VI-8, V-1
 
-**`D-2` · SRS and traceability matrix in the repo** · Vismay · Medium · 1 day · Sprint 5
+**`D-2` · SRS and traceability matrix in the repo** · Prakriti · Medium · 1 day · Sprint 5
 
 Graders can trace every requirement to code, tests and status.
 
@@ -982,7 +1018,7 @@ Graders can trace every requirement to code, tests and status.
 - **Done when:** Every Must is either done with evidence or deferred with a reason.
 - **Depends on:** nothing for the skeleton; most of the work merged for the final check
 
-**`D-3` · README, user guide, contribution table and AI-use note** · Raj · Medium · 1 day · Sprint 5
+**`D-3` · README, user guide, contribution table and AI-use note** · Ved · Medium · 1 day · Sprint 5
 
 The repo explains itself and records who did what.
 
@@ -1010,18 +1046,17 @@ Testing is documented as a Software Engineering deliverable.
   - feedback diagnosis (S-1);
   - the lead's admin: branch protection, a Gemini dev key for everyone, Supabase and Cloud Run log access for Shaurya.
 - **Day 2–3:**
-  - the global error handler (VM-4);
+  - the global error handler (K-11);
   - the UI foundation (P-4 to P-6). Until it lands, do the backend part of your work first;
-  - VM-1 → K-1 → P-7;
-  - PK-2 → VI-8 (Vishwa builds the adapter, VI-1, in its own new file from day 1).
+  - K-1 → P-7 (VM-1, the resume-aware sessions, is already merged);
+  - VI-1 → VI-8 (Vishwa builds the adapter in its own new file from day 1; the room split, PK-2, is already merged).
 - **By day 4:** `next-question` (PK-3). The fallback, typed mode and Kishan's "Type instead" all use it.
-- **Feedback chain:** PN-1 → V-1 → RH-3 (Rahi starts RH-1 and RH-2 on day 1).
+- **Feedback chain:** S-1 and PN-1 → RH-3 (the retry endpoint, V-1, is already merged; Rahi starts RH-1 and RH-2 on day 1).
 - **Interview-room merge order:**
-  1. PK-2
-  2. VI-8
-  3. K-2 / K-3
-  4. PK-4
-  5. K-8
+  1. VI-8
+  2. K-2 / K-3
+  3. PK-4
+  4. K-8
 - **End of Sprint 4:** the golden path works on the live site, by voice and typed.
 
 ## 7. If we fall behind
@@ -1036,12 +1071,11 @@ Testing is documented as a Software Engineering deliverable.
 **Cut first:**
 - P-11, RH-7, RH-8, VI-6, K-7 and V-6;
 - then RJ-6, RJ-10 and PN-5;
-- then VM-6 and VM-7, documenting the deferral in the SRS.
+- then VM-6, VM-7 and VM-13, documenting the deferral in the SRS.
 
 ## 8. Deferred
 
 These are recorded in the SRS with reasons:
-- FR-10 (GitHub context; the pasted job description, FR-11, is PK-9);
 - FR-31 and NFR-17 (roles without code changes);
 - NFR-06 (load test);
 - points and a cosmetic store;
