@@ -1,4 +1,5 @@
 import { ROLES } from '@interview/contracts';
+import type { Session } from '../generated/prisma/client';
 import prisma from '../utils/db';
 import { summarizeProfile } from './resume-summary';
 
@@ -12,54 +13,36 @@ export interface BriefingInput {
   timeLimitMin?: number;
 }
 
-export interface SessionLike {
-  id?: string;
-  role: string;
-  userId?: string;
-  resumeId?: string | null;
-  focus?: string | null;
-  company?: string | null;
-  level?: string | null;
-  timeLimitMin?: number;
-}
-
-const ROLE_PERSONAS: Record<string, { label: string; description: string }> = {
-  'software-engineer': {
-    label: 'Software Engineer',
-    description:
-      'You are an experienced Senior Software Engineering Interviewer. You evaluate clean architecture, data structures, algorithms, debugging, scalability, and engineering collaboration.',
-  },
-  'data-analyst': {
-    label: 'Data Analyst',
-    description:
-      'You are a Lead Data Analyst and Interviewer. You evaluate SQL querying, data cleaning, statistical modeling, data visualization, metric validation, and translating data into actionable business insights.',
-  },
-  'backend-developer': {
-    label: 'Backend Developer',
-    description:
-      'You are a Principal Backend Systems Architect and Interviewer. You evaluate server-side systems, REST and gRPC API design, database modeling, indexing, caching, fault tolerance, and high-concurrency reliability.',
-  },
-};
-
-export interface RoleProgression {
+interface RolePersona {
+  label: string;
+  description: string;
   deepDiveTopics: string;
   pressureTestTopics: string;
 }
 
-export const ROLE_PROGRESSION: Record<string, RoleProgression> = {
+const ROLE_PERSONAS: Record<string, RolePersona> = {
   'software-engineer': {
+    label: 'Software Engineer',
+    description:
+      'You are an experienced Senior Software Engineering Interviewer. You evaluate clean architecture, data structures, algorithms, debugging, scalability, and engineering collaboration.',
     deepDiveTopics:
       'data structures, memory management vs CPU efficiency, async I/O, clean API design, and caching layers',
     pressureTestTopics:
       'sudden 10x traffic spikes, race conditions in multi-threaded workflows, degraded external dependencies, and memory leaks',
   },
   'data-analyst': {
+    label: 'Data Analyst',
+    description:
+      'You are a Lead Data Analyst and Interviewer. You evaluate SQL querying, data cleaning, statistical modeling, data visualization, metric validation, and translating data into actionable business insights.',
     deepDiveTopics:
       'SQL query optimization, indexing strategies, handling skewed data distributions, metric drift, and ETL schema normalization vs denormalization',
     pressureTestTopics:
       'missing or corrupt data at scale, conflicting metrics from upstream pipelines, and reconciling anomalies during executive reporting',
   },
   'backend-developer': {
+    label: 'Backend Developer',
+    description:
+      'You are a Principal Backend Systems Architect and Interviewer. You evaluate server-side systems, REST and gRPC API design, database modeling, indexing, caching, fault tolerance, and high-concurrency reliability.',
     deepDiveTopics:
       'database indexing (B-Tree vs Hash), connection pooling, distributed caching (Redis/Memcached), REST vs gRPC, idempotent endpoints, and transaction isolation levels',
     pressureTestTopics:
@@ -67,23 +50,19 @@ export const ROLE_PROGRESSION: Record<string, RoleProgression> = {
   },
 };
 
-export interface PhaseTiming {
+/**
+ * Splits the interview's minutes across the three phases: about 20% warm-up,
+ * 55% deep-dive and 25% pressure-test.
+ */
+export function calculatePhaseTiming(totalMin: number): {
   warmUpMin: number;
   deepDiveMin: number;
   pressureTestMin: number;
-}
-
-/**
- * Calculates the time allocation across the three interview phases (K-4, DR-01, FR-17).
- * Phase 1 (Warm-up): ~20%
- * Phase 2 (Deep-dive): ~55%
- * Phase 3 (Pressure-test): ~25%
- */
-export function calculatePhaseTiming(totalMin: number): PhaseTiming {
-  const safeTotal = Math.max(5, totalMin);
-  const warmUpMin = Math.max(2, Math.round(safeTotal * 0.2));
-  const deepDiveMin = Math.max(2, Math.round(safeTotal * 0.55));
-  const pressureTestMin = Math.max(1, safeTotal - warmUpMin - deepDiveMin);
+} {
+  const warmUpMin = Math.round(totalMin * 0.2);
+  const deepDiveMin = Math.round(totalMin * 0.55);
+  // The last phase takes the rounding leftover so the three always add up to the time limit.
+  const pressureTestMin = totalMin - warmUpMin - deepDiveMin;
   return { warmUpMin, deepDiveMin, pressureTestMin };
 }
 
@@ -98,6 +77,8 @@ export function buildBriefing(input: BriefingInput): string {
   const roleInfo = ROLE_PERSONAS[roleId] ?? {
     label: ROLES.find((r) => r.id === roleId)?.label || roleId,
     description: `You are an expert technical interviewer evaluating candidates for the ${roleId} position.`,
+    deepDiveTopics: 'core technical trade-offs, architecture patterns, and algorithmic performance',
+    pressureTestTopics: 'production failure modes, edge-case bottlenecks, and incident debugging under scale',
   };
 
   const sections: string[] = [];
@@ -109,7 +90,7 @@ You are conducting a professional mock technical interview for the position of "
 ${roleInfo.description}`
   );
 
-  // 2. Focus area (if provided, FR-07)
+  // 2. Focus area (if provided)
   if (focus && focus.trim()) {
     sections.push(
       `PRIMARY FOCUS AREA:
@@ -118,7 +99,7 @@ Concentrate your technical evaluation and question scenarios primarily around th
     );
   }
 
-  // 3. Target Company / Organization (if provided, P-7)
+  // 3. Target company (if provided)
   if (company && company.trim()) {
     sections.push(
       `TARGET COMPANY / ORGANIZATION:
@@ -127,7 +108,7 @@ Tailor your questions, engineering culture expectations, and technical scenarios
     );
   }
 
-  // 4. Seniority Level (if provided, P-7)
+  // 4. Seniority level (if provided)
   if (level && level.trim()) {
     sections.push(
       `TARGET SENIORITY LEVEL:
@@ -146,7 +127,7 @@ INSTRUCTION: You must tailor your technical questions to the candidate's backgro
     );
   }
 
-  // 4. Past Questions to avoid repeating (FR-16)
+  // 6. Past Questions to avoid repeating (FR-16)
   if (pastQuestions.length > 0) {
     sections.push(
       `PREVIOUSLY ASKED QUESTIONS (DO NOT REPEAT):
@@ -156,12 +137,8 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
     );
   }
 
-  // 5. Structure & Timing — 3-Phase Question Progression (K-4, DR-01, FR-17)
+  // 7. Structure & timing: three-phase question progression (DR-01, FR-17)
   const { warmUpMin, deepDiveMin, pressureTestMin } = calculatePhaseTiming(timeLimitMin);
-  const progression = ROLE_PROGRESSION[roleId] ?? {
-    deepDiveTopics: 'core technical trade-offs, architecture patterns, and algorithmic performance',
-    pressureTestTopics: 'production failure modes, edge-case bottlenecks, and incident debugging under scale',
-  };
 
   sections.push(
     `INTERVIEW STRUCTURE & 3-PHASE QUESTION PROGRESSION (Total target duration: ${timeLimitMin} minutes):
@@ -180,12 +157,12 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
 
    • Phase 2: Technical Deep-Dive into Trade-offs (~${deepDiveMin} minutes)
      - Drive into rigorous technical depth tailored to the "${roleInfo.label}" role${focus ? ` and the focus area: "${focus}"` : ''}.
-     - Actively evaluate key engineering trade-offs: focus on ${progression.deepDiveTopics}.
+     - Actively evaluate key engineering trade-offs: focus on ${roleInfo.deepDiveTopics}.
      - Listen carefully to the candidate's response. Ask a relevant, thoughtful follow-up question exploring their technical trade-offs, debugging approach, or architectural decisions before moving to a new topic.
      - Maintain appropriate technical depth for a campus placement / industry candidate.
 
    • Phase 3: Pressure-Testing & Edge-Case Failure Scenarios (~${pressureTestMin} minutes)
-     - Challenge the candidate with real-world failure modes, scale limits, and edge cases: focus on ${progression.pressureTestTopics}.
+     - Challenge the candidate with real-world failure modes, scale limits, and edge cases: focus on ${roleInfo.pressureTestTopics}.
      - Evaluate their debugging methodology, fault-tolerance design, graceful degradation, and composure under difficult failure scenarios (e.g., "What happens if this component fails under peak traffic?", "How would you trace an intermittent data corruption or timeout?").
 
 3. Wrap-up & Closing:
@@ -194,7 +171,7 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
    - Conclude with a warm, encouraging closing remark and thank them for their time.`
   );
 
-  // 6. Conversational Audio Guidelines (Gemini Live)
+  // 8. Conversational Audio Guidelines (Gemini Live)
   sections.push(
     `VOICE CONVERSATION GUIDELINES:
 - Keep every spoken turn concise and natural (typically 1 to 3 spoken sentences per turn).
@@ -207,61 +184,23 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
 }
 
 /**
- * Loads role, resume summary (from VM-1's resumeId), focus, company, level,
- * past questions, and time limit for a given session, and builds the unified briefing (K-1, FR-17, DR-01).
- * Powers all interviewer paths: Gemini Live voice tokens, browser-speech fallback, and typed mode (PK-3).
+ * Builds the interviewer briefing for a session: its role plus the summary of its linked resume.
+ * Focus, company and level are passed through once the session stores them.
  */
-export async function briefingFor(session: SessionLike): Promise<string> {
-  const roleId = session.role;
-  const focus = session.focus?.trim() || undefined;
-  const company = session.company?.trim() || undefined;
-  const level = session.level?.trim() || undefined;
-  const timeLimitMin = session.timeLimitMin ?? 15;
+export async function briefingFor(session: Pick<Session, 'role' | 'resumeId'>): Promise<string> {
+  let resumeSummary: string | undefined;
 
-  let resumeParsedProfile: string | null = null;
-
-  // 1. Look up resume by direct resumeId link (VM-1, FR-08, FR-09)
-  if (session.resumeId && prisma.resume?.findUnique) {
+  if (session.resumeId) {
     const resume = await prisma.resume.findUnique({
       where: { id: session.resumeId },
       select: { parsedProfile: true },
     });
-    resumeParsedProfile = resume?.parsedProfile ?? null;
-  }
 
-  // 2. Fallback if session has no direct resumeId or not found (e.g. legacy sessions or test mocks)
-  if (!resumeParsedProfile && session.userId && prisma.resume?.findFirst) {
-    const fallbackResume = await prisma.resume.findFirst({
-      where: { userId: session.userId },
-      orderBy: { createdAt: 'desc' },
-      select: { parsedProfile: true },
-    });
-    resumeParsedProfile = fallbackResume?.parsedProfile ?? null;
-  }
-
-  let resumeSummary: string | undefined;
-
-  if (resumeParsedProfile) {
-    try {
-      const profile = JSON.parse(resumeParsedProfile);
-      const summary = summarizeProfile(profile);
+    if (resume?.parsedProfile) {
+      const summary = summarizeProfile(JSON.parse(resume.parsedProfile));
       resumeSummary = summary.trim() ? summary : undefined;
-    } catch {
-      // Fallback for raw text profiles (e.g. in test fixtures or legacy records)
-      resumeSummary = resumeParsedProfile.trim() || undefined;
     }
   }
 
-  // Past questions will be populated by PK-7; empty until then
-  const pastQuestions: string[] = [];
-
-  return buildBriefing({
-    roleId,
-    focus,
-    company,
-    level,
-    resumeSummary,
-    pastQuestions,
-    timeLimitMin,
-  });
+  return buildBriefing({ roleId: session.role, resumeSummary });
 }
