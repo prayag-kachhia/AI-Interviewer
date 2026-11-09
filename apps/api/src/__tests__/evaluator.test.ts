@@ -5,10 +5,11 @@ import { TurnSpeaker } from '@interview/contracts';
 import {
   evaluateTranscript,
   buildEvaluationPrompt,
-  RUBRIC,
+  evaluationSchema,
   type EvaluationInput,
   type TranscriptTurn,
 } from '../services/evaluator.service';
+import { getRubric, UnknownRoleError } from '../services/rubrics';
 
 // Established schema validation for transcript turn fixtures against shared contracts
 const TranscriptTurnSchema = z.object({
@@ -26,13 +27,25 @@ function loadTranscriptFixture(filename: string): TranscriptTurn[] {
 // Primary fixture loaded from good.json for normal evaluation tests.
 const GOOD_TRANSCRIPT = loadTranscriptFixture('good.json');
 const SAMPLE: EvaluationInput = {
-  roleLabel: 'Software Engineer',
+  roleId: 'software-engineer',
   turns: GOOD_TRANSCRIPT,
 };
+const RUBRIC = getRubric('software-engineer');
+
+function scoreFor(category: string, score = 4) {
+  return {
+    category,
+    score,
+    comment: 'Specific and relevant.',
+    strengths: ['Explained the trade-off'],
+    improvements: ['Quantify the impact'],
+    quote: 'I would decouple the notification requests',
+  };
+}
 
 const VALID = JSON.stringify({
   summary: 'Clear, concrete answers about asynchronous architecture and idempotency.',
-  scores: RUBRIC.map((r, i) => ({ category: r.category, score: 3 + (i % 2), comment: 'Specific and relevant.' })),
+  scores: RUBRIC.map((r, i) => scoreFor(r.category, 3 + (i % 2))),
 });
 
 describe('FB4 — evaluator', () => {
@@ -100,34 +113,17 @@ describe('FB4 — evaluator', () => {
   it('given scores outside 1–5 or a missing category, then it fails', async () => {
     const outOfRange = JSON.stringify({
       summary: 'x',
-      scores: RUBRIC.map((r) => ({ category: r.category, score: 9, comment: 'x' })),
+      scores: RUBRIC.map((r) => scoreFor(r.category, 9)),
     });
     await expect(evaluateTranscript(SAMPLE, { generate: async () => outOfRange })).rejects.toThrow();
 
     const missing = JSON.stringify({
       summary: 'x',
-      scores: [{ category: 'Communication', score: 4, comment: 'x' }],
+      scores: [scoreFor(RUBRIC[0].category)],
     });
     await expect(evaluateTranscript(SAMPLE, { generate: async () => missing })).rejects.toThrow(
       'instead of the rubric categories'
     );
-  });
-
-  it('normalizes case-insensitive rubric categories and rounds float scores', async () => {
-    const rawOutput = JSON.stringify({
-      summary: 'Solid performance.',
-      scores: [
-        { category: 'communication', score: 4.2, comment: 'Clear.' },
-        { category: 'TECHNICAL DEPTH', score: 3.7, comment: 'Good.' },
-        { category: 'structure', score: 5, comment: 'Organized.' },
-      ],
-    });
-    const result = await evaluateTranscript(SAMPLE, { generate: async () => rawOutput });
-    expect(result.scores).toEqual([
-      { category: 'Communication', score: 4, comment: 'Clear.' },
-      { category: 'Technical depth', score: 4, comment: 'Good.' },
-      { category: 'Structure', score: 5, comment: 'Organized.' },
-    ]);
   });
 
   it('given a transcript with no candidate answers, then it fails without calling the LLM', async () => {
@@ -135,10 +131,50 @@ describe('FB4 — evaluator', () => {
     let called = false;
     await expect(
       evaluateTranscript(
-        { roleLabel: 'Software Engineer', turns: emptyTranscript },
+        { roleId: 'software-engineer', turns: emptyTranscript },
         { generate: async () => { called = true; return VALID; } }
       )
     ).rejects.toThrow('no candidate answers');
     expect(called).toBe(false);
+  });
+
+  it('gives each role its own rubric categories', () => {
+    expect(getRubric('software-engineer').map((r) => r.category)).toContain('Problem Solving & Algorithms');
+    expect(getRubric('data-analyst').map((r) => r.category)).toContain('SQL & Analytical Reasoning');
+    expect(getRubric('backend-developer').map((r) => r.category)).toContain('Database Modeling & Performance');
+  });
+
+  it('rejects a role without a rubric', () => {
+    expect(() => getRubric('product-manager')).toThrow(UnknownRoleError);
+  });
+
+  it.each(['software-engineer', 'data-analyst', 'backend-developer'])(
+    "puts the %s rubric into the prompt and checks the reply against it",
+    async (roleId) => {
+      const rubric = getRubric(roleId);
+      const input = { roleId, turns: GOOD_TRANSCRIPT };
+      for (const r of rubric) expect(buildEvaluationPrompt(input)).toContain(r.category);
+
+      const reply = JSON.stringify({ summary: 'x', scores: rubric.map((r) => scoreFor(r.category)) });
+      const result = await evaluateTranscript(input, { generate: async () => reply });
+      expect(result.scores).toHaveLength(rubric.length);
+    }
+  );
+
+  it('asks for STAR only on behavioural answers, and for strengths, improvements and a quote', () => {
+    const prompt = buildEvaluationPrompt(SAMPLE);
+    expect(prompt).toContain('STAR');
+    expect(prompt).toMatch(/DO NOT force STAR onto purely technical/);
+    expect(prompt).toContain('"strengths"');
+    expect(prompt).toContain('"improvements"');
+    expect(prompt).toContain('"quote"');
+  });
+
+  it("limits Gemini's structured output to the role's rubric categories", () => {
+    const categories = getRubric('data-analyst').map((r) => r.category);
+    const item = evaluationSchema(categories).properties?.scores?.items;
+
+    expect(item?.properties?.category?.enum).toEqual(categories);
+    expect(item?.required).toEqual(['category', 'score', 'comment', 'strengths', 'improvements', 'quote']);
   });
 });

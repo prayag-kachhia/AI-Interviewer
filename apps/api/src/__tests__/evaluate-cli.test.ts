@@ -120,9 +120,9 @@ describe('CLI - evaluate.ts', () => {
       vi.spyOn(evaluatorService, 'evaluateTranscript').mockResolvedValueOnce({
         summary: 'Excellent demonstration of distributed systems.',
         scores: [
-          { category: 'Communication', score: 5, comment: 'Clear.' },
-          { category: 'Technical depth', score: 5, comment: 'Deep.' },
-          { category: 'Structure', score: 5, comment: 'Organized.' },
+          { category: 'Communication', score: 5, comment: 'Clear.', strengths: [], improvements: [], quote: '' },
+          { category: 'Technical depth', score: 5, comment: 'Deep.', strengths: [], improvements: [], quote: '' },
+          { category: 'Structure', score: 5, comment: 'Organized.', strengths: [], improvements: [], quote: '' },
         ],
         usageMetadata: {
           promptTokenCount: 500,
