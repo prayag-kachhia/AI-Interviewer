@@ -1,25 +1,40 @@
 import { getVoiceToken } from './api';
-import { base64Decode, floatTo16BitPCM, PlaybackQueue } from './audio';
-import type {
-  VoiceAdapterCallbacks,
-  VoiceSessionAdapter,
-  VoiceSessionToken,
-} from './voiceAdapter';
+import { base64Decode, base64Encode, floatTo16BitPCM, PlaybackQueue } from './audio';
+import type { VoiceAdapterCallbacks, VoiceSessionAdapter } from './voiceAdapter';
+
+const LIVE_URL =
+  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained';
+const MAX_RECONNECTS = 3;
+
+// Kept in sessionStorage so a page reload can resume the same Gemini session.
+const resumptionKey = (sessionId: string) => `gemini_resumption_${sessionId}`;
+
+/** The fields of a Gemini Live server message that this adapter reads. */
+interface LiveServerMessage {
+  setupComplete?: object;
+  goAway?: object;
+  sessionResumptionUpdate?: { newHandle?: string; resumable?: boolean };
+  serverContent?: {
+    interrupted?: boolean;
+    turnComplete?: boolean;
+    inputTranscription?: { text?: string };
+    outputTranscription?: { text?: string };
+    modelTurn?: { parts?: { inlineData?: { data?: string } }[] };
+  };
+}
 
 /**
- * Gemini Live voice session adapter implementing VoiceSessionAdapter.
- * Holds a bidirectional streaming audio conversation with gemini-3.8-live over WebSockets.
+ * Holds the interview as a spoken conversation with Gemini Live (gemini-3.8-live) over a WebSocket.
  */
 export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
   public readonly providerLabel = 'Google Gemini Live';
   public readonly isExternalProvider = true;
   public readonly isSpeechRecognitionSupported = true;
 
-  private sessionId: string | null = null;
+  private sessionId = '';
   private callbacks: VoiceAdapterCallbacks | null = null;
   private ws: WebSocket | null = null;
 
-  // Web Audio components
   private audioInCtx: AudioContext | null = null;
   private audioOutCtx: AudioContext | null = null;
   private micStream: MediaStream | null = null;
@@ -28,66 +43,36 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
   private playbackQueue: PlaybackQueue | null = null;
   private animationFrameId: number | null = null;
 
-  // State
   private isMuted = false;
   private isDeliberateClose = false;
   private resumptionHandle: string | null = null;
   private reconnectAttempts = 0;
 
-  /**
-   * Connect to Gemini Live for the given session.
-   */
-  async connect(
-    sessionId: string,
-    callbacks: VoiceAdapterCallbacks,
-    _token?: VoiceSessionToken
-  ): Promise<void> {
+  async connect(sessionId: string, callbacks: VoiceAdapterCallbacks): Promise<void> {
+    this.cleanupAudioAndSocket();
     this.sessionId = sessionId;
     this.callbacks = callbacks;
     this.isDeliberateClose = false;
-
-    // Read stored resumption handle from sessionStorage on connect
-    if (!this.resumptionHandle && this.sessionId) {
-      try {
-        const stored = sessionStorage.getItem(`gemini_resumption_${this.sessionId}`);
-        if (stored) {
-          this.resumptionHandle = stored;
-        }
-      } catch {
-        // ignore storage access errors
-      }
-    }
-
+    this.reconnectAttempts = 0;
+    this.resumptionHandle = sessionStorage.getItem(resumptionKey(sessionId));
+    callbacks.onStateChange('IDLE');
     await this.startConnection();
   }
 
   private async startConnection(): Promise<void> {
-    if (!this.sessionId) {
-      this.fail('No sessionId provided to GeminiLiveVoiceAdapter');
-      return;
-    }
-
-    this.callbacks?.onStateChange('IDLE');
-
     try {
-      // 1. Fetch ephemeral voice token from backend
+      // The token is single-use, so every connection (including a resume) needs a new one.
       const token = await getVoiceToken(this.sessionId);
-      if (!token) {
-        throw new Error('Received empty voice token from server');
-      }
+      if (this.abandoned()) return;
 
-      // 2. Set up Web Audio output (24 kHz)
-      const AudioCtx =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      const audioOutCtx = new AudioCtx({ sampleRate: 24000 });
-      if (audioOutCtx.state === 'suspended') {
-        await audioOutCtx.resume();
-      }
+      const audioOutCtx = new AudioContext({ sampleRate: 24000 });
       this.audioOutCtx = audioOutCtx;
       this.playbackQueue = new PlaybackQueue(audioOutCtx, 24000);
+      if (audioOutCtx.state === 'suspended') {
+        await audioOutCtx.resume();
+        if (this.abandoned()) return;
+      }
 
-      // 3. Request user microphone (16 kHz, mono, echoCancellation)
       const micStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -98,267 +83,184 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
         },
       });
       this.micStream = micStream;
+      if (this.abandoned()) return;
 
-      // 4. Open Gemini Live WebSocket
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${token}`;
-      const ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(`${LIVE_URL}?access_token=${token}`);
       this.ws = ws;
 
       ws.onopen = () => {
-        // Send initial setup without model or systemInstruction (locked into token by backend)
+        // No model or systemInstruction: the backend locks both into the token.
         const setup: Record<string, unknown> = {
           generationConfig: {
             responseModalities: ['AUDIO'],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName: 'Puck',
-                },
-              },
-            },
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
         };
-
-        // If resuming an existing session, supply the stored resumption handle
         if (this.resumptionHandle) {
-          setup.sessionResumption = {
-            handle: this.resumptionHandle,
-          };
+          setup.sessionResumption = { handle: this.resumptionHandle };
         }
-
-        const setupMsg = { setup };
-        ws.send(JSON.stringify(setupMsg));
+        ws.send(JSON.stringify({ setup }));
       };
 
       ws.onmessage = async (event: MessageEvent) => {
-        try {
-          const raw =
-            event.data instanceof Blob ? await event.data.text() : (event.data as string);
-          const response = JSON.parse(raw);
-
-          // Handle sessionResumptionUpdate
-          const resumptionUpdate = response.sessionResumptionUpdate;
-          if (resumptionUpdate?.newHandle && resumptionUpdate.resumable !== false) {
-            this.resumptionHandle = resumptionUpdate.newHandle;
-            if (this.sessionId) {
-              try {
-                sessionStorage.setItem(
-                  `gemini_resumption_${this.sessionId}`,
-                  resumptionUpdate.newHandle
-                );
-              } catch {
-                // ignore storage errors
-              }
-            }
-          }
-
-          // Handle top-level GoAway signal from Gemini Live
-          if (response.goAway) {
-            console.info('[geminiLiveAdapter] Received GoAway from server, reconnecting...');
-            this.triggerReconnect();
-            return;
-          }
-
-          // Handle setupComplete
-          if (response.setupComplete) {
-            this.reconnectAttempts = 0; // Reset counter on success
-            this.callbacks?.onStateChange('LISTENING');
-
-            // Begin microphone audio streaming
-            const audioInCtx = new AudioCtx({ sampleRate: 16000 });
-            this.audioInCtx = audioInCtx;
-
-            const sourceNode = audioInCtx.createMediaStreamSource(micStream);
-            const analyser = audioInCtx.createAnalyser();
-            analyser.fftSize = 256;
-            this.analyser = analyser;
-
-            const processor = audioInCtx.createScriptProcessor(4096, 1, 1);
-            this.processor = processor;
-
-            processor.onaudioprocess = (e) => {
-              if (this.isMuted) return;
-              if (ws.readyState !== WebSocket.OPEN) return;
-
-              const inputFloats = e.inputBuffer.getChannelData(0);
-              const pcmBuffer = floatTo16BitPCM(inputFloats);
-
-              const bytes = new Uint8Array(pcmBuffer);
-              let binary = '';
-              for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-              }
-              const base64Data = btoa(binary);
-
-              const audioMsg = {
-                realtimeInput: {
-                  audio: {
-                    data: base64Data,
-                    mimeType: 'audio/pcm;rate=16000',
-                  },
-                },
-              };
-              ws.send(JSON.stringify(audioMsg));
-            };
-
-            sourceNode.connect(analyser);
-            analyser.connect(processor);
-            processor.connect(audioInCtx.destination);
-
-            // Audio level monitor loop
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-            const updateLevel = () => {
-              if (this.isMuted) {
-                this.callbacks?.onAudioLevel?.(0);
-              } else {
-                analyser.getByteFrequencyData(dataArray);
-                let sum = 0;
-                for (let i = 0; i < dataArray.length; i++) {
-                  sum += dataArray[i];
-                }
-                const avg = sum / dataArray.length;
-                this.callbacks?.onAudioLevel?.(Math.min(1, avg / 128));
-              }
-              this.animationFrameId = requestAnimationFrame(updateLevel);
-            };
-            updateLevel();
-            return;
-          }
-
-          const serverContent = response.serverContent;
-          if (!serverContent) return;
-
-          // 1. Interruption handling (FR-14)
-          if (serverContent.interrupted) {
-            this.playbackQueue?.stop();
-            this.callbacks?.onStateChange('LISTENING');
-            return;
-          }
-
-          // 2. Transcriptions
-          if (serverContent.inputTranscription?.text) {
-            this.callbacks?.onTranscript({
-              speaker: 'CANDIDATE',
-              text: serverContent.inputTranscription.text,
-              isFinal: false,
-            });
-            this.callbacks?.onStateChange('LISTENING');
-          }
-
-          if (serverContent.outputTranscription?.text) {
-            this.callbacks?.onTranscript({
-              speaker: 'AI',
-              text: serverContent.outputTranscription.text,
-              isFinal: false,
-            });
-          }
-
-          // 3. Audio output playback
-          if (serverContent.modelTurn?.parts) {
-            this.callbacks?.onStateChange('AI_SPEAKING');
-            for (const part of serverContent.modelTurn.parts) {
-              if (part.inlineData?.data) {
-                const audioBuffer = base64Decode(part.inlineData.data);
-                this.playbackQueue?.enqueue(audioBuffer);
-              }
-            }
-          }
-
-          // 4. Turn completion
-          if (serverContent.turnComplete) {
-            this.callbacks?.onStateChange('LISTENING');
-          }
-        } catch (msgErr) {
-          console.error('Error handling Gemini Live message in adapter:', msgErr);
-        }
+        // Gemini Live sends its JSON as binary frames, which the browser delivers as a Blob.
+        const raw = event.data instanceof Blob ? await event.data.text() : event.data;
+        // The socket may have been closed or replaced while the frame was being read.
+        if (this.ws !== ws) return;
+        this.handleMessage(JSON.parse(raw), micStream, ws);
       };
 
-      ws.onerror = () => {
-        if (this.isDeliberateClose) return;
-        // On connection errors, attempt resumption if handle exists, otherwise fail
-        if (this.resumptionHandle && this.reconnectAttempts < 3) {
-          this.triggerReconnect();
-        } else {
-          this.fail('Gemini Live WebSocket connection failed');
-        }
-      };
-
-      ws.onclose = () => {
-        if (this.isDeliberateClose) {
-          this.callbacks?.onStateChange('IDLE');
-          this.cleanupAudioAndSocket();
-        } else if (this.resumptionHandle && this.reconnectAttempts < 3) {
-          this.triggerReconnect();
-        } else {
-          this.fail(
-            this.reconnectAttempts >= 3
-              ? 'Reconnection failed after 3 attempts'
-              : 'Gemini Live WebSocket disconnected unexpectedly'
-          );
-        }
-      };
+      ws.onerror = () => this.onDropped('Gemini Live WebSocket connection failed');
+      ws.onclose = () => this.onDropped('Gemini Live WebSocket disconnected unexpectedly');
     } catch (err) {
-      if (this.isDeliberateClose) return;
-      if (this.resumptionHandle && this.reconnectAttempts < 3) {
-        this.triggerReconnect();
-      } else {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        this.fail(errorMsg);
-      }
+      // Token, audio or microphone errors (e.g. permission denied) won't be fixed by retrying.
+      if (!this.abandoned()) this.fail(err instanceof Error ? err.message : String(err));
     }
   }
 
-  private triggerReconnect(): void {
-    if (this.isDeliberateClose) return;
+  private handleMessage(response: LiveServerMessage, micStream: MediaStream, ws: WebSocket): void {
+    const update = response.sessionResumptionUpdate;
+    if (update?.resumable && update.newHandle) {
+      this.resumptionHandle = update.newHandle;
+      sessionStorage.setItem(resumptionKey(this.sessionId), update.newHandle);
+    }
 
-    if (!this.resumptionHandle || this.reconnectAttempts >= 3) {
-      this.fail('Reconnection failed after 3 attempts');
+    if (response.goAway) {
+      this.onDropped('Gemini Live closed the session');
       return;
     }
 
+    if (response.setupComplete) {
+      this.reconnectAttempts = 0;
+      this.callbacks?.onStateChange('LISTENING');
+      this.startMicStreaming(micStream, ws);
+      return;
+    }
+
+    const serverContent = response.serverContent;
+    if (!serverContent) return;
+
+    // FR-14: the candidate spoke over the interviewer, so cut its audio off.
+    if (serverContent.interrupted) {
+      this.playbackQueue?.stop();
+      this.callbacks?.onStateChange('LISTENING');
+      return;
+    }
+
+    if (serverContent.inputTranscription?.text) {
+      this.callbacks?.onTranscript({
+        speaker: 'CANDIDATE',
+        text: serverContent.inputTranscription.text,
+        isFinal: false,
+      });
+      this.callbacks?.onStateChange('LISTENING');
+    }
+
+    if (serverContent.outputTranscription?.text) {
+      this.callbacks?.onTranscript({
+        speaker: 'AI',
+        text: serverContent.outputTranscription.text,
+        isFinal: false,
+      });
+    }
+
+    if (serverContent.modelTurn?.parts) {
+      this.callbacks?.onStateChange('AI_SPEAKING');
+      for (const part of serverContent.modelTurn.parts) {
+        if (part.inlineData?.data) {
+          this.playbackQueue?.enqueue(base64Decode(part.inlineData.data));
+        }
+      }
+    }
+
+    if (serverContent.turnComplete) {
+      this.callbacks?.onStateChange('LISTENING');
+    }
+  }
+
+  private startMicStreaming(micStream: MediaStream, ws: WebSocket): void {
+    const audioInCtx = new AudioContext({ sampleRate: 16000 });
+    this.audioInCtx = audioInCtx;
+
+    const sourceNode = audioInCtx.createMediaStreamSource(micStream);
+    const analyser = audioInCtx.createAnalyser();
+    analyser.fftSize = 256;
+    this.analyser = analyser;
+
+    const processor = audioInCtx.createScriptProcessor(4096, 1, 1);
+    this.processor = processor;
+    processor.onaudioprocess = (e) => {
+      if (this.isMuted || ws.readyState !== WebSocket.OPEN) return;
+      const pcm = floatTo16BitPCM(e.inputBuffer.getChannelData(0));
+      ws.send(
+        JSON.stringify({
+          realtimeInput: { audio: { data: base64Encode(pcm), mimeType: 'audio/pcm;rate=16000' } },
+        })
+      );
+    };
+
+    sourceNode.connect(analyser);
+    analyser.connect(processor);
+    processor.connect(audioInCtx.destination);
+
+    const levels = new Uint8Array(analyser.frequencyBinCount);
+    const updateLevel = () => {
+      if (this.isMuted) {
+        this.callbacks?.onAudioLevel?.(0);
+      } else {
+        analyser.getByteFrequencyData(levels);
+        const avg = levels.reduce((sum, value) => sum + value, 0) / levels.length;
+        this.callbacks?.onAudioLevel?.(Math.min(1, avg / 128));
+      }
+      this.animationFrameId = requestAnimationFrame(updateLevel);
+    };
+    updateLevel();
+  }
+
+  /** True when disconnect() ran while a connection was still being set up; releases what it opened. */
+  private abandoned(): boolean {
+    if (!this.isDeliberateClose) return false;
+    this.cleanupAudioAndSocket();
+    return true;
+  }
+
+  /** The socket dropped: resume with the stored handle, or fail if there is none or retries ran out. */
+  private onDropped(message: string): void {
+    if (!this.resumptionHandle) {
+      this.fail(message);
+      return;
+    }
+    if (this.reconnectAttempts >= MAX_RECONNECTS) {
+      this.fail(`Reconnection failed after ${MAX_RECONNECTS} attempts`);
+      return;
+    }
     this.reconnectAttempts += 1;
-    console.info(`[geminiLiveAdapter] Reconnecting session (attempt ${this.reconnectAttempts}/3)...`);
+    console.info(`[geminiLiveAdapter] Reconnecting (attempt ${this.reconnectAttempts}/${MAX_RECONNECTS})`);
     this.cleanupAudioAndSocket();
     void this.startConnection();
   }
 
-  /**
-   * Unified failure path: logs error, sets state to ERROR, invokes callback, and cleans up.
-   */
   private fail(message: string): void {
     this.callbacks?.onError?.(message);
     this.callbacks?.onStateChange('ERROR');
     this.cleanupAudioAndSocket();
   }
 
-  /**
-   * Sends a text cue into the Gemini Live session (used by thinking prompts and time cues).
-   */
+  /** Sends a text cue into the live conversation (thinking prompts, time cues). */
   sendText(text: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.warn('[geminiLiveAdapter] Cannot sendText: WebSocket is not open');
       return;
     }
-
-    const cueMsg = {
-      clientContent: {
-        turns: [
-          {
-            role: 'user',
-            parts: [{ text }],
-          },
-        ],
-        turnComplete: true,
-      },
-    };
-    this.ws.send(JSON.stringify(cueMsg));
+    this.ws.send(
+      JSON.stringify({
+        clientContent: { turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true },
+      })
+    );
   }
 
-  /**
-   * Mutes or unmutes the microphone streaming.
-   */
   setMuted(muted: boolean): void {
     this.isMuted = muted;
     if (muted) {
@@ -366,22 +268,14 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
   }
 
-  /**
-   * Cleanly closes the live voice session and wipes stored handles.
-   */
+  /** Ends the session for good, so the stored resumption handle is dropped too. */
   disconnect(): void {
     this.isDeliberateClose = true;
     this.reconnectAttempts = 0;
     this.resumptionHandle = null;
-
     if (this.sessionId) {
-      try {
-        sessionStorage.removeItem(`gemini_resumption_${this.sessionId}`);
-      } catch {
-        // ignore
-      }
+      sessionStorage.removeItem(resumptionKey(this.sessionId));
     }
-
     this.cleanupAudioAndSocket();
     this.callbacks?.onStateChange('IDLE');
   }
@@ -391,44 +285,18 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
-
-    if (this.playbackQueue) {
-      this.playbackQueue.stop();
-      this.playbackQueue = null;
-    }
-
-    if (this.processor) {
-      try {
-        this.processor.disconnect();
-      } catch {
-        // ignore
-      }
-      this.processor = null;
-    }
-
-    if (this.analyser) {
-      try {
-        this.analyser.disconnect();
-      } catch {
-        // ignore
-      }
-      this.analyser = null;
-    }
-
-    if (this.micStream) {
-      this.micStream.getTracks().forEach((track) => track.stop());
-      this.micStream = null;
-    }
-
-    if (this.audioInCtx && this.audioInCtx.state !== 'closed') {
-      this.audioInCtx.close().catch(() => {});
-      this.audioInCtx = null;
-    }
-
-    if (this.audioOutCtx && this.audioOutCtx.state !== 'closed') {
-      this.audioOutCtx.close().catch(() => {});
-      this.audioOutCtx = null;
-    }
+    this.playbackQueue?.stop();
+    this.playbackQueue = null;
+    this.processor?.disconnect();
+    this.processor = null;
+    this.analyser?.disconnect();
+    this.analyser = null;
+    this.micStream?.getTracks().forEach((track) => track.stop());
+    this.micStream = null;
+    void this.audioInCtx?.close();
+    this.audioInCtx = null;
+    void this.audioOutCtx?.close();
+    this.audioOutCtx = null;
 
     if (this.ws) {
       const socket = this.ws;
@@ -437,24 +305,17 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
       socket.onmessage = null;
       socket.onerror = null;
       socket.onclose = null;
-      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
-        socket.close();
-      }
+      socket.close();
     }
 
     this.callbacks?.onAudioLevel?.(0);
   }
 
-  // Legacy stubs for VoiceSessionAdapter room compatibility until VI-8 rewires progression
-  async speakAiQuestion(_text: string): Promise<void> {
-    return Promise.resolve();
-  }
+  // STUB (VI-8): Gemini Live asks the questions and detects the end of a turn itself, so these
+  // room calls do nothing here until VI-8 slims VoiceSessionAdapter.
+  async speakAiQuestion(): Promise<void> {}
 
-  async startListening(): Promise<void> {
-    return Promise.resolve();
-  }
+  async startListening(): Promise<void> {}
 
-  finishCandidateTurn(): void {
-    // Gemini Live handles end of turn automatically via voice activity detection.
-  }
+  finishCandidateTurn(): void {}
 }
