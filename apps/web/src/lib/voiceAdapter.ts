@@ -37,6 +37,7 @@ export interface VoiceSessionAdapter {
   startListening(): Promise<void>;
   finishCandidateTurn(): void;
   setMuted(muted: boolean): void;
+  sendText(text: string): void;
   disconnect(): void;
 }
 
@@ -302,6 +303,10 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
     } else if (!this.isAiSpeaking) {
       void this.startListening();
     }
+  }
+
+  sendText(_text: string): void {
+    // Browser Web Speech adapter does not process Live cues; no-op.
   }
 
   disconnect(): void {

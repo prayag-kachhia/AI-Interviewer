@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, Link } from 'react-router';
 import {
   BrainCircuit,
   AlertCircle,
@@ -11,8 +11,9 @@ import {
   Server,
   Mic,
   CheckCircle2,
+  FileText,
 } from 'lucide-react';
-import { createSession, getRoles } from '../../lib/api';
+import { createSession, getRoles, getLatestResume } from '../../lib/api';
 import { RoleList, ROLES, type Role } from '@interview/contracts';
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {
@@ -26,6 +27,8 @@ export const NewInterview: React.FC = () => {
   const [roleId, setRoleId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resumeName, setResumeName] = useState<string | null>(null);
+  const [resumeLoading, setResumeLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -37,6 +40,25 @@ export const NewInterview: React.FC = () => {
       })
       .catch(() => {
         // Fallback to centralized ROLES catalogue if offline
+      });
+  }, []);
+
+  useEffect(() => {
+    getLatestResume()
+      .then((res) => {
+        if (res.success && res.data?.fileName) {
+          setResumeName(res.data.fileName);
+        } else if (res.success && res.data) {
+          setResumeName(res.data.profile?.name ? `${res.data.profile.name}'s Resume` : 'Resume');
+        } else {
+          setResumeName(null);
+        }
+      })
+      .catch(() => {
+        setResumeName(null);
+      })
+      .finally(() => {
+        setResumeLoading(false);
       });
   }, []);
 
@@ -165,6 +187,55 @@ export const NewInterview: React.FC = () => {
               </label>
             );
           })}
+        </div>
+        <div
+          style={{
+            padding: '0.85rem 1rem',
+            borderRadius: '10px',
+            background: 'var(--bg-color)',
+            border: '1px solid var(--border-color)',
+            marginBottom: '1rem',
+            fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
+            <FileText size={18} color="var(--primary-color)" style={{ flexShrink: 0 }} />
+            <span
+              style={{
+                color: 'var(--text-main)',
+                fontWeight: 500,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {resumeLoading
+                ? 'Checking resume...'
+                : resumeName
+                  ? `Using resume: ${resumeName}`
+                  : 'No resume uploaded'}
+            </span>
+          </div>
+
+          <Link
+            to="/profile"
+            className="btn btn-outline"
+            style={{
+              padding: '0.35rem 0.75rem',
+              fontSize: '0.85rem',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              flexShrink: 0,
+            }}
+          >
+            View Profile
+          </Link>
         </div>
 
         <div

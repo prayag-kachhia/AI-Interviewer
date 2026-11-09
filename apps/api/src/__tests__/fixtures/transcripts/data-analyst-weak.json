@@ -1,0 +1,35 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Data Analyst interview. How would you calculate a 7-day rolling average of daily active users from an events table?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would write a query that selects the date and counts the users for each day, then maybe add up the last 7 days using a subquery. I am not very experienced with window functions, but I think you could join the table to itself 7 times or loop over the days to get the average. Or just use a spreadsheet and drag the average formula down."
+  },
+  {
+    "speaker": "AI",
+    "text": "Suppose some user IDs appear multiple times in a table that should be unique. How would you handle that?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would use SELECT DISTINCT in my query so duplicates don't show up. Or I could go through the table and delete the extra rows manually, keeping just one copy of each ID. In Excel there is a remove duplicates button which I have used before."
+  },
+  {
+    "speaker": "AI",
+    "text": "A key metric—weekly revenue—has dropped 18% week-over-week. How do you investigate this?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would filter by the two weeks and compare the totals. Maybe make a bar chart to see the difference visually. If one product sold less I would highlight it and tell the relevant team. I would look at the numbers and see what looks different."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you check that a new data pipeline is producing correct outputs before going live?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would look at a sample of rows and see if they look reasonable. If the numbers are similar to what the old system showed, I think it is probably fine. Maybe run it on one day of data first as a test. If nothing looks obviously wrong, we can turn it on."
+  }
+]
+

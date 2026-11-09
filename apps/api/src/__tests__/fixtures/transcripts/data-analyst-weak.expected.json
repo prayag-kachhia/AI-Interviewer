@@ -1,0 +1,24 @@
+{
+  "role": "data-analyst",
+  "scores": [
+    {
+      "category": "Communication",
+      "min": 1,
+      "max": 3,
+      "reason": "Ideas are expressed simply but vaguely; references to Excel suggest unfamiliarity with SQL tooling."
+    },
+    {
+      "category": "Technical depth",
+      "min": 1,
+      "max": 2,
+      "reason": "No knowledge of window functions; self-joins or loops proposed for rolling averages; SELECT DISTINCT for deduplication."
+    },
+    {
+      "category": "Structure",
+      "min": 1,
+      "max": 3,
+      "reason": "Answers lack any analytical methodology; no decomposition, no data-quality checks, no validation strategy."
+    }
+  ]
+}
+

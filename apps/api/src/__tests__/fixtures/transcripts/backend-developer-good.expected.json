@@ -1,0 +1,24 @@
+{
+  "role": "backend-developer",
+  "scores": [
+    {
+      "category": "Communication",
+      "min": 4,
+      "max": 5,
+      "reason": "Technical terms used precisely (cursor pagination, jti claim, SameSite, AppError); explanations are self-contained."
+    },
+    {
+      "category": "Technical depth",
+      "min": 3,
+      "max": 5,
+      "reason": "Cursor pagination rationale, JWT refresh rotation, AppError class pattern, and Supertest failure-path testing show solid backend depth."
+    },
+    {
+      "category": "Structure",
+      "min": 4,
+      "max": 5,
+      "reason": "Answers are organised: problem → design decision → trade-off → verification, consistently across all four questions."
+    }
+  ]
+}
+

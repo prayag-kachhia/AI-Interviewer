@@ -1,15 +1,12 @@
 import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import authRoutes from './routes/auth.routes';
-import resumeRoutes from './routes/resume.routes';
-import sessionRoutes from './routes/session.routes';
-import feedbackRoutes from './routes/feedback.routes';
+import authRoutes from './routes/auth';
+import resumeRoutes from './routes/resume';
+import sessionRoutes from './routes/sessions';
+import feedbackRoutes from './routes/feedback';
 import { runWorker } from './worker';
 
-// Load environment variables
-dotenv.config();
-
+// No dotenv here: Bun loads apps/api/.env itself (ADR-0009).
 const app: Express = express();
 const PORT = process.env.PORT || 3000;
 

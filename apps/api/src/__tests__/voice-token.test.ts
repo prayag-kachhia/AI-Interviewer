@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
-import prisma from '../utils/db';
+import prisma from '../db';
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
 
 vi.mock('@supabase/supabase-js', () => {
@@ -12,17 +12,17 @@ vi.mock('@supabase/supabase-js', () => {
   };
 });
 
-vi.mock('../utils/db', () => ({
+vi.mock('../db', () => ({
   default: {
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn() },
-    resume: { findFirst: vi.fn() },
+    resume: { findUnique: vi.fn() },
   },
 }));
 
 // Route tests never reach the provider; the real function is tested below.
-vi.mock('../services/voice-provider.service', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../services/voice-provider.service')>();
+vi.mock('../services/voice-provider.service', async (importOriginal: () => Promise<any>) => {
+  const actual = await importOriginal();
   return { ...actual, mintVoiceToken: vi.fn() };
 });
 
@@ -54,7 +54,6 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
       error: null,
     });
     (prisma.user.findUnique as any).mockResolvedValue({ ...AUTH_USER, passwordHash: 'x' });
-    (prisma.resume.findFirst as any).mockResolvedValue(null);
   });
 
   it("given the candidate's own session, when a token is requested, then a short-lived token comes back with role briefing", async () => {
@@ -77,22 +76,41 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
     );
   });
 
-  it('given a candidate with a resume, passes the resume summary into the token briefing (FR-08)', async () => {
-    (prisma.session.findFirst as any).mockResolvedValueOnce(OWN_LIVE_SESSION);
-    (prisma.resume.findFirst as any).mockResolvedValueOnce({
-      parsedProfile: 'Experienced with Kubernetes, Go, and Kafka microservices.',
+  it('given a session with attached resumeId, retrieves the associated resume, summarizes it, and passes it into briefing (FR-08, FR-09)', async () => {
+    const sessionWithResume = {
+      ...OWN_LIVE_SESSION,
+      id: 'sess-with-resume',
+      resumeId: 'resume-123',
+    };
+    (prisma.session.findFirst as any).mockResolvedValueOnce(sessionWithResume);
+    (prisma.resume.findUnique as any).mockResolvedValueOnce({
+      parsedProfile: JSON.stringify({
+        name: 'Vishwa Trivedi',
+        skills: ['TypeScript', 'Node.js', 'PostgreSQL'],
+        projects: ['Cloud Gateway: Built resilient microservice gateway'],
+        experience: ['Backend Engineer at Nexus Labs'],
+      }),
     });
-    vi.mocked(mintVoiceToken).mockResolvedValueOnce('auth_tokens/ephemeral-resume');
+    vi.mocked(mintVoiceToken).mockResolvedValueOnce('auth_tokens/ephemeral-structured');
 
     const res = await request(app)
-      .post('/api/sessions/sess-1/voice-token')
+      .post('/api/sessions/sess-with-resume/voice-token')
       .set('Authorization', 'Bearer valid-supabase-token');
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ success: true, data: { token: 'auth_tokens/ephemeral-resume' } });
+    expect(res.body).toEqual({ success: true, data: { token: 'auth_tokens/ephemeral-structured' } });
+    expect(prisma.resume.findUnique).toHaveBeenCalledWith({
+      where: { id: 'resume-123' },
+      select: { parsedProfile: true },
+    });
     expect(mintVoiceToken).toHaveBeenCalledWith(
       expect.objectContaining({
-        briefing: expect.stringContaining('Experienced with Kubernetes, Go, and Kafka microservices.'),
+        briefing: expect.stringContaining('Vishwa Trivedi'),
+      })
+    );
+    expect(mintVoiceToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        briefing: expect.stringContaining('Cloud Gateway'),
       })
     );
   });

@@ -8,7 +8,7 @@ const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 describe.skipIf(!TEST_DATABASE_URL)(
   'FR-28 — Account deletion cascade (PostgreSQL)',
   () => {
-    let prisma: typeof import('../utils/db').default;
+    let prisma: typeof import('../db').default;
     const runId = randomUUID().slice(0, 8);
 
     let userId: string;
@@ -17,7 +17,7 @@ describe.skipIf(!TEST_DATABASE_URL)(
     beforeAll(async () => {
       process.env.DATABASE_URL = TEST_DATABASE_URL!;
 
-      prisma = (await import('../utils/db')).default;
+      prisma = (await import('../db')).default;
 
       const user = await prisma.user.create({
         data: {

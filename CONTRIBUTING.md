@@ -21,8 +21,8 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 
 ## Architecture rules
 
-- **API: code is organised by layer.** `routes/` wires middleware to `controllers/`, controllers
-  call `services/`, and `middleware/auth.ts` and `utils/db.ts` (the Prisma client) are shared.
+- **API: one file per resource.** `routes/<resource>.ts` holds the URLs and handlers, handlers
+  call `services/`, and `middleware/auth.ts` and `db.ts` (the Prisma client) are shared.
 - **The web calls the API only through `apps/web/src/lib/api.ts`**, which attaches the Supabase
   access token.
 - **The browser never sees provider API keys** and never queries Supabase tables directly.
@@ -53,7 +53,7 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 ## What makes a PR mergeable
 
 - **One task, small.** Under ~300 changed lines, not counting `bun.lock`. Split bigger work.
-- **Stays in your lane.** Only your part of the app (your routes, controllers and services in
+- **Stays in your lane.** Only your part of the app (your routes and services in
   `apps/api`, your feature or pages in `apps/web`), plus `packages/contracts` or a new migration
   if the task needs it.
   Found a problem elsewhere? Open an issue or a separate PR.

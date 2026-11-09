@@ -1,0 +1,35 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Data Analyst interview. Let's start with SQL. How would you calculate a 7-day rolling average of daily active users from an events table?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would use a CTE to first aggregate daily active users, then apply a window function on top. Something like: WITH daily AS (SELECT DATE(event_time) AS day, COUNT(DISTINCT user_id) AS dau FROM events GROUP BY 1) SELECT day, dau, AVG(dau) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_7d_avg FROM daily ORDER BY day. I use ROWS BETWEEN rather than RANGE because RANGE would include all rows with the same date value, which could double-count if there are ties in the ordering column. ROWS gives us exactly the seven most recent records."
+  },
+  {
+    "speaker": "AI",
+    "text": "Good. How would you identify and remove duplicate records from a large dataset before running a cohort analysis?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I start by profiling: COUNT(*) versus COUNT(DISTINCT primary_key) to measure the duplication rate. For exact duplicates I use ROW_NUMBER() partitioned over the meaningful business keys—user_id, event_type, and DATE(event_time)—ordered by created_at, then filter WHERE rn = 1 to keep the earliest record. For near-duplicates—say two events within a 30-second window for the same user—I use LAG to compute the time gap and flag rows below the deduplication threshold. I always document the rules and preserve the original and deduplicated row counts in a data-quality log so stakeholders understand what was removed and why."
+  },
+  {
+    "speaker": "AI",
+    "text": "Suppose a key metric—weekly revenue—drops 18% week-over-week. Walk me through your root-cause analysis."
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I start by ruling out data quality issues: verify that ingestion jobs completed successfully, compare source record counts to the warehouse for both weeks, and confirm ETL timestamps are correct. If the data is clean, I decompose revenue into orders multiplied by average order value and check which factor drove the drop. I then segment by channel, product category, geography, and device type to isolate the affected segment. I also check for external drivers: did a marketing campaign end, was there an outage in checkout, or is this a known seasonal dip? Finally, I compare the same week year-over-year to distinguish a seasonal pattern from an anomaly, and present the most likely root cause with a confidence assessment and recommended next steps."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you validate the outputs of a newly built data pipeline before it goes to production?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I apply layered validation. At the schema layer I check data types, null constraints, and uniqueness of primary keys. At the volume layer I reconcile row counts between source and destination and flag discrepancies above a threshold. At the business logic layer I run invariant checks—revenue must be positive, refund amounts cannot exceed order totals—and compare aggregate totals between the old and new pipeline for a shared historical window. I then backfill a representative historical period and overlay the two time series on a dashboard to catch systematic offsets. Before go-live I run the new pipeline in shadow mode alongside the existing one for at least one full business cycle, and configure automated tests—dbt tests or Great Expectations—to alert on anomalies in production going forward."
+  }
+]
+
