@@ -1,5 +1,7 @@
 // ResultsScreen.tsx
+import { useState } from "react";
 import { useFeedback, useTurns } from "./useFeedback";
+import { retryFeedback } from "./feedbackApi";
 import type { TurnSpeaker } from "@interview/contracts";
 
 export function formatSpeaker(speaker: TurnSpeaker | string): string {
@@ -18,20 +20,42 @@ export function formatElapsedTime(seconds: number): string {
 }
 
 export function ResultsScreen({ sessionId }: { sessionId: string }) {
-  const feedback = useFeedback(sessionId);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const { feedback, error: feedbackError, isLongWait } = useFeedback(sessionId, reloadKey);
   const { turns, isLoading, error } = useTurns(sessionId);
+
+  async function handleRetry() {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      await retryFeedback(sessionId);
+      setReloadKey((key) => key + 1);
+    } catch {
+      setRetryError("Couldn't restart the feedback. Please try again.");
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   return (
     <div>
       {(!feedback || feedback.status === "pending") && (
         <div role="status">
           <p>Preparing your feedback… this can take a moment.</p>
+          {isLongWait && <p>This is taking longer than usual.</p>}
+          {feedbackError && <p>{feedbackError}</p>}
         </div>
       )}
 
       {feedback?.status === "failed" && (
         <div role="alert">
           <p>We couldn't generate feedback for this session.</p>
+          {retryError && <p>{retryError}</p>}
+          <button type="button" className="btn btn-primary" onClick={handleRetry} disabled={retrying}>
+            {retrying ? "Retrying…" : "Try again"}
+          </button>
         </div>
       )}
 
@@ -43,6 +67,9 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
             {feedback.scores?.map((s) => (
               <li key={s.category}>
                 <strong>{s.category}:</strong> {s.score}/5 — {s.comment}
+                {s.strengths.length > 0 && <p>Strengths: {s.strengths.join("; ")}</p>}
+                {s.improvements.length > 0 && <p>To improve: {s.improvements.join("; ")}</p>}
+                {s.quote && <blockquote>“{s.quote}”</blockquote>}
               </li>
             ))}
           </ul>

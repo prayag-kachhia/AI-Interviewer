@@ -1,6 +1,6 @@
 import prisma from '../utils/db';
 import { NotFoundError } from '../utils/resource';
-import { ROLES } from '@interview/contracts';
+import { FeedbackStatus, ROLES } from '@interview/contracts';
 
 // The role list lives in @interview/contracts so the API and the web app share it.
 const VALID_ROLE_IDS = new Set(ROLES.map((r) => r.id));
@@ -69,6 +69,31 @@ export async function getOwnedSession(sessionId: string, userId: string) {
   }
 
   return session;
+}
+
+// Matches the briefing's default time limit; sessions have no per-session limit yet.
+export const EARLY_END_THRESHOLD_MINUTES = 15;
+
+/** The user's sessions, newest first, with their feedback status and whether they ended early. */
+export async function listSessions(userId: string) {
+  const sessions = await prisma.session.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    include: { feedback: { select: { status: true } } },
+  });
+
+  return sessions.map(({ feedback, ...session }) => ({
+    ...session,
+    // An ended session whose feedback row isn't written yet is still pending.
+    feedbackStatus: feedback
+      ? FeedbackStatus.parse(feedback.status)
+      : session.status === 'ENDED'
+        ? 'pending'
+        : null,
+    endedEarly:
+      session.endedAt !== null &&
+      session.endedAt.getTime() - session.startedAt.getTime() < EARLY_END_THRESHOLD_MINUTES * 60_000,
+  }));
 }
 
 export async function listTurns(sessionId: string, userId: string) {

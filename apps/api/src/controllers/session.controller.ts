@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import {
   createSession,
   getOwnedSession,
+  listSessions,
   listTurns,
   addTurn,
   endSession,
@@ -39,6 +40,18 @@ export const postSession = async (req: Request, res: Response): Promise<void> =>
     }
     console.error('Create session error:', error);
     res.status(500).json({ success: false, message: 'Failed to create session' });
+  }
+};
+
+// GET /api/sessions (list sessions for authenticated user)
+export const getSessions = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const sessions = await listSessions(userId);
+    res.status(200).json({ success: true, data: sessions });
+  } catch (error) {
+    console.error('Get sessions error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch sessions' });
   }
 };
 

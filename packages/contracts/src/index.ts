@@ -50,6 +50,10 @@ export const Turn = z.object({
 });
 export type Turn = z.infer<typeof Turn>;
 
+// Written feedback for one session (GET /api/sessions/:id/feedback).
+export const FeedbackStatus = z.enum(["pending", "ready", "failed"]);
+export type FeedbackStatus = z.infer<typeof FeedbackStatus>;
+
 export const Session = z.object({
   id: z.string(),
   userId: z.string(),
@@ -60,6 +64,8 @@ export const Session = z.object({
   endedAt: z.string().nullable(),
   createdAt: z.string().optional(),
   turns: z.array(Turn).optional(),
+  feedbackStatus: FeedbackStatus.nullable().optional(),
+  endedEarly: z.boolean().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
@@ -68,10 +74,6 @@ export const VoiceToken = z.object({
   token: z.string().min(1),
 });
 export type VoiceToken = z.infer<typeof VoiceToken>;
-
-// Written feedback for one session (GET /api/sessions/:id/feedback).
-export const FeedbackStatus = z.enum(["pending", "ready", "failed"]);
-export type FeedbackStatus = z.infer<typeof FeedbackStatus>;
 
 export const FeedbackScore = z.object({
   category: z.string().min(1),

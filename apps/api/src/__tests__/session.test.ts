@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../utils/db';
+import { EARLY_END_THRESHOLD_MINUTES } from '../services/session.service';
 
 vi.mock('@supabase/supabase-js', () => {
   const getUserMock = vi.fn();
@@ -19,6 +20,7 @@ vi.mock('../utils/db', () => ({
     session: {
       create: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
     },
     resume: {
@@ -212,6 +214,80 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
     it('requires authentication for POST /api/sessions', async () => {
       const res = await request(app).post('/api/sessions').send({ roleId: 'software-engineer' });
       expect(res.status).toBe(401);
+    });
+
+    it('requires authentication for GET /api/sessions', async () => {
+      const res = await request(app).get('/api/sessions');
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /api/sessions: returns only sessions belonging to the authenticated user sorted newest first with endedEarly and feedbackStatus', async () => {
+      const now = Date.now();
+      const mockSessions = [
+        {
+          id: 'sess-new',
+          userId: AUTH_USER.id,
+          role: 'backend-developer',
+          status: 'ENDED',
+          startedAt: new Date(now - 1000 * 60 * EARLY_END_THRESHOLD_MINUTES),
+          endedAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES - 4)), // 4 mins (< EARLY_END_THRESHOLD_MINUTES -> endedEarly true)
+          createdAt: new Date(now - 1000 * 60 * EARLY_END_THRESHOLD_MINUTES),
+          feedback: { status: 'ready' },
+        },
+        {
+          id: 'sess-old',
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          status: 'ENDED',
+          startedAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES + 15)),
+          endedAt: new Date(now - 1000 * 60 * 5), // (EARLY_END_THRESHOLD_MINUTES + 10) mins (>= EARLY_END_THRESHOLD_MINUTES -> endedEarly false)
+          createdAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES + 15)),
+          feedback: { status: 'failed' },
+        },
+      ];
+
+      (prisma.session.findMany as any).mockResolvedValueOnce(mockSessions);
+
+      const res = await request(app)
+        .get('/api/sessions')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(2);
+      expect(prisma.session.findMany).toHaveBeenCalledWith({
+        where: { userId: AUTH_USER.id },
+        orderBy: { createdAt: 'desc' },
+        include: { feedback: { select: { status: true } } },
+      });
+
+      const [first, second] = res.body.data;
+      expect(first.id).toBe('sess-new');
+      expect(first.role).toBe('backend-developer');
+      expect(first.status).toBe('ENDED');
+      expect(first.feedbackStatus).toBe('ready');
+      expect(first.endedEarly).toBe(true);
+
+      expect(second.id).toBe('sess-old');
+      expect(second.role).toBe('software-engineer');
+      expect(second.feedbackStatus).toBe('failed');
+      expect(second.endedEarly).toBe(false);
+    });
+
+    it('GET /api/sessions: never returns another user\'s sessions (always scopes by userId)', async () => {
+      (prisma.session.findMany as any).mockResolvedValueOnce([]);
+
+      const res = await request(app)
+        .get('/api/sessions')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+      expect(prisma.session.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: AUTH_USER.id },
+        })
+      );
     });
   });
 

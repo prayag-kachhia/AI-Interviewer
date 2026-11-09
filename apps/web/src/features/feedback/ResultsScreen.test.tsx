@@ -1,7 +1,7 @@
 // ResultsScreen.test.tsx
 import "@testing-library/jest-dom/vitest";
 import { test, expect, vi, afterEach } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { ResultsScreen } from "./ResultsScreen";
 import * as api from "./feedbackApi";
 import { getTurns } from "../../lib/api";
@@ -46,6 +46,26 @@ test("given feedback is ready, then it is displayed", async () => {
 
   render(<ResultsScreen sessionId="s1" />);
   expect(await screen.findByText("Great job.")).toBeInTheDocument();
+  expect(screen.getByText("Strengths: Clear communication")).toBeInTheDocument();
+  expect(screen.getByText("To improve: Keep it up")).toBeInTheDocument();
+  expect(screen.getByText("“I would decouple the notification requests”")).toBeInTheDocument();
+});
+
+test("given feedback failed, when I press Try again, then it goes back to preparing and then shows the result", async () => {
+  vi.spyOn(api, "fetchFeedback")
+    .mockResolvedValueOnce({ sessionId: "s1", status: "failed" })
+    .mockResolvedValueOnce({ sessionId: "s1", status: "pending" })
+    .mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Ready after retry.", scores: [] });
+  const retry = vi.spyOn(api, "retryFeedback").mockResolvedValue({ sessionId: "s1", status: "pending" });
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+
+  render(<ResultsScreen sessionId="s1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+  expect(await screen.findByText("Preparing your feedback… this can take a moment.")).toBeInTheDocument();
+  expect(retry).toHaveBeenCalledWith("s1");
+  await act(() => vi.advanceTimersByTimeAsync(3000));
+  expect(await screen.findByText("Ready after retry.")).toBeInTheDocument();
 });
 
 test("given feedback failed, then the screen says so", async () => {

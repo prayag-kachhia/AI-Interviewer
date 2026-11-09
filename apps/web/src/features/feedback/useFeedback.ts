@@ -5,21 +5,37 @@ import { getTurns } from "../../lib/api";
 import { fetchFeedback } from "./feedbackApi";
 
 const POLL_INTERVAL_MS = 3000;
+// After this long still pending, the screen says it is taking longer than usual.
+const LONG_WAIT_MS = 60_000;
 
-export function useFeedback(sessionId: string) {
+// Polls until the feedback is ready or failed. Bump `reloadKey` (after a retry) to start polling again.
+export function useFeedback(sessionId: string, reloadKey = 0) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLongWait, setIsLongWait] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     let intervalId: ReturnType<typeof setInterval>;
+    setError(null);
+    setIsLongWait(false);
+    const longWaitId = setTimeout(() => setIsLongWait(true), LONG_WAIT_MS);
+
+    function stop() {
+      clearInterval(intervalId);
+      clearTimeout(longWaitId);
+    }
 
     async function poll() {
-      const result = await fetchFeedback(sessionId);
-      if (cancelled) return;
-      setFeedback(result);
-
-      if (result.status !== "pending") {
-        clearInterval(intervalId);
+      try {
+        const result = await fetchFeedback(sessionId);
+        if (cancelled) return;
+        setFeedback(result);
+        setError(null);
+        if (result.status !== "pending") stop();
+      } catch {
+        // Keep polling: a dropped request shouldn't end the wait, but the screen says so.
+        if (!cancelled) setError("Unable to load feedback. Retrying…");
       }
     }
 
@@ -28,11 +44,11 @@ export function useFeedback(sessionId: string) {
 
     return () => {
       cancelled = true;
-      clearInterval(intervalId);
+      stop();
     };
-  }, [sessionId]);
+  }, [sessionId, reloadKey]);
 
-  return feedback;
+  return { feedback, error, isLongWait };
 }
 
 export interface UseTurnsResult {

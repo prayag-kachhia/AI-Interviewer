@@ -5,6 +5,7 @@ import type {
   ResumeResponse,
   RolesResponse,
   SessionResponse,
+  SessionsListResponse,
   TurnResponse,
   TurnsListResponse,
   TurnSpeaker,
@@ -83,6 +84,11 @@ export const getRoles = async (): Promise<RolesResponse> => {
   return data;
 };
 
+export const getSessions = async (): Promise<SessionsListResponse> => {
+  const { data } = await api.get<SessionsListResponse>('/sessions');
+  return data;
+};
+
 export const createSession = async (roleId: string): Promise<SessionResponse> => {
   const { data } = await api.post<SessionResponse>('/sessions', { roleId });
   return data;
@@ -129,6 +135,12 @@ export const getVoiceToken = async (sessionId: string): Promise<string> => {
 // Feedback (FB3) — the results screen polls this until the status is not 'pending'.
 export const getFeedback = async (sessionId: string): Promise<Feedback> => {
   const { data } = await api.get<{ success: boolean; data?: unknown }>(`/sessions/${sessionId}/feedback`);
+  return Feedback.parse(data.data);
+};
+
+// Re-queues failed feedback; the reply is the feedback back in the pending state.
+export const retryFeedback = async (sessionId: string): Promise<Feedback> => {
+  const { data } = await api.post<{ success: boolean; data?: unknown }>(`/sessions/${sessionId}/feedback/retry`);
   return Feedback.parse(data.data);
 };
 
