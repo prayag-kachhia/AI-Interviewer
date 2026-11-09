@@ -13,23 +13,58 @@ export interface BriefingInput {
   timeLimitMin?: number;
 }
 
-const ROLE_PERSONAS: Record<string, { label: string; description: string }> = {
+interface RolePersona {
+  label: string;
+  description: string;
+  deepDiveTopics: string;
+  pressureTestTopics: string;
+}
+
+const ROLE_PERSONAS: Record<string, RolePersona> = {
   'software-engineer': {
     label: 'Software Engineer',
     description:
       'You are an experienced Senior Software Engineering Interviewer. You evaluate clean architecture, data structures, algorithms, debugging, scalability, and engineering collaboration.',
+    deepDiveTopics:
+      'data structures, memory management vs CPU efficiency, async I/O, clean API design, and caching layers',
+    pressureTestTopics:
+      'sudden 10x traffic spikes, race conditions in multi-threaded workflows, degraded external dependencies, and memory leaks',
   },
   'data-analyst': {
     label: 'Data Analyst',
     description:
       'You are a Lead Data Analyst and Interviewer. You evaluate SQL querying, data cleaning, statistical modeling, data visualization, metric validation, and translating data into actionable business insights.',
+    deepDiveTopics:
+      'SQL query optimization, indexing strategies, handling skewed data distributions, metric drift, and ETL schema normalization vs denormalization',
+    pressureTestTopics:
+      'missing or corrupt data at scale, conflicting metrics from upstream pipelines, and reconciling anomalies during executive reporting',
   },
   'backend-developer': {
     label: 'Backend Developer',
     description:
       'You are a Principal Backend Systems Architect and Interviewer. You evaluate server-side systems, REST and gRPC API design, database modeling, indexing, caching, fault tolerance, and high-concurrency reliability.',
+    deepDiveTopics:
+      'database indexing (B-Tree vs Hash), connection pooling, distributed caching (Redis/Memcached), REST vs gRPC, idempotent endpoints, and transaction isolation levels',
+    pressureTestTopics:
+      'network partitions, split-brain scenarios, cascading microservice timeouts, poison-pill queue messages, and primary database failover under load',
   },
 };
+
+/**
+ * Splits the interview's minutes across the three phases: about 20% warm-up,
+ * 55% deep-dive and 25% pressure-test.
+ */
+export function calculatePhaseTiming(totalMin: number): {
+  warmUpMin: number;
+  deepDiveMin: number;
+  pressureTestMin: number;
+} {
+  const warmUpMin = Math.round(totalMin * 0.2);
+  const deepDiveMin = Math.round(totalMin * 0.55);
+  // The last phase takes the rounding leftover so the three always add up to the time limit.
+  const pressureTestMin = totalMin - warmUpMin - deepDiveMin;
+  return { warmUpMin, deepDiveMin, pressureTestMin };
+}
 
 /**
  * Builds the server-side system instructions for the AI voice interviewer (FR-13, FR-15, FR-17, DR-01).
@@ -42,6 +77,8 @@ export function buildBriefing(input: BriefingInput): string {
   const roleInfo = ROLE_PERSONAS[roleId] ?? {
     label: ROLES.find((r) => r.id === roleId)?.label || roleId,
     description: `You are an expert technical interviewer evaluating candidates for the ${roleId} position.`,
+    deepDiveTopics: 'core technical trade-offs, architecture patterns, and algorithmic performance',
+    pressureTestTopics: 'production failure modes, edge-case bottlenecks, and incident debugging under scale',
   };
 
   const sections: string[] = [];
@@ -90,7 +127,7 @@ INSTRUCTION: You must tailor your technical questions to the candidate's backgro
     );
   }
 
-  // 4. Past Questions to avoid repeating (FR-16)
+  // 6. Past Questions to avoid repeating (FR-16)
   if (pastQuestions.length > 0) {
     sections.push(
       `PREVIOUSLY ASKED QUESTIONS (DO NOT REPEAT):
@@ -100,24 +137,41 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
     );
   }
 
-  // 5. Structure & Timing (DR-01, FR-17)
+  // 7. Structure & timing: three-phase question progression (DR-01, FR-17)
+  const { warmUpMin, deepDiveMin, pressureTestMin } = calculatePhaseTiming(timeLimitMin);
+
   sections.push(
-    `INTERVIEW STRUCTURE & TIMING (Target duration: ${timeLimitMin} minutes):
+    `INTERVIEW STRUCTURE & 3-PHASE QUESTION PROGRESSION (Total target duration: ${timeLimitMin} minutes):
+
 1. Introduction (Start immediately):
    - Introduce yourself warmly as the AI Technical Interviewer.
-   - Announce the role ("${roleInfo.label}"${focus ? ` - ${focus}` : ''}) and mention that the interview will take about ${timeLimitMin} minutes.
-   - Immediately ask your first technical or introductory question to begin.
-2. Core Technical Questions (3 to 4 questions total):
-   - Ask strictly ONE question at a time. Never bundle multiple questions into a single turn.
-   - Actively listen to the candidate's answer. Ask a relevant, thoughtful follow-up question exploring their technical trade-offs, debugging approach, or architectural decisions before moving to a new topic.
-   - Maintain appropriate technical depth for a campus placement / industry candidate.
+   - Announce the role ("${roleInfo.label}"${focus ? ` - ${focus}` : ''}${company ? ` at ${company}` : ''}) and state that the interview will take about ${timeLimitMin} minutes.
+   - Immediately ask your first technical or introductory question to begin Phase 1.
+
+2. Core Technical Questions — 3-Phase Progression (Ask strictly ONE question at a time):
+   You MUST guide the candidate sequentially through three distinct phases:
+
+   • Phase 1: Warm-up & Architecture Overview (~${warmUpMin} minutes)
+     - Ground questions in the candidate's resume projects, technologies, and system architecture. If no resume summary is present, ask about a notable system, web application, or project they have designed and implemented.
+     - Evaluate how clearly the candidate articulates architectural decisions, system boundaries, component responsibilities, and technology trade-offs.
+
+   • Phase 2: Technical Deep-Dive into Trade-offs (~${deepDiveMin} minutes)
+     - Drive into rigorous technical depth tailored to the "${roleInfo.label}" role${focus ? ` and the focus area: "${focus}"` : ''}.
+     - Actively evaluate key engineering trade-offs: focus on ${roleInfo.deepDiveTopics}.
+     - Listen carefully to the candidate's response. Ask a relevant, thoughtful follow-up question exploring their technical trade-offs, debugging approach, or architectural decisions before moving to a new topic.
+     - Maintain appropriate technical depth for a campus placement / industry candidate.
+
+   • Phase 3: Pressure-Testing & Edge-Case Failure Scenarios (~${pressureTestMin} minutes)
+     - Challenge the candidate with real-world failure modes, scale limits, and edge cases: focus on ${roleInfo.pressureTestTopics}.
+     - Evaluate their debugging methodology, fault-tolerance design, graceful degradation, and composure under difficult failure scenarios (e.g., "What happens if this component fails under peak traffic?", "How would you trace an intermittent data corruption or timeout?").
+
 3. Wrap-up & Closing:
    - When approaching the ${timeLimitMin}-minute mark, inform the candidate that it is time to wrap up.
    - Give them an opportunity to ask any final questions or share parting thoughts.
    - Conclude with a warm, encouraging closing remark and thank them for their time.`
   );
 
-  // 6. Conversational Audio Guidelines (Gemini Live)
+  // 8. Conversational Audio Guidelines (Gemini Live)
   sections.push(
     `VOICE CONVERSATION GUIDELINES:
 - Keep every spoken turn concise and natural (typically 1 to 3 spoken sentences per turn).

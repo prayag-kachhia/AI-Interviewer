@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import prisma from '../utils/db';
-import { buildBriefing, briefingFor } from '../services/briefing.service';
+import { buildBriefing, briefingFor, calculatePhaseTiming } from '../services/briefing.service';
 
 vi.mock('../utils/db', () => ({
   default: {
@@ -129,5 +129,48 @@ describe('Briefing Service — briefingFor(session)', () => {
     expect(briefing).toContain('CANDIDATE RESUME SUMMARY:');
     expect(briefing).toContain('Strongest skills: TypeScript, Bun, PostgreSQL');
     expect(briefing).toContain('Project 1: Chat Engine: real-time WebSocket server');
+  });
+});
+
+describe('Briefing Service — three-phase question progression (DR-01, FR-17)', () => {
+  it.each([
+    [10, 2, 6, 2],
+    [15, 3, 8, 4],
+    [30, 6, 17, 7],
+    [45, 9, 25, 11],
+  ])('splits %i minutes into %i / %i / %i', (total, warmUpMin, deepDiveMin, pressureTestMin) => {
+    expect(calculatePhaseTiming(total)).toEqual({ warmUpMin, deepDiveMin, pressureTestMin });
+  });
+
+  it('lists the three phases in order with their minutes', () => {
+    const briefing = buildBriefing({ roleId: 'software-engineer', timeLimitMin: 15 });
+
+    const phase1 = briefing.indexOf('Phase 1: Warm-up & Architecture Overview (~3 minutes)');
+    const phase2 = briefing.indexOf('Phase 2: Technical Deep-Dive into Trade-offs (~8 minutes)');
+    const phase3 = briefing.indexOf('Phase 3: Pressure-Testing & Edge-Case Failure Scenarios (~4 minutes)');
+    expect(phase1).toBeGreaterThan(-1);
+    expect(phase2).toBeGreaterThan(phase1);
+    expect(phase3).toBeGreaterThan(phase2);
+  });
+
+  it.each([
+    ['software-engineer', 'async I/O', 'race conditions in multi-threaded workflows'],
+    ['data-analyst', 'SQL query optimization', 'missing or corrupt data at scale'],
+    ['backend-developer', 'connection pooling', 'split-brain scenarios'],
+  ])('uses %s deep-dive and pressure-test topics', (roleId, deepDive, pressureTest) => {
+    const briefing = buildBriefing({ roleId });
+
+    expect(briefing).toContain(deepDive);
+    expect(briefing).toContain(pressureTest);
+  });
+
+  it('grounds the warm-up phase in the resume', () => {
+    const briefing = buildBriefing({
+      roleId: 'software-engineer',
+      resumeSummary: 'Built an e-commerce platform using Next.js, Redis, and PostgreSQL.',
+    });
+
+    expect(briefing).toContain('resume projects, technologies, and system architecture');
+    expect(briefing).toContain('Built an e-commerce platform using Next.js, Redis, and PostgreSQL.');
   });
 });
