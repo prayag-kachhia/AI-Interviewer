@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'crypto';
-import { NotFoundError } from '../utils/resource';
+import { NotFoundError } from '../errors';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
@@ -10,7 +10,7 @@ describe.skipIf(!TEST_DATABASE_URL)(
   'FR-28 — Session deletion cascade and authorization (PostgreSQL)',
   () => {
     // Imported after DATABASE_URL points at the test database, like account-deletion.integration.test.ts.
-    let prisma: typeof import('../utils/db').default;
+    let prisma: typeof import('../db').default;
     let sessions: typeof import('../services/session.service');
     let feedback: typeof import('../services/feedback.service');
     const runId = randomUUID().slice(0, 8);
@@ -23,7 +23,7 @@ describe.skipIf(!TEST_DATABASE_URL)(
 
     beforeAll(async () => {
       process.env.DATABASE_URL = TEST_DATABASE_URL!;
-      prisma = (await import('../utils/db')).default;
+      prisma = (await import('../db')).default;
       sessions = await import('../services/session.service');
       feedback = await import('../services/feedback.service');
 

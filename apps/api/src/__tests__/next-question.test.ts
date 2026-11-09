@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
-import prisma from '../utils/db';
+import prisma from '../db';
 import {
   generateNextQuestion,
   buildNextQuestionPrompt,
@@ -16,7 +16,7 @@ vi.mock('@supabase/supabase-js', () => {
   };
 });
 
-vi.mock('../utils/db', () => ({
+vi.mock('../db', () => ({
   default: {
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
@@ -164,7 +164,7 @@ describe('POST /api/sessions/:id/next-question (server-side interviewer)', () =>
     });
 
     it('returns 404 when session belongs to another user (FR-27)', async () => {
-      const { NotFoundError } = await import('../utils/resource');
+      const { NotFoundError } = await import('../errors');
       (generateNextQuestion as any).mockRejectedValue(new NotFoundError());
 
       const res = await request(app)

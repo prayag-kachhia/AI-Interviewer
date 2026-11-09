@@ -23,8 +23,8 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 
 - **Web: import a feature only through `apps/web/src/features/<name>/index.ts`.** Inside a
   feature, use relative imports.
-- **API: code is organised by layer.** `routes/` wires middleware to `controllers/`, controllers
-  call `services/`, and `middleware/auth.ts` and `utils/db.ts` (the Prisma client) are shared.
+- **API: one file per resource.** `routes/<resource>.ts` holds the URLs and handlers, handlers
+  call `services/`, and `middleware/auth.ts` and `db.ts` (the Prisma client) are shared.
 - **Dependency direction:** `identity ← profile ← sessions ← feedback`. `sessions` never
   imports `feedback`; it inserts a `session.ended` job in the same transaction that ends the session instead.
 - **The web calls the API only through `apps/web/src/lib/api.ts`**, which attaches the Supabase
@@ -57,7 +57,7 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 ## What makes a PR mergeable
 
 - **One task, small.** Under ~300 changed lines, not counting `bun.lock`. Split bigger work.
-- **Stays in your lane.** Only your part of the app (your routes, controllers and services in
+- **Stays in your lane.** Only your part of the app (your routes and services in
   `apps/api`, your feature or pages in `apps/web`), plus `packages/contracts` or a new migration
   if the task needs it.
   Found a problem elsewhere? Open an issue or a separate PR.

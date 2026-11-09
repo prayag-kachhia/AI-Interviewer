@@ -1,6 +1,6 @@
 import { ROLES } from '@interview/contracts';
 import type { Session } from '../generated/prisma/client';
-import prisma from '../utils/db';
+import prisma from '../db';
 import { summarizeProfile } from './resume-summary';
 
 export interface BriefingInput {

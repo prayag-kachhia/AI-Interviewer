@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import prisma from '../utils/db';
+import prisma from '../db';
 import { buildBriefing, briefingFor, calculatePhaseTiming } from '../services/briefing.service';
 
-vi.mock('../utils/db', () => ({
+vi.mock('../db', () => ({
   default: {
     resume: { findUnique: vi.fn() },
   },

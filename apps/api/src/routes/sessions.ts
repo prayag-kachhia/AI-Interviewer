@@ -1,4 +1,5 @@
-import { Request, Response } from 'express';
+import { Router } from 'express';
+import { authenticate } from '../middleware/auth';
 import {
   createSession,
   getOwnedSession,
@@ -14,15 +15,18 @@ import {
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
 import { briefingFor } from '../services/briefing.service';
 import { generateNextQuestion, InterviewerTimeoutError } from '../services/interviewer.service';
-import { NotFoundError } from '../utils/resource';
+import { NotFoundError } from '../errors';
 import { RoleList, ROLES, VoiceToken } from '@interview/contracts';
 
-export const getRoles = async (_req: Request, res: Response): Promise<void> => {
+const router = Router();
+
+// All session routes require a signed-in candidate.
+router.get('/roles', authenticate, async (_req, res) => {
   res.status(200).json({ success: true, data: RoleList.parse(ROLES) });
-};
+});
 
 // POST /api/sessions
-export const postSession = async (req: Request, res: Response): Promise<void> => {
+router.post('/', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const { roleId } = req.body ?? {};
@@ -42,10 +46,10 @@ export const postSession = async (req: Request, res: Response): Promise<void> =>
     console.error('Create session error:', error);
     res.status(500).json({ success: false, message: 'Failed to create session' });
   }
-};
+});
 
 // GET /api/sessions (list sessions for authenticated user)
-export const getSessions = async (req: Request, res: Response): Promise<void> => {
+router.get('/', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const sessions = await listSessions(userId);
@@ -54,10 +58,10 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
     console.error('Get sessions error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch sessions' });
   }
-};
+});
 
 // GET /api/sessions/:id  (session + its turns, for loading/resuming the interview screen)
-export const getSessionById = async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -74,10 +78,10 @@ export const getSessionById = async (req: Request, res: Response): Promise<void>
     console.error('Get session error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch session' });
   }
-};
+});
 
 // GET /api/sessions/:id/turns
-export const getTurns = async (req: Request, res: Response): Promise<void> => {
+router.get('/:id/turns', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -92,10 +96,10 @@ export const getTurns = async (req: Request, res: Response): Promise<void> => {
     console.error('Get turns error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch turns' });
   }
-};
+});
 
 // POST /api/sessions/:id/turns
-export const postTurn = async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/turns', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -124,10 +128,10 @@ export const postTurn = async (req: Request, res: Response): Promise<void> => {
     console.error('Post turn error:', error);
     res.status(500).json({ success: false, message: 'Failed to store turn' });
   }
-};
+});
 
 // POST /api/sessions/:id/end
-export const postEndSession = async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/end', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -142,10 +146,10 @@ export const postEndSession = async (req: Request, res: Response): Promise<void>
     console.error('End session error:', error);
     res.status(500).json({ success: false, message: 'Failed to end session' });
   }
-};
+});
 
 // POST /api/sessions/:id/voice-token
-export const postVoiceToken = async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/voice-token', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -176,10 +180,10 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
     console.error('Voice token error:', error);
     res.status(500).json({ success: false, message: 'Failed to start the voice session' });
   }
-};
+});
 
 // POST /api/sessions/:id/next-question
-export const postNextQuestion = async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/next-question', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -202,10 +206,10 @@ export const postNextQuestion = async (req: Request, res: Response): Promise<voi
     console.error('Next question error:', error);
     res.status(500).json({ success: false, message: 'Failed to generate next interview question' });
   }
-};
+});
 
 // DELETE /api/sessions/:id
-export const deleteSessionById = async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -220,4 +224,6 @@ export const deleteSessionById = async (req: Request, res: Response): Promise<vo
     console.error('Delete session error:', error);
     res.status(500).json({ success: false, message: 'Failed to delete session' });
   }
-};
+});
+
+export default router;

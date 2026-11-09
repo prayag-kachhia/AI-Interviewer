@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
-import prisma from '../utils/db';
+import prisma from '../db';
 
 vi.mock('@supabase/supabase-js', () => {
   const getUserMock = vi.fn();
@@ -20,7 +20,7 @@ vi.mock('@supabase/supabase-js', () => {
   };
 });
 
-vi.mock('../utils/db', () => ({
+vi.mock('../db', () => ({
   default: {
     user: {
       findUnique: vi.fn(),

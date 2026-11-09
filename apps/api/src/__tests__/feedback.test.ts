@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
-import prisma from '../utils/db';
+import prisma from '../db';
 import { handleSessionEnded } from '../services/feedback.service';
 import { evaluateTranscript } from '../services/evaluator.service';
 
@@ -13,7 +13,7 @@ vi.mock('@supabase/supabase-js', () => {
   };
 });
 
-vi.mock('../utils/db', () => ({
+vi.mock('../db', () => ({
   default: {
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn(), findUniqueOrThrow: vi.fn() },

@@ -1,5 +1,5 @@
 import type { Job, Prisma } from '../generated/prisma/client';
-import prisma from '../utils/db';
+import prisma from '../db';
 
 // A job whose worker stopped responding is retried until it has been claimed
 // this many times; after that it is marked failed so it can't loop forever.

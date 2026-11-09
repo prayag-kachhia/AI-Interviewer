@@ -113,7 +113,7 @@ export async function mintVoiceToken(options: VoiceProviderOptions = {}): Promis
   }
 
   if (!response.ok) {
-    // Detailed for the server log only; the controller never sends this to the browser.
+    // Detailed for the server log only; the route never sends this to the browser.
     const errorBody = await response.text();
     throw new Error(`Voice provider token request failed with status ${response.status}: ${errorBody}`);
   }

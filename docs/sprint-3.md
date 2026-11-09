@@ -233,8 +233,8 @@ address). Add-on: #52 and #53.
 1. `packages/contracts/src/index.ts` → `ROLES`. Add a `focuses` list to each role.
 2. `apps/web/src/features/sessions/NewInterview.tsx`: the role picker.
 3. `apps/web/src/lib/api.ts` → `createSession()`.
-4. `apps/api/src/routes/session.routes.ts` → `POST /`.
-5. `apps/api/src/controllers/session.controller.ts` → `postSession()`: reject an unknown focus with 400.
+4. `apps/api/src/routes/sessions.ts` → `POST /`.
+5. `apps/api/src/routes/sessions.ts` → `postSession()`: reject an unknown focus with 400.
 6. `apps/api/src/services/session.service.ts` → `createSession()`.
 7. `apps/api/prisma/schema.prisma` → `model Session`. Add `focus String?` in a new migration.
 
@@ -269,7 +269,7 @@ timeout on the token request, and timing the interviewer's first response (NFR-0
 1. `spike/index.html`: your working prototype. Most of the audio code can be reused.
 2. `apps/web/src/lib/voiceAdapter.ts` → the `VoiceSessionAdapter` interface and `createVoiceSessionAdapter()`.
 3. `apps/web/src/lib/api.ts`: add `getVoiceToken(sessionId)`.
-4. `apps/api/src/controllers/session.controller.ts` → `postVoiceToken()`. It already exists.
+4. `apps/api/src/routes/sessions.ts` → `postVoiceToken()`. It already exists.
 5. The interview screen (Ved's, after #69): the one change in §4.
 
 **Why it takes this long (2.75 + 0.75):**
@@ -305,7 +305,7 @@ adapter after his PR merges.
 
 **Start here:**
 1. `apps/api/src/services/voice-provider.service.ts` → `mintVoiceToken()`.
-2. `apps/api/src/controllers/session.controller.ts` → `postVoiceToken()`. It must pass the session's role and focus.
+2. `apps/api/src/routes/sessions.ts` → `postVoiceToken()`. It must pass the session's role and focus.
 3. `apps/api/src/services/session.service.ts` → `getOwnedSession()`.
 4. `spike/index.html`: for testing.
 5. `apps/api/src/__tests__/voice-token.test.ts`: the existing tests.
@@ -340,8 +340,8 @@ Add-on (FR-16): look up the AI questions from the candidate's last 3 sessions an
 **Start here:**
 1. `apps/web/src/features/profile/Dashboard.tsx`: the resume upload.
 2. `apps/web/src/lib/api.ts` → `uploadResume()`.
-3. `apps/api/src/routes/resume.routes.ts` → `POST /analyze`.
-4. `apps/api/src/controllers/resume.controller.ts` → `analyzeResume()`.
+3. `apps/api/src/routes/resume.ts` → `POST /analyze`.
+4. `apps/api/src/routes/resume.ts` → `analyzeResume()`.
 5. `apps/api/src/services/gemini.service.ts` → `analyzeResumeWithAI()`. Also `heuristic.service.ts` and `pdf.service.ts`.
 6. `apps/api/prisma/schema.prisma` → `model Resume`.
 
@@ -373,8 +373,8 @@ and the interview's length, and work out the cost per interview in ₹ so Prayag
 
 **Start here:**
 1. `apps/web/src/features/feedback/ResultsScreen.tsx`, `useFeedback.ts`, `feedbackApi.ts`.
-2. `apps/api/src/routes/feedback.routes.ts` → `GET /:id/feedback`.
-3. `apps/api/src/controllers/feedback.controller.ts`.
+2. `apps/api/src/routes/feedback.ts` → `GET /:id/feedback`.
+3. `apps/api/src/routes/feedback.ts`.
 4. `apps/api/src/services/feedback.service.ts`, then `evaluator.service.ts`: the only file that calls Gemini for feedback.
 5. `apps/api/src/worker.ts` and `job-queue.service.ts`: how the job runs.
 6. `apps/api/prisma/schema.prisma` → `model Feedback`, `model Job`.
@@ -411,7 +411,7 @@ reviewers per session before the final evaluation.
 
 **Start here:**
 1. `apps/api/src/services/evaluator.service.ts` → `RUBRIC`, `buildEvaluationPrompt()`.
-2. `apps/api/src/routes/feedback.routes.ts` and `controllers/feedback.controller.ts`: add the retry route.
+2. `apps/api/src/routes/feedback.ts`: add the retry route.
 3. `apps/api/src/services/job-queue.service.ts`: how jobs are queued and claimed.
 4. `apps/web/src/features/feedback/ResultsScreen.tsx`: the failed state.
 
@@ -441,8 +441,8 @@ features have merged.
 **Start here:**
 1. `apps/web/src/components/Navbar.tsx` and `apps/web/src/App.tsx`: the link and the route.
 2. `apps/web/src/lib/api.ts`: add `listSessions()`.
-3. `apps/api/src/routes/session.routes.ts`.
-4. `apps/api/src/controllers/session.controller.ts` and `services/session.service.ts`: add `listSessions(userId)`.
+3. `apps/api/src/routes/sessions.ts`.
+4. `apps/api/src/routes/sessions.ts` and `services/session.service.ts`: add `listSessions(userId)`.
 5. `apps/api/prisma/schema.prisma` → `Session`, `Turn`, `Feedback`.
 
 **Why it takes this long (2.25 + 1.25):**
@@ -474,8 +474,8 @@ Add-on:
 
 **Start here:**
 1. `apps/web/src/features/profile/Profile.tsx`: account deletion.
-2. `apps/api/src/routes/auth.routes.ts` → `DELETE /account`, `controllers/auth.controller.ts` → `deleteAccount()`.
-3. `apps/api/src/routes/session.routes.ts`: add `DELETE /:id`.
+2. `apps/api/src/routes/auth.ts` → `DELETE /account`.
+3. `apps/api/src/routes/sessions.ts`: add `DELETE /:id`.
 4. `apps/api/src/services/session.service.ts` → `getOwnedSession()`. Reuse it for the owner check.
 5. `apps/api/src/worker.ts` and `job-queue.service.ts`: where a daily job fits.
 6. `apps/api/prisma/schema.prisma`: every relation.

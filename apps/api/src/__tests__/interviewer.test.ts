@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import prisma from '../utils/db';
+import prisma from '../db';
 import {
   generateNextQuestion,
   InterviewerTimeoutError,
 } from '../services/interviewer.service';
 import { SessionEndedError } from '../services/session.service';
-import { NotFoundError } from '../utils/resource';
+import { NotFoundError } from '../errors';
 
-vi.mock('../utils/db', () => ({
+vi.mock('../db', () => ({
   default: {
     session: { findFirst: vi.fn() },
     resume: { findUnique: vi.fn() },

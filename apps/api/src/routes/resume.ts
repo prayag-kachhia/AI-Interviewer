@@ -1,10 +1,22 @@
-import { Request, Response } from 'express';
-import prisma from '../utils/db';
+import { Router } from 'express';
+import multer from 'multer';
+import { authenticate } from '../middleware/auth';
+import prisma from '../db';
 import { extractTextFromPdfBuffer } from '../services/pdf.service';
 import { analyzeResumeWithAI } from '../services/gemini.service';
-import { getUserResourceOr404, NotFoundError } from '../utils/resource';
+import { getUserResourceOr404, NotFoundError } from '../errors';
 
-export const analyzeResume = async (req: Request, res: Response): Promise<void> => {
+const router = Router();
+
+// Configure multer for memory storage (keep file in RAM instead of disk)
+// Max file size: 5MB
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, 
+});
+
+// Protect these routes with authentication middleware
+router.post('/analyze', authenticate, upload.single('resume'), async (req, res) => {
   try {
     const userId = req.user!.id;
 
@@ -60,9 +72,9 @@ export const analyzeResume = async (req: Request, res: Response): Promise<void> 
     console.error('Resume analysis error:', error);
     res.status(500).json({ success: false, message: error?.message || 'Failed to process resume' });
   }
-};
+});
 
-export const getLatestResume = async (req: Request, res: Response): Promise<void> => {
+router.get('/latest', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
 
@@ -93,9 +105,9 @@ export const getLatestResume = async (req: Request, res: Response): Promise<void
     console.error('Fetch resume error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch resume' });
   }
-};
+});
 
-export const getResumeById = async (req: Request, res: Response): Promise<void> => {
+router.get('/:id', authenticate, async (req, res) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id as string;
@@ -125,4 +137,6 @@ export const getResumeById = async (req: Request, res: Response): Promise<void> 
     console.error('Fetch resume by ID error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch resume' });
   }
-};
+});
+
+export default router;
