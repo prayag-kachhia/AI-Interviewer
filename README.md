@@ -26,7 +26,7 @@ Before opening a PR:
 
 ```bash
 bun run typecheck  # Bun (API) and Vite (web) don't check types, so this is required
-bun run test       # Vitest (API)
+bun run test       # Vitest (API and web)
 ```
 
 After changing `apps/api/prisma/schema.prisma`, run `bun run --filter @interview/api db:generate`.
@@ -43,13 +43,15 @@ After changing `apps/api/prisma/schema.prisma`, run `bun run --filter @interview
 ## Layout
 
 ```
-packages/contracts   @interview/contracts — Zod schemas + inferred types (Role so far)
-apps/api             Express 5 + Prisma 5 on Supabase Postgres, run by Bun; tests with Vitest + Supertest
-  src/routes         one file per resource: /api/auth, /api/resume, /api/sessions → src/services
+packages/contracts   @interview/contracts — Zod schemas + inferred types (roles, sessions, turns, feedback)
+apps/api             Express 5 + Prisma 7 on Supabase Postgres, run by Bun; tests with Vitest + Supertest
+  src/routes         one file per resource: /api/auth, /api/resume, /api/sessions (feedback too) → src/services
+  src/services       logic, database and the Gemini calls (resume, briefing, evaluator, interviewer)
+  src/worker.ts      the feedback job worker; runs inside the API process
   src/middleware     auth.ts validates the Supabase access token and links it to a users row
   prisma/            schema.prisma and the committed migrations
 apps/web             React 19 + Vite + react-router
-  src/lib            supabase.ts (sign-in only), api.ts (every API call; attaches the token)
+  src/lib            supabase.ts (sign-in only), api.ts (every API call; attaches the token), voice adapters
   src/screens        one folder per screen: the component, its hook and its tests
 ```
 
@@ -57,7 +59,7 @@ apps/web             React 19 + Vite + react-router
 
 Full workflow, PR standard and review process: [CONTRIBUTING.md](CONTRIBUTING.md).
 New to the code? Read [docs/codebase-guide.md](docs/codebase-guide.md) first.
-Current sprint, tasks and deadlines: [docs/sprint-2.md](docs/sprint-2.md) (Sprint 1: [docs/sprint-1.md](docs/sprint-1.md)).
+Current plan, tasks and owners: [docs/final-sprints.md](docs/final-sprints.md). Requirements and where each is built: [docs/requirements.md](docs/requirements.md).
 
 - **Sign-in is Supabase only.** The browser signs in with Supabase and sends the access token as
   `Authorization: Bearer <token>`; `apps/api/src/middleware/auth.ts` validates it. There is no other
@@ -76,20 +78,19 @@ Current sprint, tasks and deadlines: [docs/sprint-2.md](docs/sprint-2.md) (Sprin
 ## Status
 
 Done:
-- Supabase sign-in and the token check
-- Prisma schema and migrations
+- Supabase sign-in (email and Google), the token check and account deletion
 - resume upload and analysis
-- creating a session
+- resume-aware interview sessions, with a history list and deleting an interview
 - the live interview screen, with transcript turns and ending the session
-- the provider voice-token endpoint (LS3)
-- the job queue and feedback worker (FB2, FB3)
-- the LLM evaluator with a generic rubric (FB4)
-- the results screen (FB1)
-- shared contracts
-- CI on every PR
+- the interviewer briefing: role, resume, three timed phases and guardrails, locked into the voice token
+- the server-side next-question endpoint for typed mode
+- the job queue and feedback worker, with per-role rubrics, structured output and a retry for failed feedback
+- the results screen: scores, strengths, improvements, a quote per category, and the transcript
+- the Gemini Live adapter, with session resumption
+- shared contracts, and CI and deploy on every PR and merge
 
-The live screen uses the browser's built-in speech recognition and synthesis until the Gemini
-Live adapter is wired to the voice token.
+The live screen still uses the browser's built-in speech recognition and synthesis; wiring the
+Gemini Live adapter into the room is planned (VI-8).
 
-Not yet done: the browser-side Gemini Live adapter; a protected `main` (needs GitHub Pro or a public repo); CODEOWNERS; a lint gate with the import rule,
-and Prettier.
+Not yet done: past questions in the briefing, the interview countdown and the reconnect banner (open
+PRs); a protected `main`; CODEOWNERS; a lint gate and Prettier.

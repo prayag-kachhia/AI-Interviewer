@@ -15,9 +15,11 @@ has the questions each team should be ready for, by slice.
 
 A candidate signs in, picks a job role, and holds a **spoken mock interview** with an AI
 interviewer. When they end it, an LLM reads the transcript and writes **structured
-feedback**: a short summary and a 1–5 score with a comment for three rubric categories
-(Communication, Technical depth, Structure). Candidates can also upload a PDF resume, which is
-parsed into a structured profile.
+feedback**: a short summary, and for each of the role's three rubric categories a 1–5 score,
+a comment, strengths, things to improve and a quote from the candidate's answers. Candidates
+can upload a PDF resume, which is parsed into a structured profile and linked to each new
+session (the server builds it into the interviewer's briefing, which the room doesn't use
+yet), and they can look back at past interviews on the History page.
 
 It is a practice tool, not a hiring platform: there are no employer accounts.
 
@@ -29,13 +31,14 @@ It is a practice tool, not a hiring platform: there are no employer accounts.
    │  2. every API call carries "Authorization: Bearer <token>"
    ▼
  API (Express on Bun, apps/api) ──── Prisma ────> Postgres (Supabase)
-   │   routes → controllers → services             users, Resume, sessions, turns, jobs, feedback
+   │   routes → services                            users, Resume, sessions, turns, jobs, feedback
    │
    ├── feedback worker (same process): claims "session.ended" jobs from the jobs table
-   │        └──> Gemini text model: evaluates the transcript (evaluator.service.ts)
-   └── voice token endpoint: asks Google for a short-lived token (voice-provider.service.ts)
-                                   │
- Browser ── audio over WebSocket ──┘──> Gemini Live (planned, Sprint 2 V1; today: browser speech)
+   │        └──> Gemini flash: scores the transcript against the role's rubric (evaluator.service.ts)
+   ├── next-question endpoint: Gemini flash writes the next question (interviewer.service.ts)
+   └── voice token endpoint: asks Google for a single-use token with the interviewer's
+                                   │  briefing locked in (voice-provider.service.ts)
+ Browser ── audio over WebSocket ──┘──> Gemini Live (adapter built, not wired in; today: browser speech)
 ```
 
 Three ideas carry the whole design:
@@ -53,31 +56,38 @@ Three ideas carry the whole design:
 
 ```
 .github/
-  workflows/ci.yml            CI: install, typecheck, migrate a throwaway DB, test, build (every PR)
+  workflows/ci.yml            CI: typecheck, migrate a throwaway DB, test, build web; build and start the API image
+  workflows/deploy.yml        on merge to main: migrate, deploy the API, publish the web app (off until enabled)
   pull_request_template.md    the checklist every PR fills in
   ISSUE_TEMPLATE/task.yml     the form every task issue is made from
 docs/
-  sprint-1.md, sprint-2.md    plans, owners, deadlines
+  final-sprints.md            the current plan and owners (sprint-1/2/3.md are the earlier plans)
+  requirements.md             the requirements (FR-, NFR-, DR- ids) and traceability matrix
+  evaluation-benchmark.md     how to benchmark the evaluator against real Gemini
   adr/                        architecture decision records (why we chose X)
   codebase-guide.md           this file
+Dockerfile, firebase.json     the API's Cloud Run image; Firebase Hosting config for the web app
+spike/                        the Gemini Live prototype; reference only, not part of the apps
 packages/contracts/           @interview/contracts — Zod schemas + types shared by API and web
-apps/api/                     @interview/api — Express 5 + Prisma 5, run by Bun
+apps/api/                     @interview/api — Express 5 + Prisma 7, run by Bun
   prisma/schema.prisma        the database tables
   prisma/migrations/          the history of schema changes, applied in order
+  prisma.config.ts            where the Prisma CLI finds the schema, migrations and DATABASE_URL
+  scripts/                    evaluate.ts (score one transcript), bench.ts (evaluator benchmark)
   src/server.ts               creates the Express app, mounts routes, starts the worker
   src/worker.ts               the background feedback worker loop
-  src/routes/                 URL → middleware → controller
-  src/controllers/            HTTP in/out: read params, call a service, pick a status code
+  src/routes/                 one file per resource: URL → authenticate → handler
   src/services/               the real work: database, Gemini, the job queue
   src/middleware/auth.ts      checks the Supabase token on every protected route
-  src/utils/                  the Prisma client, the NotFoundError helper
-  src/__tests__/              Vitest + Supertest tests
+  src/db.ts, src/errors.ts    the Prisma client; NotFoundError and getUserResourceOr404
+  src/generated/prisma/       the generated Prisma client (made by `prisma generate`, not committed)
+  src/__tests__/              Vitest + Supertest tests, and the transcript fixtures
 apps/web/                     @interview/web — React 19 + Vite + react-router
   src/main.tsx, App.tsx       entry point and the route table
-  src/pages/                  one component per screen
-  src/features/               newer screens grouped by feature (feedback/, sessions/, …)
+  src/screens/<screen>/       one folder per screen: its components, hooks and tests
+  src/components/             Navbar, ProtectedRoute
   src/context/                AuthContext (who is signed in), ThemeContext (light/dark)
-  src/lib/                    api.ts (every API call), supabase.ts, voiceAdapter.ts, questionProvider.ts
+  src/lib/                    api.ts (every API call), supabase.ts, the voice adapters, questionProvider.ts
   src/types/                  web-only types (most shared ones come from contracts)
 package.json, bun.lock        the workspace: scripts dev / typecheck / test, one lockfile
 tsconfig.base.json            shared strict TypeScript settings
@@ -88,15 +98,15 @@ tsconfig.base.json            shared strict TypeScript settings
 | Piece | Choice | Why |
 |---|---|---|
 | Language | TypeScript everywhere | One language for the whole team; types catch mistakes between API and web |
-| Runtime, package manager | Bun | Fast installs, runs TypeScript directly, one lockfile ([ADR-0009](adr/0009-bun-runtime.md)) |
+| Runtime, package manager | Bun | Fast installs, runs TypeScript directly, loads `.env` itself, one lockfile ([ADR-0009](adr/0009-bun-runtime.md)) |
 | API framework | Express 5 | What the teams built in; widely known ([ADR-0008](adr/0008-express-and-prisma.md)) |
-| Database access | Prisma 5 | Typed queries, migrations as files ([ADR-0008](adr/0008-express-and-prisma.md)) |
-| Database, sign-in | Supabase (Postgres + Auth) | Managed Postgres and email/password auth without running our own |
+| Database access | Prisma 7 (with the `pg` driver adapter) | Typed queries, migrations as files ([ADR-0008](adr/0008-express-and-prisma.md)) |
+| Database, sign-in | Supabase (Postgres + Auth) | Managed Postgres, email/password and Google sign-in without running our own |
 | Web | React 19, Vite, react-router | Standard; Vite gives fast dev builds |
 | Shared shapes | Zod 4 | Runtime validation and TypeScript types from one definition |
-| LLM | Google Gemini | One provider for evaluation, resume parsing and live voice |
+| LLM | Google Gemini | One provider for evaluation, questions, resume parsing and live voice |
 | Tests | Vitest (+ Supertest, Testing Library, jsdom) | Same runner in both apps |
-| CI | GitHub Actions | Runs on every PR, free for this repo |
+| CI, hosting | GitHub Actions; Cloud Run (API), Firebase Hosting (web) | Runs on every PR; deploys on merge to `main` |
 
 **Bun runs the code but doesn't check types.** That's why `bun run typecheck` (the TypeScript
 compiler, `tsc`) is required before every PR, and CI runs it.
@@ -105,9 +115,9 @@ compiler, `tsc`) is required before every PR, and CI runs it.
 
 Follow these steps with the files open; it's the fastest way to learn the codebase.
 
-**Step 1 — Sign in.** `pages/Login.tsx` calls `signIn` from `context/AuthContext.tsx`, which
-calls `supabase.auth.signInWithPassword` directly from the browser. Our API never sees the
-password. Supabase returns a session with an **access token** (a JWT).
+**Step 1 — Sign in.** `screens/login/Login.tsx` calls `signIn` (or `signInWithGoogle`) from
+`context/AuthContext.tsx`, which calls Supabase directly from the browser. Our API never sees
+the password. Supabase returns a session with an **access token** (a JWT).
 
 **Step 2 — Every request is authenticated.**
 - *Browser:* `lib/api.ts` creates an axios client. Its interceptor reads the current
@@ -117,32 +127,34 @@ password. Supabase returns a session with an **access token** (a JWT).
      **401**.
   2. It finds our own `users` row by `supabaseUserId`. If there isn't one, it links an
      existing row with the same email, or creates one.
-  3. It puts `{ id, email, name }` on `req.user`. Every later step uses `req.user.id`, never an
-     id sent by the browser.
+  3. It puts `{ id, supabaseUserId, email, name }` on `req.user`. Every later step uses
+     `req.user.id`, never an id sent by the browser.
 
 **Step 3 — Pick a role, create a session (LS2).**
-- *Browser:* `pages/NewInterview.tsx` shows `ROLES` from `@interview/contracts`, refreshed from
-  `GET /api/sessions/roles`.
+- *Browser:* `screens/new-interview/NewInterview.tsx` shows `ROLES` from
+  `@interview/contracts`, refreshed from `GET /api/sessions/roles`, and says which resume will
+  be used ("Using resume: …" or "No resume uploaded").
 - *API:*
   1. Choosing a role calls `POST /api/sessions` with `{ roleId }`.
   2. `session.service.ts → createSession` checks the id against `ROLES`. Unknown → **400**.
-  3. It inserts a `sessions` row (`status = LIVE`).
+  3. It inserts a `sessions` row (`status = LIVE`), linked to the user's newest resume
+     (`resumeId`, or none).
   4. The browser navigates to `/interview/:sessionId`.
 
-**Step 4 — The interview (LS4).** `pages/InterviewRoom.tsx` is the biggest screen.
+**Step 4 — The interview (LS4).** `screens/interview-room/` is the biggest screen:
+`InterviewRoom.tsx` lays it out and `useInterview.ts` holds the logic.
 - *Setup:* it loads the session (`GET /api/sessions/:id`) and creates a voice adapter
-  (`lib/voiceAdapter.ts`).
+  (`createVoiceSessionAdapter` in `lib/voiceAdapter.ts`).
 - *Today's voice:* `BrowserWebSpeechVoiceAdapter` uses the browser's own speech synthesis
   (the AI's voice) and speech recognition (the candidate's words).
 - *Today's questions:* they come from a fixed per-role script in `lib/questionProvider.ts`
   (`DeterministicQuestionProvider`). The second question quotes something the candidate said.
-- *Each finished turn:* `postTurn` sends `{ speaker: 'AI' | 'CANDIDATE', text, timestampSec }`
-  to `POST /api/sessions/:id/turns`.
-- *Checks in `session.service.ts → addTurn`:*
-  - The session must be yours (otherwise **404**) and still LIVE (otherwise **409**).
-  - `timestampSec` can't be later than the session's elapsed time (otherwise **400**), which
-    stops a client inventing turns.
-  - Turns are stored one by one, so a dropped connection loses nothing already said.
+- *Each finished turn:* `postTurn` sends `{ speaker: 'AI' | 'CANDIDATE', text }` to
+  `POST /api/sessions/:id/turns`.
+- *Checks (`routes/sessions.ts`, `addTurn`):* a bad `speaker` or empty `text` is **400**, someone else's session
+  **404**, an ended one **409**. The **server** sets `timestampSec` and `turnIndex`, so a client
+  can't invent or reorder turns. Turns are stored one by one, so a dropped connection loses
+  nothing already said.
 - *Fallback:* if the browser has no speech recognition, the room shows a text box instead.
 
 **Step 5 — End the interview.**
@@ -158,72 +170,96 @@ The sessions code never calls the feedback code. The job row is the only link be
 **Step 6 — The worker writes feedback (FB2–FB4).**
 1. `worker.ts → runWorker` runs inside the API process: `server.ts` starts it unless
    `WORKER=off`.
-2. Every second it calls `job-queue.service.ts → processNextJob`.
+2. It calls `job-queue.service.ts → processNextJob`, and sleeps 1 second whenever there's
+   nothing to do.
 3. `claimNextJob` runs `SELECT … FOR UPDATE SKIP LOCKED` inside a transaction. The row is
    locked, and any other worker skips locked rows, so **two workers never get the same job**.
    It marks the job `processing` and counts an attempt.
-4. The handler, `feedback.service.ts → handleSessionEnded`, loads the turns and calls
-   `evaluator.service.ts → evaluateTranscript`:
-   - It builds a prompt with the role, the rubric and the transcript.
-   - It calls Gemini asking for JSON, with a **12-second timeout** (inside the 15-second
-     budget, NFR-03).
-   - It validates the reply with Zod: each score is an integer 1–5, and every rubric category
-     must appear exactly once.
+4. The handler, `feedback.service.ts → handleSessionEnded`, loads the session and its turns and
+   calls `evaluator.service.ts → evaluateTranscript` with the session's role:
+   - It builds a prompt with the role, **that role's rubric** (`rubrics.ts`) and the transcript.
+   - It calls Gemini with **structured output** (`evaluationSchema`), which limits the
+     categories to the rubric's, and a **12-second timeout** (inside the 15-second budget,
+     NFR-03).
+   - It validates the reply with Zod: each score is an integer 1–5 with a comment, strengths,
+     improvements and a quote, and every rubric category must appear exactly once.
 5. On success → `saveFeedback(status 'ready')`, and the job becomes `completed`.
-6. On failure → `saveFeedback(status 'failed')`, and the job becomes `failed` with the error
-   saved. The turns are never touched (NFR-04).
+6. On failure → `saveFeedback(status 'failed')` with the reason in the `error` column, and the
+   job becomes `failed` with `lastError`. The turns are never touched (NFR-04).
 7. A job stuck in `processing` for 5 minutes (a crashed worker) is retried up to 3 times, then
    marked failed.
 
-**Step 7 — Results (FB1).** `features/feedback/ResultsPage.tsx` reads the session id from the
-URL. `useFeedback.ts` calls `GET /api/sessions/:id/feedback` straight away, then every 3
-seconds while the status is `pending`, and stops on `ready` or `failed`. `ResultsScreen.tsx`
-shows "preparing", the error, or the summary and scores.
+**Step 7 — Results (FB1).** `screens/results/ResultsScreen.tsx` reads the session id from the
+URL. `useFeedback` (in `useFeedback.ts`) calls `GET /api/sessions/:id/feedback` straight away,
+then every 3 seconds while the status is `pending`, and stops on `ready` or `failed`; after 60
+seconds it adds "This is taking longer than usual". `useTurns` loads the transcript. The
+screen shows "preparing", the summary and per-category scores (comment, strengths, to improve,
+quote), or the failure with a **Try again** button (`POST /api/sessions/:id/feedback/retry`,
+then polling restarts). Below that come the transcript and **Delete interview**, which asks
+for confirmation, calls `DELETE /api/sessions/:id` and goes to `/history`.
+
+**Step 8 — History.** `screens/history/HistoryPage.tsx` calls `GET /api/sessions` and lists
+your interviews newest first, each with its feedback status, an "ended early" badge and a link
+to its results.
 
 ## 6. API reference (every route)
 
 Every `/api/...` route requires a Supabase token, otherwise **401**. "Yours" means
 another user's resource answers **404, never 403** (FR-27), so nobody can even tell whether an
-id exists.
+id exists. Handlers live in `routes/<resource>.ts`.
 
-| Method and path | Controller → service | What it does | Errors |
+| Method and path | Route file → service | What it does | Errors |
 |---|---|---|---|
 | `GET /health` | `server.ts` | Liveness check, no auth | – |
-| `GET /api/auth/me` | `auth.controller.getMe` | Your app user (and links it on first call) | 401 |
-| `DELETE /api/auth/account` | `auth.controller.deleteAccount` | Deletes your resumes, user row and Supabase identity | 401; currently 500 if you have sessions (A1 fixes it) |
-| `POST /api/resume/analyze` | `resume.controller.analyzeResume` → pdf, gemini services | Upload a PDF (field `resume`, max 5 MB) → text → structured profile → saved | 400 not a PDF / no text |
-| `GET /api/resume/latest` | `resume.controller.getLatestResume` | Your newest analysed resume | 404 |
-| `GET /api/resume/:id` | `resume.controller.getResumeById` | One of your resumes | 404 |
-| `GET /api/sessions/roles` | `session.controller.getRoles` | The role list (`ROLES`) | – |
-| `POST /api/sessions` | `postSession` → `createSession` | Start a session for `{ roleId }` | 400 unknown role |
-| `GET /api/sessions/:id` | `getSessionById` | Your session with its turns | 404 |
-| `GET /api/sessions/:id/turns` | `getTurns` → `listTurns` | Your session's turns in order | 404 |
-| `POST /api/sessions/:id/turns` | `postTurn` → `addTurn` | Store one turn `{ speaker, text, timestampSec }` | 400 invalid / future timestamp, 404, 409 ended |
-| `POST /api/sessions/:id/end` | `postEndSession` → `endSession` | End it and queue the feedback job (one transaction) | 404 |
-| `POST /api/sessions/:id/voice-token` | `postVoiceToken` → `mintVoiceToken` | Single-use Gemini Live token for your LIVE session | 404, 409 ended, 500 provider failure (details only in the server log) |
-| `GET /api/sessions/:id/feedback` | `feedback.controller.getFeedback` → `getFeedbackForSession` | `pending` until written, then the feedback | 404 |
+| `GET /api/auth/me` | `auth.ts` | Your app user (and links it on first call) | 401 |
+| `DELETE /api/auth/account` | `auth.ts` | Deletes your user row (resumes, sessions and everything under them cascade), then your Supabase identity; 204 | 401; 500 if the Supabase step fails |
+| `POST /api/resume/analyze` | `resume.ts` → pdf, gemini services | Upload a PDF (field `resume`, max 5 MB) → text → structured profile → saved | 400 no file / not a PDF / no text |
+| `GET /api/resume/latest` | `resume.ts` | Your newest analysed resume | 404 |
+| `GET /api/resume/:id` | `resume.ts` | One of your resumes | 404 |
+| `GET /api/sessions/roles` | `sessions.ts` | The role list (`ROLES`) | – |
+| `GET /api/sessions` | `sessions.ts` → `listSessions` | Your sessions, newest first, each with `feedbackStatus` and `endedEarly` | – |
+| `POST /api/sessions` | `sessions.ts` → `createSession` | Start a session for `{ roleId }`, linked to your newest resume; 201 | 400 missing or unknown role |
+| `GET /api/sessions/:id` | `sessions.ts` → `getOwnedSession`, `listTurns` | Your session with its turns | 404 |
+| `GET /api/sessions/:id/turns` | `sessions.ts` → `listTurns` | Your session's turns in order | 404 |
+| `POST /api/sessions/:id/turns` | `sessions.ts` → `addTurn` | Store one turn `{ speaker, text }`; the server sets the timestamp; 201 | 400 bad speaker / empty text, 404, 409 ended |
+| `POST /api/sessions/:id/end` | `sessions.ts` → `endSession` | End it and queue the feedback job (one transaction) | 404 |
+| `DELETE /api/sessions/:id` | `sessions.ts` → `deleteSession` | Delete your session; its turns, jobs and feedback cascade | 404 |
+| `POST /api/sessions/:id/voice-token` | `sessions.ts` → `briefingFor`, `mintVoiceToken` | Single-use Gemini Live token with the session's briefing locked in | 404, 409 ended, 503 provider timeout, 500 provider failure (details only in the server log) |
+| `POST /api/sessions/:id/next-question` | `sessions.ts` → `generateNextQuestion` | Gemini writes the next interviewer question and it is saved as an AI turn | 404, 409 ended, 503 after 15 s |
+| `GET /api/sessions/:id/feedback` | `feedback.ts` → `getFeedbackForSession` | `pending` until written, then the feedback | 404 |
+| `POST /api/sessions/:id/feedback/retry` | `feedback.ts` → `retryFeedbackEvaluation` | Set failed feedback back to `pending` and queue a new job (one transaction) | 404, 409 unless failed |
 
 Every response has the same envelope: `{ success: boolean, data?: …, message?: string }`.
+An unknown `/api` path gets a JSON 404, and an error no handler caught (a malformed JSON body,
+a file over the size limit) gets a JSON 400 or 500 without a stack trace (`server.ts`).
 
 ## 7. The database (`apps/api/prisma/schema.prisma`)
 
 | Table | Key columns | Meaning |
 |---|---|---|
-| `users` | `id`, `supabaseUserId` (unique), `email` (unique), `name`, `passwordHash` | Our copy of each Supabase user. `passwordHash` is always the placeholder `'supabase-auth'`: passwords live only in Supabase |
+| `users` | `id`, `supabaseUserId` (unique), `email` (unique), `name` | Our copy of each Supabase user. Passwords live only in Supabase |
 | `Resume` | `userId`, `fileName`, `extractedText`, `parsedProfile` (JSON as text) | Each analysed upload; the newest one is "the" profile |
-| `sessions` | `userId`, `role`, `status` (`LIVE`/`ENDED`), `startedAt`, `endedAt` | One interview |
+| `sessions` | `userId`, `resumeId` (optional), `role`, `status` (`LIVE`/`ENDED`), `startedAt`, `endedAt` | One interview, and the resume it was tailored to |
 | `turns` | `sessionId`, `turnIndex`, `speaker` (`AI`/`CANDIDATE`), `text`, `timestampSec` | The transcript, one row per turn. Audio is never stored |
 | `jobs` | `type`, `sessionId` (optional), `payload`, `status` (`pending`/`processing`/`completed`/`failed`), `attempts`, `lockedBy`, `lockedAt`, `lastError` | The background job queue (Postgres instead of Redis) |
-| `feedback` | `sessionId` (unique), `status` (`pending`/`ready`/`failed`), `summary`, `scores` (JSON) | One evaluation per session |
+| `feedback` | `sessionId` (unique), `status` (`pending`/`ready`/`failed`), `summary`, `scores` (JSON), `error` | One evaluation per session. `error` stays on the server |
+
+Deleting a user cascades to their resumes and sessions; deleting a session cascades to its
+turns, jobs and feedback. Deleting a resume only clears `sessions.resumeId`.
 
 **Migrations** (`prisma/migrations/`), applied in order by `prisma migrate deploy`:
 1. `20260925182010_init_postgresql`: users and Resume
 2. `20260926064512_ls2_ls4_sessions_turns_jobs`: sessions, turns, jobs
 3. `20260928090000_fb2_job_queue_and_feedback`: queue columns and the feedback table
+4. `20261030204206_fr28_account_deletion_cascade`: cascading deletes; drops `users.passwordHash`
+5. `20261102132644_fr08_fr09_session_resume_link`: `sessions.resumeId`
+6. `20261107100000_add_feedback_error`: `feedback.error`
 
 **Rule:** never edit a committed migration. Change `schema.prisma`, then create a new migration
-in the same PR, and run `bun run --filter @interview/api db:generate` to refresh the typed
-client. The `postinstall` script also runs `prisma generate` on every `bun install`.
+in the same PR against a **local** Postgres (never run `prisma migrate dev` or `reset` against
+the shared Supabase database; see `sprint-3.md` §6), and run
+`bun run --filter @interview/api db:generate` to refresh the typed client. The `postinstall`
+script also runs `prisma generate` on every `bun install`.
 
 ## 8. API, file by file (`apps/api/src`)
 
@@ -232,39 +268,41 @@ client. The `postinstall` script also runs `prisma generate` on every `bun insta
   - creates the Express app; CORS allows only `WEB_ORIGIN`, with the Vite dev server as the
     default
   - parses JSON bodies and mounts the routers under `/api/auth`, `/api/resume` and
-    `/api/sessions`
-  - starts listening and starts one worker, except in tests (`NODE_ENV=test`)
-- `worker.ts`: `runWorker(id)` loops forever over `processNextJob` for `session.ended` jobs. When
+    `/api/sessions`; adds the JSON 404 and the last-resort error handler
+  - starts listening and starts one worker, except in tests (`NODE_ENV=test`) or with
+    `WORKER=off`. It doesn't load dotenv: Bun reads `apps/api/.env` itself.
+- `worker.ts`: `runWorker(id)` loops over `processNextJob` for `session.ended` jobs. When
   idle it sleeps for 1 second; it logs errors and keeps going. `bun run worker` starts extra
   workers as separate processes.
 
-**Middleware and utils**
+**Middleware and shared code**
 - `middleware/auth.ts`: the token check (step 2). The only place that decides who you are.
-- `utils/db.ts`: the single shared `PrismaClient`.
-- `utils/resource.ts`: `NotFoundError`. Services throw it, and controllers turn it into 404.
+- `db.ts`: the single shared `PrismaClient`, on the `pg` driver adapter.
+- `errors.ts`: `NotFoundError`, and `getUserResourceOr404`, which turns a `null` query result
+  into a `NotFoundError`. Routes turn that error into 404.
 - `types/index.ts`:
   - `CandidateProfile`, the shape of a parsed resume
   - `AuthUser`
   - adds the `user` field to Express's `Request` type
-- `constants/roles.ts`: `isValidRoleId`, checked against `ROLES` from contracts.
+- `data/resources.ts`: a curated list of learning resources by topic. Only its test uses it so
+  far.
 
-**Routes and controllers.** Routes only wire URL → `authenticate` → controller. Controllers read
-`req.params`/`req.body`, call one service, and map service errors to status codes:
-- `auth.routes.ts` / `auth.controller.ts`: `me` and `account` deletion.
-- `resume.routes.ts` / `resume.controller.ts`: upload (multer keeps the file in memory, 5 MB
-  limit), latest, by id.
-- `session.routes.ts` / `session.controller.ts`: roles, create, get, turns, end, voice token.
-- `feedback.routes.ts` / `feedback.controller.ts`: get feedback. It is mounted under
-  `/api/sessions` too.
+**Routes.** One file per resource. Each handler checks the input, calls a service, and maps
+service errors to status codes:
+- `auth.ts`: `me` and `account` deletion (calls Prisma and Supabase's admin API directly).
+- `resume.ts`: upload (multer keeps the file in memory, 5 MB limit), latest, by id.
+- `sessions.ts`: roles, list, create, get, turns, end, delete, voice token, next question.
+- `feedback.ts`: get feedback and retry. It is mounted under `/api/sessions` too.
 
 **Services (the real logic)**
 - `session.service.ts`:
-  - `createSession`
+  - `isValidRoleId`, `createSession` (links the newest resume)
   - `getOwnedSession`: always queries `id AND userId`. This one function gives every endpoint
     its 404-not-403 behaviour.
-  - `listTurns`, `addTurn` (ownership, LIVE check, timestamp check)
-  - `endSession` (the transaction)
-  - the error classes `InvalidRoleError`, `InvalidTimestampError` and `SessionEndedError`
+  - `listSessions` (adds `feedbackStatus`, and `endedEarly` for sessions under
+    `EARLY_END_THRESHOLD_MINUTES = 15`), `listTurns`, `addTurn` (ownership, LIVE check,
+    server timestamp), `endSession` (the transaction), `deleteSession`
+  - the error classes `InvalidRoleError` and `SessionEndedError`
 - `job-queue.service.ts`:
   - `enqueueJob`
   - `claimNextJob` (`FOR UPDATE SKIP LOCKED`, stale-lock recovery, `MAX_ATTEMPTS = 3`)
@@ -274,23 +312,44 @@ client. The `postinstall` script also runs `prisma generate` on every `bun insta
   - `saveFeedback`: an upsert, so a retry overwrites instead of duplicating
   - `getFeedbackForSession`: ownership, then `pending` if there's no row yet
   - `handleSessionEnded`: the job handler
+  - `retryFeedbackEvaluation`: in one transaction, moves a `failed` row back to `pending` and
+    queues a new job. If no failed row was changed, it throws `FeedbackRetryConflictError`
+    (409), so two retries at once queue only one job.
 - `evaluator.service.ts`: **the only file that calls the evaluation LLM.**
-  - `RUBRIC`, `buildEvaluationPrompt`, `evaluateTranscript`
-  - the timeout, and the Zod validation of the reply
-  - the model is `GEMINI_EVAL_MODEL`, otherwise the pinned `gemini-3.8-flash`, via the `@google/genai` SDK
+  - `buildEvaluationPrompt`: the role, its rubric, STAR only for behavioural answers, and a
+    request for strengths, improvements and a verbatim quote per category
+  - `evaluationSchema(categories)`: Gemini's structured-output schema
+  - `evaluateTranscript`: the empty-transcript check, the timeout, the Zod validation and the
+    category check
+  - the model is `GEMINI_EVAL_MODEL`, otherwise the pinned `gemini-3.8-flash`, via the
+    `@google/genai` SDK
+- `rubrics.ts`: three categories per role (`SOFTWARE_ENGINEER_RUBRIC`, `DATA_ANALYST_RUBRIC`,
+  `BACKEND_DEVELOPER_RUBRIC`), `getRubric(roleId)` and `UnknownRoleError`.
+- `briefing.service.ts`: `buildBriefing(input)` writes the interviewer's instructions (see
+  "What is the briefing?" in section 18); `calculatePhaseTiming` splits the time limit
+  (15 minutes by default) across the phases; `briefingFor(session)` passes the session's role
+  and the summary of its linked resume (`resume-summary.ts → summarizeProfile`).
+- `interviewer.service.ts`: `generateNextQuestion` asks Gemini (`GEMINI_EVAL_MODEL` or
+  `gemini-3.8-flash`) for one question from the briefing and the transcript so far, with a
+  15-second timeout (`InterviewerTimeoutError` → 503), cleans it, and saves it as an AI turn.
 - `voice-provider.service.ts`: **the only file that talks to the voice provider.**
   `mintVoiceToken` POSTs to Google's `auth_tokens` endpoint with the server's key. The token
-  allows one session, expires in 30 minutes, and has to be used within 2.
+  allows one session, expires in 30 minutes, and has to be used within 2. It locks in the
+  model (`GEMINI_LIVE_MODEL`, default `models/gemini-3.8-live`), audio replies, the briefing,
+  transcription of both speakers, context compression and session resumption.
 - `pdf.service.ts`: PDF bytes → text (`pdf-parse`).
-- `gemini.service.ts`: resume text → `CandidateProfile` via Gemini (JSON output). If there's no
-  key, or the call fails, it falls back to…
+- `gemini.service.ts`: resume text → `CandidateProfile` via Gemini (`GEMINI_RESUME_MODEL`,
+  default `gemini-3.8-flash`, JSON output). If there's no key, or the call fails, it logs and
+  falls back to…
 - `heuristic.service.ts`: a rule-based resume parser: a skills list, section headings and
   regexes for email and phone.
-- `question.service.ts`: a server copy of the interview question script. Only a test uses it
-  today; see section 16.
 
 **Prompts.** `prompts/resume.prompt.ts` is the resume-parsing prompt. It asks for JSON, and
 tells the model to extract only what's present and use empty values for missing fields.
+
+**Scripts.** `scripts/evaluate.ts` scores one transcript file with the real evaluator
+(`--role` picks the rubric); `scripts/bench.ts` runs every fixture several times and checks
+scores, latency and cost. See [evaluation-benchmark.md](evaluation-benchmark.md).
 
 ## 9. Web, file by file (`apps/web/src`)
 
@@ -301,20 +360,22 @@ tells the model to extract only what's present and use empty values for missing 
 | Path | Screen | Protected |
 |---|---|---|
 | `/` | redirects to `/dashboard` | – |
-| `/login` | `pages/Login.tsx` | no |
-| `/dashboard` | `pages/Dashboard.tsx` | yes |
-| `/profile` | `pages/Profile.tsx` | yes |
-| `/role-picker`, `/interview/new` | `NewInterview` (role picker) | yes |
-| `/interview/:sessionId` | `pages/InterviewRoom.tsx` | yes |
-| `/interview/:sessionId/feedback` | `features/feedback/ResultsPage.tsx` | yes |
+| `/login` | `screens/login/Login.tsx` | no |
+| `/dashboard` | `screens/dashboard/Dashboard.tsx` | yes |
+| `/history` | `screens/history/HistoryPage.tsx` | yes |
+| `/profile` | `screens/profile/Profile.tsx` | yes |
+| `/new-interview` | `screens/new-interview/NewInterview.tsx` (role picker) | yes |
+| `/interview/:sessionId` | `screens/interview-room/InterviewRoom.tsx` | yes |
+| `/interview/:sessionId/feedback` | `screens/results/ResultsScreen.tsx` | yes |
 
 - `components/ProtectedRoute.tsx`: shows "Loading…" while the session is restored, sends
   signed-out users to `/login`, and otherwise renders the page.
-- `components/Navbar.tsx`: links (Dashboard, Profile), sign-out, theme toggle.
+- `components/Navbar.tsx`: links (Dashboard, History, Profile), theme toggle, the user's email,
+  Logout. Hidden when signed out.
 
 **State**
-- `context/AuthContext.tsx`: the signed-in user, and `signIn`, `signUp`, `signOut`,
-  `deleteAccount`.
+- `context/AuthContext.tsx`: the signed-in user, and `signIn`, `signUp`, `signInWithGoogle`,
+  `signOut`, `deleteAccount`.
   - It restores the Supabase session on load, and listens for sign-in and sign-out events.
   - After signing in it calls `GET /api/auth/me`, so the user's row exists on our side.
   - If Supabase requires email confirmation, sign-up returns without a session, and the user is
@@ -325,39 +386,41 @@ tells the model to extract only what's present and use empty values for missing 
 - `lib/supabase.ts`: creates the browser Supabase client from `VITE_SUPABASE_URL` and
   `VITE_SUPABASE_ANON_KEY`. `isSupabaseConfigured` warns when they're missing.
 - `lib/api.ts`: **every API call goes through here.** It's an axios client with the token
-  interceptor, with one function per endpoint: resume, me, account, roles, sessions, turns,
-  end, feedback. `getFeedback` and the role picker validate responses with the contracts.
+  interceptor, with one function per endpoint: resume, me, account, roles, sessions (list,
+  create, get, delete), turns, end, voice token, feedback, retry. `getFeedback`,
+  `retryFeedback` and the role picker validate responses with the contracts. There is no
+  function for `next-question` yet.
 - `lib/voiceAdapter.ts`: the `VoiceSessionAdapter` interface (`connect`, `speakAiQuestion`,
-  `startListening`, `finishCandidateTurn`, `setMuted`, `disconnect`), plus today's
-  implementation, `BrowserWebSpeechVoiceAdapter`.
+  `startListening`, `finishCandidateTurn`, `setMuted`, `sendText`, `disconnect`), today's
+  implementation `BrowserWebSpeechVoiceAdapter`, and `createVoiceSessionAdapter`, which the
+  room calls and which returns the browser adapter.
   - It shows a microphone level meter, and it treats a pause in speech as the end of the
     candidate's turn.
-  - `InterviewRoom` only talks to the interface. That's why the Gemini Live adapter (V1) can
-    replace it without rewriting the room.
+- `lib/geminiLiveAdapter.ts`: `GeminiLiveVoiceAdapter`, the same interface over Gemini Live
+  (section 12), with `lib/audio.ts` for PCM conversion and playback. It keeps Gemini's
+  session-resumption handle in `sessionStorage` and reconnects with a new token, up to 3
+  times. The room doesn't use it yet.
+- `lib/transcriptAccumulator.ts`: joins streamed transcript chunks into whole turns. Only its
+  test uses it so far.
 - `lib/questionProvider.ts`: the per-role question scripts and `getNextQuestion`, which never
-  repeats a question and quotes the candidate's last answer in question 2. With Gemini Live,
-  the AI asks the questions itself, and this becomes the fallback.
+  repeats a question and quotes the candidate's last answer in question 2.
 
-**Pages**
-- `Login.tsx`: sign in / sign up forms, error messages, redirects.
-- `Dashboard.tsx`: greeting, resume upload and analysis, "start interview", quick stats.
-- `Profile.tsx`: the parsed resume profile (skills, education, projects…), and deleting the
+**Screens** (one folder each under `screens/`)
+- `login/`: sign in / sign up forms, "Continue with Google", error messages, redirects.
+- `dashboard/`: greeting, resume upload and analysis, "start interview", profile status.
+- `history/`: the list of past interviews (step 8), with an empty state that links to a new
+  interview.
+- `profile/`: the parsed resume profile (skills, education, projects…), and deleting the
   account.
-- `NewInterview.tsx`: role cards → `createSession` → the interview room.
-- `InterviewRoom.tsx`:
-  - the live screen: timer, AI and candidate states, mute, "finish speaking", replay question
-  - the transcript list, the end button, the text fallback
-  - it posts every turn, and moves to the results screen on end
-- `RolePicker.tsx`: a small re-export kept for the old route name.
-
-**features/**: newer code grouped by feature, imported only through each `index.ts`.
-- `feedback/`:
-  - `ResultsPage`: the route component
-  - `ResultsScreen`: three states, pending / ready / failed
-  - `useFeedback`: the polling hook
-  - `feedbackApi`: the seam that tests replace
-- `sessions/`: re-exports the role picker and interview room.
-- `identity/`, `profile/`: placeholders for future feature code.
+- `new-interview/`: role cards and the resume line → `createSession` → the interview room.
+- `interview-room/`:
+  - `InterviewRoom.tsx` and its parts: `InterviewerCard` (the question, replay),
+    `MicrophoneCard` (level, mute, "finish speaking"), `TypedAnswerBox` (the text fallback),
+    `TranscriptPanel`
+  - `useInterview.ts`: loads the session, connects the adapter, posts every turn, picks the
+    next question, runs the timer, and ends the interview
+- `results/`: `ResultsScreen.tsx` (step 7), and `useFeedback.ts` with the `useFeedback`
+  polling hook and the `useTurns` transcript hook.
 
 **`types/index.ts`:** web-only types (resume, API envelopes, voice states). Session and Turn
 types come from `@interview/contracts`.
@@ -367,9 +430,12 @@ types come from `@interview/contracts`.
 | Export | Used for |
 |---|---|
 | `Role`, `RoleList`, `ROLES` | The one role list (STUB until roles move into the database) |
-| `Session`, `SessionStatus`, `Turn`, `TurnSpeaker` | Session and transcript shapes on the web side |
+| `Session`, `SessionStatus`, `Turn`, `TurnSpeaker` | Session and transcript shapes; `Session` also carries the optional `resumeId`, `turns`, `feedbackStatus` and `endedEarly` |
 | `VoiceToken` | The voice-token response |
-| `Feedback`, `FeedbackStatus`, `FeedbackScore` | The feedback response, and the evaluator's output check |
+| `Feedback`, `FeedbackStatus`, `FeedbackScore` | The feedback response, and the evaluator's output check. A score has `category`, `score` (1–5), `comment`, `strengths`, `improvements` and `quote` |
+
+The `feedback.error` column is deliberately not in the contract: the failure reason stays on
+the server.
 
 Each export is a Zod schema plus a TypeScript type of the same name. `Feedback.parse(x)`
 validates at runtime, and the type `Feedback` is used at compile time. A shape that both apps
@@ -377,7 +443,8 @@ use goes here, in the same PR as the code that needs it.
 
 ## 11. Authentication, in detail
 
-- **Passwords never reach our API.** Supabase stores them and runs sign-in.
+- **Passwords never reach our API.** Supabase stores them and runs sign-in, including
+  "Continue with Google" (`signInWithOAuth`). Either way the API receives the same kind of token.
 - **Two kinds of key.** The **anon (publishable) key** is in the browser and is public by
   design: it only allows what Supabase's rules allow. The **service-role key** is server-only
   and must never appear in `apps/web` or a `VITE_` variable.
@@ -386,23 +453,24 @@ use goes here, in the same PR as the code that needs it.
 - **Our users table.** It exists so our own tables (sessions, resumes) can reference a user with
   a normal foreign key. Its link to Supabase is `supabaseUserId`.
 - **The browser never queries Supabase tables directly.** All data goes through the API, so
-  every access rule lives in one place: the services.
+  every access rule lives in one place: the services and routes.
 
 ## 12. Voice
 
-- **Today:** the browser's speech synthesis and recognition, behind `VoiceSessionAdapter`, with
-  scripted questions. It works in Chrome and Edge, and the text fallback covers other browsers.
-- **Next (Sprint 2):**
-  - V1: a `GeminiLiveVoiceAdapter`. The browser asks our API for a token
-    (`POST /api/sessions/:id/voice-token`), then streams audio directly to Gemini Live over a
-    WebSocket. Gemini returns the AI's audio and transcriptions of both speakers, which become
-    turns as today.
-  - V2: the interviewer's instructions (role, structure, time limit) are built on the server and
-    locked into the token, so the browser can't change them.
-  - P1: those instructions also include the candidate's resume.
+- **Today:** the room uses the browser's speech synthesis and recognition, behind
+  `VoiceSessionAdapter`, with scripted questions. It works in Chrome and Edge, and the text
+  fallback covers other browsers.
+- **Built, not yet wired into the room:**
+  - V2 and P1: the server builds the interviewer's briefing (with the resume summary) and
+    locks it into the voice token, so the browser can't read or change it.
+  - V1: `GeminiLiveVoiceAdapter`. It gets a token from `POST /api/sessions/:id/voice-token`,
+    streams the microphone directly to Gemini Live over a WebSocket, plays the AI's audio,
+    reports both speakers' transcripts, and stops playback when the candidate interrupts.
+  - `POST /api/sessions/:id/next-question`: a server-side interviewer that writes each
+    question with Gemini from the same briefing.
 - **Why audio skips our server:** the 5-second response target (NFR-01). A hop through our API
   would add delay, and the key stays private because the browser only has a single-use token.
-  The research spike is on the `sessions/voice-spike` branch.
+  The research prototype is in `spike/`.
 
 ## 13. Feedback pipeline, in detail
 
@@ -415,37 +483,53 @@ use goes here, in the same PR as the code that needs it.
   `failed` with `lastError` saved. If the worker dies, the job is retried after 5 minutes, up to
   3 attempts.
 - **The feedback row's lifecycle:** none (the API reports `pending`) → `ready` or `failed`.
-- **The rubric** is in `evaluator.service.ts` (`RUBRIC`). Changing it needs the lead's
-  approval. Per-role rubrics are a later item (OI-3).
+  **Try again** moves `failed` back to `pending` and queues a new job.
+- **The rubrics** are in `rubrics.ts`, three categories per role. Changing one needs the lead's
+  approval. Gemini's structured output is limited to the role's categories, and the evaluator
+  checks them again after parsing.
 
 ## 14. Tests
 
-Run everything with `bun run test` from the repository root.
+Run everything with `bun run test` from the repository root. API tests are in
+`apps/api/src/__tests__/`; web tests sit next to the code they test.
 
 | File | Covers |
 |---|---|
-| `api/__tests__/app.test.ts` | Auth middleware (missing, malformed, invalid, valid token) and the 404-not-403 helper |
-| `api/__tests__/auth.test.ts` | Linking a Supabase user to our users table, `/me`, account deletion |
-| `api/__tests__/session.test.ts` | LS2 and LS4: valid and invalid role, ownership 404s, storing turns, future timestamp rejected, 409 after end, end-in-one-transaction, idempotent end, the question script |
-| `api/__tests__/voice-token.test.ts` | LS3: own session → token, others → 404, ended → 409, provider errors hidden; the token request's shape |
-| `api/__tests__/evaluator.test.ts` | FB4: valid output, prompt contents, timeout, provider error, invalid JSON, out-of-range or missing categories, empty transcript |
-| `api/__tests__/feedback.test.ts` | FB3: handler writes ready or failed and never touches turns; the endpoint's pending, ready, 404 and 401 |
-| `api/__tests__/job-queue.test.ts` | FB2 against a **real Postgres**: claim, two workers never share a job, stale retry then fail, handler failure, one feedback row per session. It runs only when `TEST_DATABASE_URL` is set; CI sets it |
-| `web/src/features/feedback/ResultsScreen.test.tsx` | FB1: pending, ready, failed, and polling until ready |
+| `app.test.ts` | Auth middleware (missing, malformed, invalid, valid token) and the 404-not-403 helper |
+| `auth.test.ts` | Linking a Supabase user to our users table, `/me`, account deletion |
+| `errors.test.ts` | Unknown `/api` path → JSON 404; malformed JSON → JSON 400 without a stack trace |
+| `session.test.ts` | LS2 and LS4: valid and invalid role, resume link, the history list, ownership 404s, storing turns, server-set timestamp, 409 after end, end-in-one-transaction, idempotent end, delete |
+| `voice-token.test.ts` | LS3: own session → token with the briefing (and resume), others → 404, ended → 409, provider errors hidden, timeout → 503; the token request's shape |
+| `briefing.test.ts`, `resume-summary.test.ts` | Per-role briefings, timing, phases, optional sections, guardrails, `briefingFor`; the resume summary |
+| `interviewer.test.ts`, `next-question.test.ts` | Generating and cleaning a question; the endpoint's 200, 404, 409, 401 and 503 |
+| `evaluator.test.ts` | FB4: valid output, per-role rubrics, unknown role, prompt contents, structured-output schema, timeout, provider error, invalid JSON, out-of-range or missing categories, empty transcript, fixture shapes |
+| `evaluate-cli.test.ts` | The `scripts/evaluate.ts` CLI: arguments, roles, loading transcripts, clear errors |
+| `feedback.test.ts` | FB3: handler writes ready or failed and never touches turns; the endpoint's pending, ready, 404 and 401; retry (owner, 404, 409, concurrent retries) |
+| `resources.test.ts` | The learning-resource list |
+| `job-queue.test.ts` | FB2 against a **real Postgres**: claim, two workers never share a job, stale retry then fail, handler failure, one feedback row per session |
+| `account-deletion.integration.test.ts`, `session-deletion.integration.test.ts` | The delete cascades, against a **real Postgres** |
+| `screens/results/ResultsScreen.test.tsx` | FB1: pending, ready, failed, polling until ready, Try again, transcript states, delete |
+| `screens/history/HistoryPage.test.tsx`, `screens/new-interview/NewInterview.test.tsx`, `screens/login/Login.test.tsx` | The history list; the resume line; the Google button |
+| `lib/geminiLiveAdapter.test.ts`, `lib/audio.test.ts`, `lib/__tests__/transcriptAccumulator.test.ts` | The Live adapter (setup, audio, interruption, mute, resumption, reconnect limit) and its helpers |
 
-Most API tests replace Supabase and Prisma with mocks (`vi.mock`), so they run without a
-network. No test calls Gemini.
+The real-Postgres tests run only when `TEST_DATABASE_URL` is set; CI sets it. Most API tests
+replace Supabase and Prisma with mocks (`vi.mock`), so they run without a network. No test
+calls Gemini.
 
 ## 15. CI and configuration
 
-**CI (`.github/workflows/ci.yml`)**, on every PR and every push to `main`:
-1. Install with the exact lockfile; this also generates the Prisma client.
-2. Typecheck all three packages.
-3. Apply the migrations to a throwaway Postgres container.
-4. Run all tests, including the real-database queue tests.
-5. Build the web app.
+**CI (`.github/workflows/ci.yml`)**, on every PR and every push to `main`, runs two jobs:
+- `check`: install with the exact lockfile (this also generates the Prisma client), typecheck
+  all three packages, apply the migrations to a throwaway Postgres container, run all tests
+  (including the real-database ones), and build the web app.
+- `docker`: build the API image from the root `Dockerfile`, start it, and check `/health` and
+  that the Prisma engine loads.
 
 A red check means don't merge.
+
+**Deploy (`.github/workflows/deploy.yml`)**, on every push to `main` once the
+`DEPLOY_ENABLED` repository variable is `true`: migrate, deploy the API to Cloud Run, check
+`/health`, then build and publish the web app. Setup is described in [sprint-2.md](sprint-2.md).
 
 **Environment variables.** Copy the `.env.example` files.
 
@@ -455,10 +539,10 @@ A red check means don't merge.
 | `WEB_ORIGIN` | api | no | The web app's URL, allowed by CORS |
 | `DATABASE_URL` | api | **yes** | Postgres connection string |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | api | key: **yes** | Token checking, account deletion |
-| `GEMINI_API_KEY` | api | **yes** | Evaluation, resume parsing, voice tokens |
-| `GEMINI_EVAL_MODEL` | api | no | Optional model override |
+| `GEMINI_API_KEY` | api | **yes** | Evaluation, questions, resume parsing, voice tokens |
+| `GEMINI_EVAL_MODEL`, `GEMINI_RESUME_MODEL`, `GEMINI_LIVE_MODEL` | api | no | Optional model overrides (feedback and next question; resume; Live). Production pins all three in `deploy.yml` |
 | `WORKER` | api | no | `off` = don't run a worker inside the API |
-| `TEST_DATABASE_URL` | api (tests) | – | A disposable DB for the queue tests |
+| `TEST_DATABASE_URL` | api (tests) | – | A disposable DB for the real-Postgres tests |
 | `VITE_API_URL` | web | no | The API base URL, ending in `/api` |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | web | no (public) | The browser's Supabase client |
 
@@ -473,24 +557,30 @@ bun run dev                                   # API :3000 (with a worker) + web 
 bun run typecheck                             # tsc in every package
 bun run test                                  # all tests
 bun run --filter @interview/api db:migrate    # apply migrations to DATABASE_URL
+bun run --filter @interview/api db:generate   # refresh the Prisma client after editing the schema
 bun run --filter @interview/api worker        # an extra worker process
+bun run --filter @interview/api bench         # evaluator benchmark (real Gemini, costs money)
 ```
-
-Deployment (Google Cloud) is described in [sprint-2.md](sprint-2.md).
 
 ## 16. Known gaps and leftovers (be honest about these)
 
-- **Voice:** live voice still uses browser speech and scripted questions until V1 and V2 land.
-- **Account deletion** fails for users who have sessions (foreign keys are RESTRICT). A1 fixes it.
-- **Duplicate question script:** `apps/api/src/services/question.service.ts` duplicates the
-  web's `lib/questionProvider.ts`, and only a test uses it. Remove one copy when V2 moves
-  questions to the server.
-- **Leftovers from the slices:**
-  - `User.passwordHash` is a leftover column, always `'supabase-auth'`.
-  - `Resume.parsedProfile` stores JSON as text.
-  - `@types/pdf-parse` is an unused dependency.
-- **Types:** neither app extends the strict `tsconfig.base.json` yet (about 60 small fixes).
-  There's no ESLint or Prettier.
+- **Voice:** the room still uses browser speech and scripted questions. The Gemini Live
+  adapter, the server-built briefing and `next-question` exist and are tested, but the room
+  doesn't use them yet, so the web's question script and the server interviewer both exist.
+- **Briefing inputs:** `buildBriefing` accepts focus, company, level and past questions, but
+  sessions don't store them, so `briefingFor` passes only the role and the resume summary.
+- **Abandoned jobs:** a job given up after `MAX_ATTEMPTS` by stale-lock recovery writes no
+  feedback row, so the results screen stays on "pending" with no Try again button (and the
+  retry endpoint would answer 409).
+- **Benchmark expectations:** the `*.expected.json` fixture files still name the old shared
+  categories (Communication, Technical depth, Structure), not the per-role rubrics, so
+  `bench.ts` can't pass until they're updated.
+- **Unused code:** `lib/transcriptAccumulator.ts` and `data/resources.ts` are used only by their
+  tests; `InvalidTimestampError` is no longer thrown.
+- **Leftovers:** `Resume.parsedProfile` stores JSON as text.
+- **Types and linting:** neither app extends the strict `tsconfig.base.json` yet; the API has
+  its own `strict` settings, the web app doesn't. There's no ESLint or Prettier; the web app
+  has an `oxlint` script that CI doesn't run.
 - **No protected `main` and no CODEOWNERS:** protection needs GitHub Pro or a public repo.
 - **Requirements without real users:** every requirement is still evidence class B or C. None
   comes from a recorded interview with a real user.
@@ -502,8 +592,9 @@ Latency (NFR-01: under 5 s) and cost. The server only mints a single-use, short-
 the API key never reaches the browser (NFR-09).
 
 **"What happens if the LLM is down when an interview ends?"**
-The session still ends, and the transcript is safe. The job is marked failed with the error, and
-the results screen shows "failed". Retry (F2) queues it again without re-interviewing (NFR-04).
+The session still ends, and the transcript is safe. The feedback and the job are marked failed
+with the error, and the results screen shows the failure with **Try again**, which queues the
+job again without re-interviewing (NFR-04).
 
 **"How do you stop two workers evaluating the same interview?"**
 `SELECT … FOR UPDATE SKIP LOCKED` in a transaction. The first worker locks the row, and others
@@ -523,12 +614,13 @@ One definition gives compile-time types and runtime validation in both apps. If 
 changes a shape, the typecheck fails in every place that uses it.
 
 **"How do you know it works?"**
-48 API tests and 4 web tests, plus 5 queue tests on a real Postgres in CI. CI runs on every PR,
-and a PR can't be merged with a red check by team rule.
+Vitest tests for every route and service (with Supabase, Prisma and Gemini mocked), tests on a
+real Postgres for the queue and the delete cascades, and Testing Library tests for the main
+screens. CI runs them all on every PR, and a PR can't be merged with a red check by team rule.
 
 **"What did each person build?"**
-See the task tables in `docs/sprint-1.md` and `docs/sprint-2.md`. Each PR names its task and
-author, and ported PRs credit the original authors as co-authors.
+See `docs/final-sprints.md` and the task tables in `docs/sprint-1.md` and `docs/sprint-2.md`.
+Each PR names its task and author, and ported PRs credit the original authors as co-authors.
 
 ## 18. Questions by slice
 
@@ -538,9 +630,9 @@ Every answer points to the file to open if you're asked to show it.
 ### Identity & profile (sign-in, users, resume)
 
 **How does a user sign in? Does our API see the password?**
-No. The browser calls Supabase directly (`supabase.auth.signInWithPassword` in
-`apps/web/src/context/AuthContext.tsx`). Supabase checks the password and returns an access
-token (a JWT). Our API only ever receives that token.
+No. The browser calls Supabase directly (`supabase.auth.signInWithPassword`, or
+`signInWithOAuth` for Google, in `apps/web/src/context/AuthContext.tsx`). Supabase checks the
+password and returns an access token (a JWT). Our API only ever receives that token.
 
 **How does the API know who is calling?**
 `apps/api/src/middleware/auth.ts` runs before every protected route:
@@ -557,17 +649,13 @@ sent in the request.
 Our tables (sessions, resumes) need a normal foreign key to a user in our own database. The
 `users` row is our copy of the Supabase user, linked by `supabaseUserId`.
 
-**What is `passwordHash` in the users table?**
-A leftover column from the slice's early prototype. It is always the placeholder
-`'supabase-auth'`; real passwords exist only in Supabase.
-
 **What happens when the token expires?**
 The Supabase client in the browser refreshes the session automatically. `lib/api.ts` reads the
 current session before every request, so each call carries a fresh token. The API keeps no
 session state of its own, so there's nothing on the server to expire.
 
 **How does resume analysis work?**
-`POST /api/resume/analyze` (`resume.controller.ts`):
+`POST /api/resume/analyze` (`routes/resume.ts`):
 1. multer keeps the uploaded file in memory (PDF only, 5 MB limit).
 2. `pdf.service.ts` extracts the text.
 3. `gemini.service.ts` asks Gemini for a structured JSON profile (name, skills, projects,
@@ -582,9 +670,9 @@ A scanned PDF is an image with no text layer, and there's no OCR, so extraction 
 nothing and the API answers 400 with an explanation.
 
 **What does "delete account" do?**
-It deletes the user's resumes, their `users` row, and their Supabase identity. Known bug:
-it fails for users who have interview sessions, because those foreign keys don't cascade.
-A1 (#42) fixes it.
+`DELETE /api/auth/account` deletes the user's `users` row; Postgres cascades the delete to
+their resumes, sessions, turns, jobs and feedback. Then it deletes their Supabase identity and
+answers 204. If only the Supabase step fails, it answers 500 and says the app data is gone.
 
 **Can the browser read another user's data straight from Supabase?**
 No. The browser uses Supabase **only to sign in**. All data goes through our API, which checks
@@ -595,17 +683,18 @@ ownership on every query.
 **What happens when the candidate picks a role?**
 `POST /api/sessions` with `{ roleId }`. `session.service.ts → createSession` checks the id
 against the shared `ROLES` list (an unknown id is a 400) and inserts a `sessions` row with
-status `LIVE`. The browser then opens `/interview/:sessionId`.
+status `LIVE`, linked to the candidate's newest resume. The browser then opens
+`/interview/:sessionId`.
 
 **Why are turns saved one by one during the interview, not at the end?**
 So nothing already said is lost if the tab closes or the connection drops. Each finished turn
-is `POST /api/sessions/:id/turns` with `{ speaker, text, timestampSec }`.
+is `POST /api/sessions/:id/turns` with `{ speaker, text }`.
 
-**What does the API check when a turn arrives?** (`session.service.ts → addTurn`)
-- The session belongs to the caller; otherwise 404.
-- The session is still LIVE; otherwise 409.
-- `timestampSec` is not later than the time elapsed since the session started; otherwise 400.
-  That stops a client inventing turns "in the future".
+**What does the API check when a turn arrives?** (`routes/sessions.ts`, `session.service.ts → addTurn`)
+`speaker` must be `AI` or `CANDIDATE` and `text` non-empty (else 400), the session must be the
+caller's (else 404) and still LIVE (else 409). The server sets `timestampSec` from the
+session's start time and the next `turnIndex`, so a client can't invent timings or reorder
+turns.
 
 **How does ending an interview work, and why is it one transaction?**
 `endSession` marks the session `ENDED` **and** inserts a `session.ended` job in the same
@@ -617,21 +706,25 @@ nothing the second time.
 FR-27. A 403 would confirm that the id exists. Every query filters by `id AND userId`
 (`getOwnedSession`), so someone else's session is simply "not found".
 
-**How does the voice work today, and what changes in Sprint 2?**
-- **Today:** `BrowserWebSpeechVoiceAdapter` in `lib/voiceAdapter.ts` speaks with the browser's
-  speech synthesis and listens with its speech recognition. The questions come from a fixed
-  per-role script (`lib/questionProvider.ts`).
-- **Sprint 2:**
-  - V1: a `GeminiLiveVoiceAdapter` streams audio to Gemini Live.
-  - V2: the interviewer's instructions are built on the server and locked into the voice
-    token.
-  - P1: those instructions include the candidate's resume.
+**How does the voice work today, and what is built for Gemini Live?**
+Today `BrowserWebSpeechVoiceAdapter` (`lib/voiceAdapter.ts`) speaks and listens with the
+browser's speech APIs, and the questions come from a fixed per-role script
+(`lib/questionProvider.ts`). Built but not yet used by the room: `GeminiLiveVoiceAdapter`
+(`lib/geminiLiveAdapter.ts`, V1), and the server-built briefing locked into the voice token
+(V2, P1). See section 12.
+
+**What is the briefing?** (`services/briefing.service.ts`)
+The interviewer's system instructions: a persona for the role, three timed phases (warm-up,
+deep-dive, pressure-test), the candidate's resume summary, guardrails against prompt injection
+and off-topic talk, and rules for short spoken replies. `briefingFor(session)` builds it from
+the session's role and linked resume.
 
 **Why is there a `VoiceSessionAdapter` interface?**
-`InterviewRoom.tsx` talks only to the interface (`connect`, `speakAiQuestion`,
-`startListening`, `finishCandidateTurn`, `setMuted`, `disconnect`). Swapping browser speech for
-Gemini Live means adding one class, not rewriting the screen. The browser adapter also stays
-as the fallback.
+The room reaches the voice provider through the interface (`connect`, `speakAiQuestion`,
+`startListening`, `finishCandidateTurn`, `setMuted`, `sendText`, `disconnect`), so Gemini Live
+is a second class, not a rewrite of the screen. Two parts of `useInterview.ts` still assume
+browser speech: the replay button calls `speechSynthesis` directly, and the room drives the
+scripted questions itself. The browser adapter stays as the fallback.
 
 **Why doesn't the audio go through our server?**
 The interviewer has to start answering within 5 seconds (NFR-01), and relaying audio through
@@ -646,7 +739,9 @@ box, so the candidate can type answers instead.
 
 **How are the questions chosen today?**
 `DeterministicQuestionProvider` has a script per role. It never repeats a question, and the
-second question quotes something the candidate said, so it feels responsive.
+second question quotes something the candidate said, so it feels responsive. On the server,
+`POST /api/sessions/:id/next-question` can already write each question with Gemini from the
+briefing and transcript, but the room doesn't call it yet.
 
 ### Feedback (job queue, worker, evaluator, results screen)
 
@@ -679,42 +774,49 @@ loop forever.
 **What if the LLM is down or slow?**
 - The evaluator gives up after **12 seconds**, which stays inside the 15-second feedback target
   (NFR-03).
-- `handleSessionEnded` writes feedback with status `failed`, and the job is marked failed with
-  the error saved.
+- `handleSessionEnded` writes feedback with status `failed` and the reason in `error`, and the
+  job is marked failed with the error saved.
 - The transcript is never touched (NFR-04).
-- The results screen shows the failure. F2 (#40) adds a Retry button that queues the job again,
-  without re-interviewing.
+- The results screen shows the failure and a **Try again** button.
+  `POST /api/sessions/:id/feedback/retry` moves the feedback back to `pending` and queues a new
+  job in one transaction, without re-interviewing. It answers 409 unless the feedback failed.
 
 **How do you make sure the LLM's answer is valid?** (`evaluator.service.ts`)
-- The prompt asks for a fixed JSON shape and Gemini is set to reply in JSON.
-- The reply is checked with Zod: every score must be an integer from 1 to 5, with a comment.
+- Gemini is asked for structured output (`evaluationSchema`): a fixed JSON shape whose
+  categories can only be the role's rubric categories.
+- The reply is checked with Zod: every score must be an integer from 1 to 5, with a comment,
+  strengths, improvements and a quote.
 - Every rubric category must appear exactly once.
 - A transcript with no candidate answers is rejected before the LLM is called.
 
 Anything that fails a check is treated as a failed evaluation.
 
 **What is the rubric, and who decided it?**
-Communication, Technical depth and Structure, each scored 1–5 with a comment (`RUBRIC` in
-`evaluator.service.ts`). The lead approved it (#8). Per-role rubrics are planned (OI-3).
+Each role has its own three categories in `rubrics.ts` (for example, Software Engineer:
+Problem Solving & Algorithms, Software Design & Architecture, Technical Communication), each
+scored 1–5. `getRubric(roleId)` picks it, and an unknown role fails the evaluation. Changing a
+rubric needs the lead's approval.
 
 **Why a pinned model name (`gemini-3.8-flash`) instead of "latest"?**
 An alias like `gemini-flash-latest` changes when Google releases a new model, so the same
 interview could get different scores from one month to the next. A pinned model keeps
-scoring stable. `GEMINI_EVAL_MODEL` overrides it.
+scoring stable. `GEMINI_EVAL_MODEL` overrides it, and `deploy.yml` pins all three models
+(evaluation, resume, Live) in production.
 
 **How does the results screen know when feedback is ready?**
-`useFeedback.ts` calls `GET /api/sessions/:id/feedback` immediately, then every 3 seconds
-while the status is `pending`. It stops on `ready` or `failed`. The endpoint returns `pending`
-until the worker has written the feedback row.
+`useFeedback` calls `GET /api/sessions/:id/feedback` immediately, then every 3 seconds while
+the status is `pending`. It stops on `ready` or `failed`, and after 60 seconds says it's taking
+longer than usual. The endpoint returns `pending` until the worker has written the feedback row.
 
 **Why polling and not WebSockets?**
 For a single result that arrives within about 15 seconds, polling every 3 seconds is simple,
 works through any proxy, and needs no extra server.
 
 **How do you test this without calling Gemini?**
-The evaluator accepts a `generate` function that tests replace with a fake reply. The
-handler tests mock both the database and the evaluator. The queue tests run against a real
-Postgres in CI (`TEST_DATABASE_URL`).
+The evaluator and the interviewer accept a `generate` function that tests replace with a fake
+reply. The handler tests mock both the database and the evaluator. The queue tests run against
+a real Postgres in CI (`TEST_DATABASE_URL`). To check the real model, run
+`scripts/evaluate.ts` or the benchmark by hand.
 
 ### Platform and process (contracts, CI, deployment, how we work)
 
@@ -734,22 +836,15 @@ decision in [ADR-0008](adr/0008-express-and-prisma.md). It's also our main examp
 course's "conflict identification" deliverable: plan versus reality, and how it was resolved.
 
 **What does CI check on every pull request?** (`.github/workflows/ci.yml`)
-1. Install with the exact lockfile.
-2. Typecheck every package.
-3. Apply all migrations to a fresh Postgres.
-4. Run every test.
-5. Build the web app.
-6. Build the API's Docker image and check that it starts (added by the deploy PR, #46).
-
-A red check means don't merge.
+Install with the exact lockfile, typecheck every package, apply all migrations to a fresh
+Postgres, run every test and build the web app; a second job builds the API's Docker image and
+checks that it starts. A red check means don't merge.
 
 **How is the app deployed?** ([sprint-2.md](sprint-2.md), set up by the deploy PR #46)
 The API runs as a container on Google Cloud Run, and the web app is static files on Firebase
-Hosting. On every merge to `main`, a GitHub Actions workflow:
-1. applies database migrations
-2. deploys the API
-3. checks `/health`
-4. builds and publishes the web app
+Hosting. On every merge to `main` (once `DEPLOY_ENABLED` is on), a GitHub Actions workflow
+applies database migrations, deploys the API, checks `/health`, then builds and publishes the
+web app.
 
 **Where are the secrets, and how does GitHub get access to Google Cloud?**
 - The database URL, the Gemini key and the Supabase service key are in Google Secret Manager.
@@ -764,12 +859,10 @@ which would freeze the worker and leave feedback stuck on "pending". So it runs 
 always on and at least one instance.
 
 **How do you change the database schema safely?**
-1. Edit `schema.prisma`.
-2. Add a **new** migration in the same PR. Never edit a committed one.
-
-CI applies all migrations to a fresh database, and the deploy workflow applies them to
-production before the new API starts. Until the evaluation, changes only add columns or
-tables, so the previous version keeps working.
+Edit `schema.prisma` and add a **new** migration in the same PR, made against a local
+Postgres; never edit a committed one. CI applies all migrations to a fresh database, and the
+deploy workflow applies them to production before the new API starts. Prefer changes that only
+add columns or tables, so the running version keeps working during a deploy.
 
 **How do you undo a bad deploy?**
 Revert the PR on GitHub. The revert is a new merge, so everything redeploys automatically. For
@@ -780,7 +873,8 @@ an instant fix, the Cloud Run console can send traffic back to the previous revi
 - **Review:** one PR per task. CI must pass, and someone from another team reviews it.
 - **Ownership:** the author must be able to explain every line.
 
-The task tables in `docs/sprint-1.md` and `docs/sprint-2.md` show who built what.
+`docs/final-sprints.md` and the task tables in `docs/sprint-1.md` and `docs/sprint-2.md` show
+who built what.
 
 ## Glossary
 
@@ -794,6 +888,8 @@ The task tables in `docs/sprint-1.md` and `docs/sprint-2.md` show who built what
 | Upsert | Insert, or update if it already exists |
 | CORS | The browser rule that blocks calls to another site unless that site allows it |
 | Contract | A Zod schema in `packages/contracts` shared by API and web |
+| Briefing | The interviewer's system instructions, built on the server per session |
+| Structured output | Asking Gemini to reply in a fixed JSON schema |
 | Ephemeral token | A short-lived, limited-use credential minted by our server for the browser |
 | STUB | Placeholder code, marked in a comment with its owner, until the real thing lands |
 | ADR | Architecture Decision Record: a short note on why a hard-to-reverse choice was made |

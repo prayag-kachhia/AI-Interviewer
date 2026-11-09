@@ -92,9 +92,9 @@ Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
 ### Prayag: lead: UI revamp, structure, interview setup
 
-About 6.75 days · 11 counted PRs (0 already merged) · 2 Hard, 6 Medium, 3 Easy · review partner: Raj
+About 6.75 days · 11 counted PRs (2 already merged) · 2 Hard, 6 Medium, 3 Easy · review partner: Raj
 
-**[P-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/74) · Merge the API flatten (#118)** · Medium · 0.5 days · Sprint 4
+**[P-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/74) · Merge the API flatten (#118)** · **✅ merged in [#118](https://github.com/prayag-kachhia/AI-Interviewer/pull/118)** · Medium · 0.5 days · Sprint 4
 
 One file per API resource under `routes/`, no controllers layer, merged before the new PRs start.
 
@@ -105,7 +105,7 @@ One file per API resource under `routes/`, no controllers layer, merged before t
 - **Done when:** `git grep controllers/ -- apps/api/src` finds nothing, CI is green, and one live golden-path check passes after deploy.
 - **Depends on:** nothing (the first PR of the sprint)
 
-**[P-2](https://github.com/prayag-kachhia/AI-Interviewer/issues/75) · Merge the web flatten (#128) and sweep dead code** · Medium · 1 day · Sprint 4
+**[P-2](https://github.com/prayag-kachhia/AI-Interviewer/issues/75) · Merge the web flatten (#128) and sweep dead code** · **✅ merged in [#128](https://github.com/prayag-kachhia/AI-Interviewer/pull/128)** · Medium · 1 day · Sprint 4
 
 One folder per screen under `apps/web/src/screens/`, no barrels, and the unused code gone.
 
@@ -208,9 +208,9 @@ One styling system: the old stylesheet and static inline styles are gone.
 
 ### Vishwa: voice transport
 
-About 5.5 days · 8 counted PRs (0 already merged) · 2 Hard, 5 Medium, 1 Easy · review partner: Kishan
+About 5.5 days · 8 counted PRs (1 already merged) · 2 Hard, 5 Medium, 1 Easy · review partner: Kishan
 
-**[VI-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/130) · Gemini Live voice adapter** · Hard · 1 day · Sprint 4
+**[VI-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/130) · Gemini Live voice adapter** · **✅ merged in [#208](https://github.com/prayag-kachhia/AI-Interviewer/pull/208)** · Hard · 1 day · Sprint 4
 
 A voice adapter that holds a real spoken conversation with Gemini Live, ready for the room to plug in.
 
@@ -294,11 +294,11 @@ Every voice turn records how long the interviewer took to answer, so NFR-01 is m
 
 ### Kishan: the interviewer brain
 
-About 5.5 days · 10 counted PRs (0 already merged) · 1 Hard, 7 Medium, 2 Easy · review partner: Vishwa
+About 5.5 days · 10 counted PRs (3 already merged) · 1 Hard, 7 Medium, 2 Easy · review partner: Vishwa
 
 Also owns the required document [D-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/202) (not counted, see §5a).
 
-**[K-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/147) · Extract briefingFor(session): one place that builds the interviewer briefing** · Easy · 0.25 days · Sprint 4
+**[K-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/147) · Extract briefingFor(session): one place that builds the interviewer briefing** · **✅ merged in [#205](https://github.com/prayag-kachhia/AI-Interviewer/pull/205)** · Easy · 0.25 days · Sprint 4
 
 One interviewer brain: every path (Live token, fallback, typed mode) builds the briefing the same way.
 
@@ -325,7 +325,7 @@ A failed connection never leaves the candidate stuck.
 - **Done when:** Forcing both voice paths to fail shows the screen, and each button works.
 - **Depends on:** VI-8, VI-3, PK-4
 
-**[K-4](https://github.com/prayag-kachhia/AI-Interviewer/issues/149) · 3-phase question progression in the briefing** · Medium · 0.5 days · Sprint 4
+**[K-4](https://github.com/prayag-kachhia/AI-Interviewer/issues/149) · 3-phase question progression in the briefing** · **✅ merged in [#206](https://github.com/prayag-kachhia/AI-Interviewer/pull/206)** · Medium · 0.5 days · Sprint 4
 
 The interviewer follows a realistic technical round instead of random questions.
 
@@ -335,7 +335,7 @@ The interviewer follows a realistic technical round instead of random questions.
 - **Done when:** Tests pass, and a live interview visibly moves through the three phases.
 - **Depends on:** K-1
 
-**[K-5](https://github.com/prayag-kachhia/AI-Interviewer/issues/150) · Prompt-injection and off-topic guardrails** · Medium · 0.5 days · Sprint 4
+**[K-5](https://github.com/prayag-kachhia/AI-Interviewer/issues/150) · Prompt-injection and off-topic guardrails** · **✅ merged in [#207](https://github.com/prayag-kachhia/AI-Interviewer/pull/207)** · Medium · 0.5 days · Sprint 4
 
 The interviewer never breaks character, whatever the candidate says.
 
@@ -398,7 +398,7 @@ Route handlers keep only their happy path. One handler maps errors to HTTP statu
 
 ### Prakriti: typed mode, integrity, context, SRS
 
-About 5 days · 8 counted PRs (2 already merged) · 1 Hard, 4 Medium, 3 Easy · review partner: Vismay
+About 5 days · 8 counted PRs (3 already merged) · 1 Hard, 4 Medium, 3 Easy · review partner: Vismay
 
 Also owns the required document [D-2](https://github.com/prayag-kachhia/AI-Interviewer/issues/203) (not counted, see §5a).
 
@@ -420,7 +420,7 @@ The 937-line room becomes a hook plus small cards, so the voice wiring lands in 
 - **Done when:** #126 is merged, and `InterviewRoom.tsx` is a thin component over `useInterview` and the cards.
 - **Depends on:** P-2
 
-**[PK-3](https://github.com/prayag-kachhia/AI-Interviewer/issues/155) · POST /api/sessions/:id/next-question (server-side interviewer)** · Medium · 0.75 days · Sprint 4
+**[PK-3](https://github.com/prayag-kachhia/AI-Interviewer/issues/155) · POST /api/sessions/:id/next-question (server-side interviewer)** · **✅ merged in [#214](https://github.com/prayag-kachhia/AI-Interviewer/pull/214)** · Medium · 0.75 days · Sprint 4
 
 Typed mode and the browser-speech fallback get real AI questions from the same briefing as Gemini Live. Needed by day 4.
 
@@ -482,9 +482,9 @@ The interviewer tailors its questions to the job the candidate is applying for.
 
 ### Shaurya: feedback scoring
 
-About 5.5 days · 8 counted PRs (0 already merged) · 2 Hard, 4 Medium, 2 Easy · review partner: Praneel
+About 5.5 days · 8 counted PRs (1 already merged) · 2 Hard, 4 Medium, 2 Easy · review partner: Praneel
 
-**[S-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/161) · Find and fix why feedback fails on the live site** · Hard · 1.25 days · Sprint 4
+**[S-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/161) · Find and fix why feedback fails on the live site** · **✅ merged in [#212](https://github.com/prayag-kachhia/AI-Interviewer/pull/212)** · Hard · 1.25 days · Sprint 4
 
 Feedback appears after every interview on the live site. It has not been seen working since 25 Oct.
 
@@ -564,9 +564,9 @@ One user, or a bug stuck in a loop, can't run up the Gemini bill.
 
 ### Praneel: role-wise evaluation
 
-About 5.75 days · 8 counted PRs (0 already merged) · 1 Hard, 5 Medium, 2 Easy · review partner: Shaurya
+About 5.75 days · 8 counted PRs (1 already merged) · 1 Hard, 5 Medium, 2 Easy · review partner: Shaurya
 
-**[PN-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/93) · Land per-role rubrics (#121)** · Hard · 1 day · Sprint 4
+**[PN-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/93) · Land per-role rubrics (#121)** · **✅ merged in [#121](https://github.com/prayag-kachhia/AI-Interviewer/pull/121)** · Hard · 1 day · Sprint 4
 
 Each role is judged on its own rubric, with strengths, improvements and quotes, without breaking old results.
 
@@ -644,11 +644,11 @@ Candidates see what was good and what to improve in each answer, not only overal
 
 ### Rahi: history and analytics
 
-About 5.25 days · 9 counted PRs (0 already merged) · 1 Hard, 3 Medium, 5 Easy · review partner: Ved
+About 5.25 days · 9 counted PRs (2 already merged) · 1 Hard, 3 Medium, 5 Easy · review partner: Ved
 
 Also owns the required document [D-4](https://github.com/prayag-kachhia/AI-Interviewer/issues/204) (not counted, see §5a).
 
-**[RH-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/85) · Land the transcript on the results screen (#125)** · Easy · 0.25 days · Sprint 4
+**[RH-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/85) · Land the transcript on the results screen (#125)** · **✅ merged in [#125](https://github.com/prayag-kachhia/AI-Interviewer/pull/125)** · Easy · 0.25 days · Sprint 4
 
 Candidates see what they said next to their feedback.
 
@@ -669,7 +669,7 @@ The API behind the History page.
 - **Done when:** The tests pass, including the other-user case.
 - **Depends on:** P-1
 
-**[RH-3](https://github.com/prayag-kachhia/AI-Interviewer/issues/94) · History page and Try again (#127 rebuilt)** · Hard · 1 day · Sprint 4
+**[RH-3](https://github.com/prayag-kachhia/AI-Interviewer/issues/94) · History page and Try again (#127 rebuilt)** · **✅ merged in [#127](https://github.com/prayag-kachhia/AI-Interviewer/pull/127)** · Hard · 1 day · Sprint 4
 
 Candidates can browse past interviews and retry failed feedback.
 
@@ -736,7 +736,7 @@ Delete straight from the History list.
 
 ### Ved: improvement guide, user docs
 
-About 5.5 days · 8 counted PRs (1 already merged) · 1 Hard, 5 Medium, 2 Easy · review partner: Rahi
+About 5.5 days · 8 counted PRs (2 already merged) · 1 Hard, 5 Medium, 2 Easy · review partner: Rahi
 
 Also owns the required document [D-3](https://github.com/prayag-kachhia/AI-Interviewer/issues/44) (not counted, see §5a).
 
@@ -763,7 +763,7 @@ The app knows which subjects a candidate is weak in.
 - **Done when:** After a session's feedback is ready, an ImprovementPlan row holds topic scores.
 - **Depends on:** S-1, P-1
 
-**[V-3](https://github.com/prayag-kachhia/AI-Interviewer/issues/182) · Curated learning-resource map** · Easy · 0.5 days · Sprint 4
+**[V-3](https://github.com/prayag-kachhia/AI-Interviewer/issues/182) · Curated learning-resource map** · **✅ merged in [#210](https://github.com/prayag-kachhia/AI-Interviewer/pull/210)** · Easy · 0.5 days · Sprint 4
 
 Trustworthy study links per topic.
 
@@ -819,7 +819,7 @@ From the guide, one click starts an interview focused on a weak topic.
 
 ### Vismay: data, privacy, GitHub
 
-About 6.25 days · 9 counted PRs (1 already merged) · 2 Hard, 4 Medium, 3 Easy · review partner: Prakriti
+About 6.25 days · 9 counted PRs (2 already merged) · 2 Hard, 4 Medium, 3 Easy · review partner: Prakriti
 
 **`VM-1` · Land resume-aware sessions (#123)** · **✅ merged in [#123](https://github.com/prayag-kachhia/AI-Interviewer/pull/123)** · Medium · 0.5 days · Sprint 4
 
@@ -831,7 +831,7 @@ Each session is linked to the candidate's resume, and the interviewer gets a sho
 - **Done when:** #123 is merged, and a session created after a resume upload has `resumeId` set.
 - **Depends on:** P-1, P-2
 
-**[VM-2](https://github.com/prayag-kachhia/AI-Interviewer/issues/97) · Land delete-one-interview (#124)** · Medium · 0.5 days · Sprint 4
+**[VM-2](https://github.com/prayag-kachhia/AI-Interviewer/issues/97) · Land delete-one-interview (#124)** · **✅ merged in [#124](https://github.com/prayag-kachhia/AI-Interviewer/pull/124)** · Medium · 0.5 days · Sprint 4
 
 Candidates can delete a single interview.
 
@@ -1008,7 +1008,7 @@ Graders can see the architecture at a glance.
 - **Done when:** The diagrams render on GitHub and match the code after the freeze.
 - **Depends on:** P-2 (layout freeze), VI-8, V-1
 
-**[D-2](https://github.com/prayag-kachhia/AI-Interviewer/issues/203) · SRS and traceability matrix in the repo** · Prakriti · Medium · 1 day · Sprint 5
+**[D-2](https://github.com/prayag-kachhia/AI-Interviewer/issues/203) · SRS and traceability matrix in the repo** · **✅ merged in [#211](https://github.com/prayag-kachhia/AI-Interviewer/pull/211)** · Prakriti · Medium · 1 day · Sprint 5
 
 Graders can trace every requirement to code, tests and status.
 

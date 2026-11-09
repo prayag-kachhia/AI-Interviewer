@@ -2,11 +2,11 @@
 
 AI Interviewer: a candidate signs in, uploads a resume, picks a role, holds a spoken mock interview
 with an AI interviewer, and gets written feedback. It's a student team project (IT314, DA-IICT).
-The current plan, with who owns what, is in `docs/sprint-3.md`.
+The current plan, with who owns what, is in `docs/final-sprints.md`.
 
 ## Layout
 
-- `apps/api`: Express 5 + Prisma 5 on Supabase Postgres, run with Bun.
+- `apps/api`: Express 5 + Prisma 7 on Supabase Postgres, run with Bun.
   - `src/routes/` (one file per resource: URLs, input checks, HTTP statuses) →
     `src/services/` (logic and database) → `prisma/schema.prisma` (tables). `src/db.ts` is the
     Prisma client and `src/errors.ts` holds `NotFoundError`.
@@ -16,6 +16,7 @@ The current plan, with who owns what, is in `docs/sprint-3.md`.
   - `src/screens/<name>/`: one folder per screen, holding its component, hook and tests.
   - `src/lib/api.ts`: every HTTP call to the API.
   - `src/lib/voiceAdapter.ts`: the browser-speech voice adapter and the `VoiceSessionAdapter` interface.
+  - `src/lib/geminiLiveAdapter.ts`: the Gemini Live adapter. The room doesn't use it yet (VI-8).
   - `src/context/AuthContext.tsx`: Supabase sign-in.
 - `packages/contracts`: Zod schemas shared by both apps (roles, session, turn, feedback). A change
   here affects both apps.
@@ -45,8 +46,8 @@ bun run --filter @interview/api db:generate   # after editing schema.prisma
   `prisma migrate dev` or `prisma migrate reset` against the shared Supabase database**; create
   migrations against a local Postgres (see `docs/sprint-3.md` §6).
 - Never commit `.env` files, `dist/`, `node_modules/` or database files.
-- Gemini models: feedback and resume use `gemini-3.8-flash` (overridable by env); Gemini Live must
-  use `gemini-3.8-live`.
+- Gemini models: feedback, resume and the next-question endpoint use `gemini-3.8-flash`; Gemini
+  Live must use `gemini-3.8-live`. Production pins all of them in `.github/workflows/deploy.yml`.
 - Add or update tests for what you change. Run `bun run typecheck` and `bun run test` before finishing.
 - Match the surrounding code's style. Keep changes small: a PR should stay under about 300 lines.
 - Commit messages use Conventional Commits, e.g. `feat(feedback): add per-role rubrics`.

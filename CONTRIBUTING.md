@@ -29,9 +29,11 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 - **Sign-in is Supabase only.** The browser signs in with Supabase, and the API accepts only a
   Supabase access token (`apps/api/src/middleware/auth.ts`). Don't add another login, password
   endpoint or token format.
-- **Vendor code is quarantined:** only `apps/api/src/services/gemini.service.ts` calls Gemini for
-  resume analysis. The voice-provider token code (LS3) and the evaluation LLM (FB4) each get one
-  file of their own under `apps/api/src/services/`, and nothing else calls those providers.
+- **Vendor code is quarantined:** Gemini is called only from one service per job under
+  `apps/api/src/services/`: `gemini.service.ts` (resume analysis), `evaluator.service.ts`
+  (feedback), `interviewer.service.ts` (next question) and `voice-provider.service.ts` (the voice
+  token). The browser reaches Gemini Live only with that short-lived token, in
+  `apps/web/src/lib/geminiLiveAdapter.ts`.
 - **Placeholder code is marked `STUB`** with the owning slice named.
 
 ## Making a change
@@ -54,7 +56,7 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 
 - **One task, small.** Under ~300 changed lines, not counting `bun.lock`. Split bigger work.
 - **Stays in your lane.** Only your part of the app (your routes and services in
-  `apps/api`, your feature or pages in `apps/web`), plus `packages/contracts` or a new migration
+  `apps/api`, your screens in `apps/web`), plus `packages/contracts` or a new migration
   if the task needs it.
   Found a problem elsewhere? Open an issue or a separate PR.
 - **Tests encode the acceptance criteria.** Test names should read like the criteria. Every bug
