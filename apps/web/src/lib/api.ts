@@ -110,6 +110,12 @@ export const postTurn = async (
   return data;
 };
 
+// Next question for typed mode or browser-speech fallback (POST /api/sessions/:id/next-question, PK-3)
+export const getNextQuestion = async (sessionId: string): Promise<TurnResponse> => {
+  const { data } = await api.post<TurnResponse>(`/sessions/${sessionId}/next-question`);
+  return data;
+};
+
 export const endSession = async (sessionId: string): Promise<SessionResponse> => {
   const { data } = await api.post<SessionResponse>(`/sessions/${sessionId}/end`);
   return data;
