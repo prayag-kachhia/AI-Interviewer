@@ -1,8 +1,13 @@
 import { ROLES } from '@interview/contracts';
+import type { Session } from '../generated/prisma/client';
+import prisma from '../utils/db';
+import { summarizeProfile } from './resume-summary';
 
 export interface BriefingInput {
   roleId: string;
   focus?: string;
+  company?: string;
+  level?: string;
   resumeSummary?: string;
   pastQuestions?: string[];
   timeLimitMin?: number;
@@ -32,7 +37,7 @@ const ROLE_PERSONAS: Record<string, { label: string; description: string }> = {
  * alter or view them (NFR-09).
  */
 export function buildBriefing(input: BriefingInput): string {
-  const { roleId, focus, resumeSummary, pastQuestions = [], timeLimitMin = 15 } = input;
+  const { roleId, focus, company, level, resumeSummary, pastQuestions = [], timeLimitMin = 15 } = input;
 
   const roleInfo = ROLE_PERSONAS[roleId] ?? {
     label: ROLES.find((r) => r.id === roleId)?.label || roleId,
@@ -57,7 +62,25 @@ Concentrate your technical evaluation and question scenarios primarily around th
     );
   }
 
-  // 3. Candidate Resume Context (if provided, FR-08)
+  // 3. Target company (if provided)
+  if (company && company.trim()) {
+    sections.push(
+      `TARGET COMPANY / ORGANIZATION:
+The candidate is interviewing for a position at "${company.trim()}".
+Tailor your questions, engineering culture expectations, and technical scenarios to the standards typical of ${company.trim()}.`
+    );
+  }
+
+  // 4. Seniority level (if provided)
+  if (level && level.trim()) {
+    sections.push(
+      `TARGET SENIORITY LEVEL:
+The position level is "${level.trim()}".
+Calibrate the depth, complexity, and architectural expectations of your questions to a ${level.trim()}-level engineer.`
+    );
+  }
+
+  // 5. Candidate Resume Context (if provided, FR-08)
   if (resumeSummary && resumeSummary.trim()) {
     sections.push(
       `CANDIDATE RESUME SUMMARY:
@@ -104,4 +127,26 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
   );
 
   return sections.join('\n\n');
+}
+
+/**
+ * Builds the interviewer briefing for a session: its role plus the summary of its linked resume.
+ * Focus, company and level are passed through once the session stores them.
+ */
+export async function briefingFor(session: Pick<Session, 'role' | 'resumeId'>): Promise<string> {
+  let resumeSummary: string | undefined;
+
+  if (session.resumeId) {
+    const resume = await prisma.resume.findUnique({
+      where: { id: session.resumeId },
+      select: { parsedProfile: true },
+    });
+
+    if (resume?.parsedProfile) {
+      const summary = summarizeProfile(JSON.parse(resume.parsedProfile));
+      resumeSummary = summary.trim() ? summary : undefined;
+    }
+  }
+
+  return buildBriefing({ roleId: session.role, resumeSummary });
 }

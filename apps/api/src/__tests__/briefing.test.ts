@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest';
-import { buildBriefing } from '../services/briefing.service';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import prisma from '../utils/db';
+import { buildBriefing, briefingFor } from '../services/briefing.service';
+
+vi.mock('../utils/db', () => ({
+  default: {
+    resume: { findUnique: vi.fn() },
+  },
+}));
 
 describe('Briefing Service — buildBriefing (FR-13, FR-15, FR-17, DR-01)', () => {
   it('builds a briefing for a Software Engineer session with structure, timing, and persona', () => {
@@ -72,5 +79,55 @@ describe('Briefing Service — buildBriefing (FR-13, FR-15, FR-17, DR-01)', () =
     expect(briefing).toContain('- How do you design a URL shortener?');
     expect(briefing).toContain('- Explain how indexing improves B-tree performance.');
     expect(briefing).toContain('Never ask any of the questions listed above');
+  });
+
+  it('includes company and seniority level when provided', () => {
+    const briefing = buildBriefing({
+      roleId: 'software-engineer',
+      company: 'Google',
+      level: 'senior',
+    });
+
+    expect(briefing).toContain('TARGET COMPANY / ORGANIZATION:');
+    expect(briefing).toContain('Google');
+    expect(briefing).toContain('TARGET SENIORITY LEVEL:');
+    expect(briefing).toContain('senior');
+  });
+});
+
+describe('Briefing Service — briefingFor(session)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('builds a role briefing without a resume when the session has none', async () => {
+    const briefing = await briefingFor({ role: 'software-engineer', resumeId: null });
+
+    expect(prisma.resume.findUnique).not.toHaveBeenCalled();
+    expect(briefing).toContain('Software Engineer');
+    expect(briefing).not.toContain('CANDIDATE RESUME SUMMARY:');
+  });
+
+  it("adds the summary of the session's linked resume (FR-08)", async () => {
+    (prisma.resume.findUnique as any).mockResolvedValueOnce({
+      parsedProfile: JSON.stringify({
+        name: 'Jane Doe',
+        skills: ['TypeScript', 'Bun', 'PostgreSQL'],
+        projects: ['Chat Engine: real-time WebSocket server'],
+        experience: [],
+        education: [],
+      }),
+    });
+
+    const briefing = await briefingFor({ role: 'backend-developer', resumeId: 'resume-456' });
+
+    expect(prisma.resume.findUnique).toHaveBeenCalledWith({
+      where: { id: 'resume-456' },
+      select: { parsedProfile: true },
+    });
+    expect(briefing).toContain('Backend Developer');
+    expect(briefing).toContain('CANDIDATE RESUME SUMMARY:');
+    expect(briefing).toContain('Strongest skills: TypeScript, Bun, PostgreSQL');
+    expect(briefing).toContain('Project 1: Chat Engine: real-time WebSocket server');
   });
 });

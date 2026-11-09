@@ -9,10 +9,8 @@ import {
   InvalidTimestampError,
   SessionEndedError,
 } from '../services/session.service';
-import { summarizeProfile } from '../services/resume-summary';
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
-import { buildBriefing } from '../services/briefing.service';
-import prisma from '../utils/db';
+import { briefingFor } from '../services/briefing.service';
 import { NotFoundError } from '../utils/resource';
 import { RoleList, ROLES, VoiceToken } from '@interview/contracts';
 
@@ -142,27 +140,7 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
       throw new SessionEndedError();
     }
 
-    // Look up the resume associated with this session
-    let resumeSummary: string | undefined;
-
-    if (session.resumeId) {
-      const resume = await prisma.resume.findUnique({
-        where: { id: session.resumeId },
-        select: { parsedProfile: true },
-      });
-
-      if (resume?.parsedProfile) {
-        const profile = JSON.parse(resume.parsedProfile);
-        const summary = summarizeProfile(profile);
-        resumeSummary = summary.trim() ? summary : undefined;
-      }
-    }
-
-    const briefing = buildBriefing({
-      roleId: session.role,
-      focus: (session as any).focus,
-      resumeSummary,
-    });
+    const briefing = await briefingFor(session);
 
     const token = await mintVoiceToken({ briefing });
     res.status(200).json({ success: true, data: VoiceToken.parse({ token }) });
