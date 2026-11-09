@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "scores": [
+    {
+      "category": "Communication",
+      "min": 1,
+      "max": 2,
+      "reason": "Candidate does not address the questions; answers are rambling and content-free."
+    },
+    {
+      "category": "Technical depth",
+      "min": 1,
+      "max": 2,
+      "reason": "No technical content about URL shortening, encoding, data storage, or traffic handling."
+    },
+    {
+      "category": "Structure",
+      "min": 1,
+      "max": 2,
+      "reason": "Responses are completely off-topic and show no attempt to organise a technical answer."
+    }
+  ]
+}
+

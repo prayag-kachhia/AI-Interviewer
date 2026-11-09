@@ -1,0 +1,35 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Backend Developer interview. How would you design a REST API endpoint that supports pagination, sorting, and filtering?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would use cursor-based pagination rather than offset-based for large datasets—exposing a cursor query parameter and returning a next_cursor in the response envelope—because offset pagination degrades with deep pages. Clients specify sort field and direction via sort and order query parameters, for example sort=created_at&order=desc. Filters map to typed query parameters such as status=active or created_after=2024-01-01. On the server side I whitelist valid sort columns to prevent injection, build the WHERE clause from validated filter values, and include a meta object in the response with total count and the next cursor. I document the contract with an OpenAPI spec so frontend teams know exactly which fields are sortable and filterable."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you implement JWT authentication and handle token revocation when a user logs out?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I issue short-lived JWTs—typically 15-minute expiry—as access tokens, paired with a longer-lived refresh token stored in an HTTP-only, Secure, SameSite=Strict cookie. On logout, the access token's jti claim is written to a Redis blocklist with a TTL equal to its remaining lifetime, and the refresh token is deleted from the database. Each authenticated request verifies the JWT signature and expiry and checks the Redis blocklist. Short access token lifetimes keep the blocklist small. Refresh token rotation means that if a refresh token is intercepted and used, the original is invalidated on the next rotation, limiting the attack window."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you handle errors centrally in an Express application to ensure consistent, safe API responses?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I use a centralised four-argument Express error-handling middleware registered last in the stack. Custom operational errors extend a base AppError class that carries an HTTP status and a safe public message, so the handler can distinguish operational failures from unexpected bugs. Operational errors return structured JSON with a code and message; unexpected errors are logged with the full stack trace and return a generic 500 without leaking internals. I also add a catch-all 404 middleware before the error handler for unmatched routes. In async route handlers I use a small helper wrapper that calls next(err) on a rejected promise to avoid unhandled rejections."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you write integration tests for a route that creates a user and sends a welcome email?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I use Supertest against the real Express app backed by a test database seeded fresh for each suite. I assert that the response is 201 with the created user's id and email, and query the database to confirm the record exists. The email service is mocked so I assert it was called once with the correct recipient and template without touching an SMTP server. I also test failure paths: a duplicate email returns 409, missing required fields return 400 with a structured validation error, and a simulated database error returns 500 with no internal detail in the body."
+  }
+]
+

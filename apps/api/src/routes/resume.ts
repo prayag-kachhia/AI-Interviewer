@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { authenticate } from '../middleware/auth';
 import prisma from '../db';
 import { extractTextFromPdfBuffer } from '../services/pdf.service';
 import { analyzeResumeWithAI } from '../services/gemini.service';
 import { getUserResourceOr404, NotFoundError } from '../errors';
-import { authenticate } from '../middleware/auth';
 
 const router = Router();
 
@@ -12,9 +12,10 @@ const router = Router();
 // Max file size: 5MB
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, 
 });
 
+// Protect these routes with authentication middleware
 router.post('/analyze', authenticate, upload.single('resume'), async (req, res) => {
   try {
     const userId = req.user!.id;

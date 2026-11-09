@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../db';
+import { EARLY_END_THRESHOLD_MINUTES } from '../services/session.service';
 
 vi.mock('@supabase/supabase-js', () => {
   const getUserMock = vi.fn();
@@ -19,7 +20,12 @@ vi.mock('../db', () => ({
     session: {
       create: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
+    },
+    resume: {
+      findFirst: vi.fn(),
     },
     turn: {
       create: vi.fn(),
@@ -63,11 +69,12 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    (prisma.resume.findFirst as any).mockResolvedValue(null);
   });
 
   describe('POST /api/sessions & GET /api/sessions (LS2)', () => {
     // TEST 1: valid role creates session
-    it('TEST 1: creates a session for a valid role', async () => {
+    it('TEST 1: creates a session for a valid role (without resume)', async () => {
       (prisma.session.create as any).mockResolvedValueOnce({
         id: 'sess-1',
         userId: AUTH_USER.id,
@@ -89,7 +96,40 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(res.body.data.role).toBe('software-engineer');
       expect(res.body.data.status).toBe('LIVE');
       expect(prisma.session.create).toHaveBeenCalledWith({
-        data: { userId: AUTH_USER.id, role: 'software-engineer' },
+        data: { userId: AUTH_USER.id, role: 'software-engineer', resumeId: null },
+      });
+    });
+
+    it('creates a session attaching the latest resumeId when user has a resume', async () => {
+      (prisma.resume.findFirst as any).mockResolvedValueOnce({
+        id: 'res-latest',
+      });
+      (prisma.session.create as any).mockResolvedValueOnce({
+        id: 'sess-2',
+        userId: AUTH_USER.id,
+        role: 'software-engineer',
+        resumeId: 'res-latest',
+        status: 'LIVE',
+        startedAt: new Date(),
+        endedAt: null,
+        createdAt: new Date(),
+      });
+
+      const res = await request(app)
+        .post('/api/sessions')
+        .set('Authorization', authHeader())
+        .send({ roleId: 'software-engineer' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.id).toBe('sess-2');
+      expect(prisma.resume.findFirst).toHaveBeenCalledWith({
+        where: { userId: AUTH_USER.id },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      expect(prisma.session.create).toHaveBeenCalledWith({
+        data: { userId: AUTH_USER.id, role: 'software-engineer', resumeId: 'res-latest' },
       });
     });
 
@@ -176,6 +216,80 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       const res = await request(app).post('/api/sessions').send({ roleId: 'software-engineer' });
       expect(res.status).toBe(401);
     });
+
+    it('requires authentication for GET /api/sessions', async () => {
+      const res = await request(app).get('/api/sessions');
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /api/sessions: returns only sessions belonging to the authenticated user sorted newest first with endedEarly and feedbackStatus', async () => {
+      const now = Date.now();
+      const mockSessions = [
+        {
+          id: 'sess-new',
+          userId: AUTH_USER.id,
+          role: 'backend-developer',
+          status: 'ENDED',
+          startedAt: new Date(now - 1000 * 60 * EARLY_END_THRESHOLD_MINUTES),
+          endedAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES - 4)), // 4 mins (< EARLY_END_THRESHOLD_MINUTES -> endedEarly true)
+          createdAt: new Date(now - 1000 * 60 * EARLY_END_THRESHOLD_MINUTES),
+          feedback: { status: 'ready' },
+        },
+        {
+          id: 'sess-old',
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          status: 'ENDED',
+          startedAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES + 15)),
+          endedAt: new Date(now - 1000 * 60 * 5), // (EARLY_END_THRESHOLD_MINUTES + 10) mins (>= EARLY_END_THRESHOLD_MINUTES -> endedEarly false)
+          createdAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES + 15)),
+          feedback: { status: 'failed' },
+        },
+      ];
+
+      (prisma.session.findMany as any).mockResolvedValueOnce(mockSessions);
+
+      const res = await request(app)
+        .get('/api/sessions')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(2);
+      expect(prisma.session.findMany).toHaveBeenCalledWith({
+        where: { userId: AUTH_USER.id },
+        orderBy: { createdAt: 'desc' },
+        include: { feedback: { select: { status: true } } },
+      });
+
+      const [first, second] = res.body.data;
+      expect(first.id).toBe('sess-new');
+      expect(first.role).toBe('backend-developer');
+      expect(first.status).toBe('ENDED');
+      expect(first.feedbackStatus).toBe('ready');
+      expect(first.endedEarly).toBe(true);
+
+      expect(second.id).toBe('sess-old');
+      expect(second.role).toBe('software-engineer');
+      expect(second.feedbackStatus).toBe('failed');
+      expect(second.endedEarly).toBe(false);
+    });
+
+    it('GET /api/sessions: never returns another user\'s sessions (always scopes by userId)', async () => {
+      (prisma.session.findMany as any).mockResolvedValueOnce([]);
+
+      const res = await request(app)
+        .get('/api/sessions')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+      expect(prisma.session.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: AUTH_USER.id },
+        })
+      );
+    });
   });
 
   describe('POST /api/sessions/:id/turns & GET /api/sessions/:id/turns (LS4)', () => {
@@ -204,7 +318,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       const res = await request(app)
         .post('/api/sessions/sess-1/turns')
         .set('Authorization', authHeader())
-        .send({ speaker: 'CANDIDATE', text: 'I am a third year ICT student.', timestampSec: 20 });
+        .send({ speaker: 'CANDIDATE', text: 'I am a third year ICT student.' });
 
       expect(res.status).toBe(201);
       expect(res.body.success).toBe(true);
@@ -219,7 +333,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       const res = await request(app)
         .post('/api/sessions/not-mine/turns')
         .set('Authorization', authHeader())
-        .send({ speaker: 'CANDIDATE', text: 'hi', timestampSec: 1 });
+        .send({ speaker: 'CANDIDATE', text: 'hi' });
 
       expect(res.status).toBe(404);
       expect(prisma.turn.create).not.toHaveBeenCalled();
@@ -231,26 +345,48 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(getTurnsRes.status).toBe(404);
     });
 
-    // TEST 7: future timestamp is rejected
-    it('TEST 7: rejects a turn whose timestampSec is greater than the session elapsed time', async () => {
-      const startedAt = new Date(Date.now() - 30_000); // ~30s elapsed
+    // TEST 7: server assigns the timestamp
+    it('TEST 7: server assigns the timestamp (stores server elapsed time even if client clock is 10 minutes ahead)', async () => {
+      const thirtySecAgo = new Date(Date.now() - 30_000); // ~30s elapsed
       (prisma.session.findFirst as any).mockResolvedValueOnce({
         id: 'sess-1',
         userId: AUTH_USER.id,
         role: 'software-engineer',
         status: 'LIVE',
-        startedAt,
+        startedAt: thirtySecAgo,
         endedAt: null,
       });
+      (prisma.turn.count as any).mockResolvedValueOnce(0);
+      (prisma.turn.create as any).mockImplementationOnce(async ({ data }: any) => ({
+        id: 'turn-1',
+        ...data,
+        createdAt: new Date(),
+      }));
 
+      // Client clock is 10 minutes ahead and sends timestampSec = 600 or any value
       const res = await request(app)
         .post('/api/sessions/sess-1/turns')
         .set('Authorization', authHeader())
-        .send({ speaker: 'CANDIDATE', text: 'From the future', timestampSec: 45 });
+        .send({ speaker: 'CANDIDATE', text: 'My clock is 10 minutes ahead', timestampSec: 600 });
 
-      expect(res.status).toBe(400);
-      expect(res.body.success).toBe(false);
-      expect(prisma.turn.create).not.toHaveBeenCalled();
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(prisma.turn.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            sessionId: 'sess-1',
+            speaker: 'CANDIDATE',
+            text: 'My clock is 10 minutes ahead',
+            timestampSec: expect.any(Number),
+          }),
+        })
+      );
+
+      const createdTurnCall = (prisma.turn.create as any).mock.calls[0][0];
+      // Stored timestamp must reflect server elapsed time (~30s), NOT the client's 600s
+      expect(createdTurnCall.data.timestampSec).toBeGreaterThanOrEqual(29);
+      expect(createdTurnCall.data.timestampSec).toBeLessThan(35);
+      expect(res.body.data.timestampSec).toBeGreaterThanOrEqual(29);
     });
 
     // TEST 8: turn after session ended is rejected
@@ -267,7 +403,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       const res = await request(app)
         .post('/api/sessions/sess-1/turns')
         .set('Authorization', authHeader())
-        .send({ speaker: 'CANDIDATE', text: 'Too late', timestampSec: 10 });
+        .send({ speaker: 'CANDIDATE', text: 'Too late' });
 
       expect(res.status).toBe(409);
       expect(res.body.success).toBe(false);
@@ -398,6 +534,73 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
 
       expect(res.status).toBe(404);
       expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('DELETE /api/sessions/:id (FR-28)', () => {
+    // TEST 1: Owner deletes own session
+    it('TEST 1: owner deletes own session successfully', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+        role: 'software-engineer',
+        status: 'ENDED',
+        startedAt: new Date(Date.now() - 60_000),
+        endedAt: new Date(),
+      });
+      (prisma.session.delete as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+      });
+
+      const res = await request(app)
+        .delete('/api/sessions/sess-1')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.message).toContain('deleted');
+      expect(prisma.session.findFirst).toHaveBeenCalledWith({
+        where: { id: 'sess-1', userId: AUTH_USER.id },
+      });
+      expect(prisma.session.delete).toHaveBeenCalledWith({
+        where: { id: 'sess-1' },
+      });
+    });
+
+    // TEST 2: Stranger attempts to delete another user's session
+    it('TEST 2: returns 404 when another user attempts to delete a session', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .delete('/api/sessions/sess-stranger')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe('Resource not found');
+      expect(prisma.session.delete).not.toHaveBeenCalled();
+    });
+
+    // TEST 3: Non-existent session
+    it('TEST 3: returns 404 when deleting a non-existent session', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .delete('/api/sessions/sess-nonexistent')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
+      expect(prisma.session.delete).not.toHaveBeenCalled();
+    });
+
+    // Unauthorized request
+    it('rejects unauthenticated DELETE requests with HTTP 401', async () => {
+      const res = await request(app).delete('/api/sessions/sess-1');
+
+      expect(res.status).toBe(401);
+      expect(prisma.session.delete).not.toHaveBeenCalled();
     });
   });
 });

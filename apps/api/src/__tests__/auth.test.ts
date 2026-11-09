@@ -133,6 +133,83 @@ describe('Supabase Authentication & Account Management', () => {
     expect(prisma.user.create).not.toHaveBeenCalled();
   });
 
+  it('links an existing unlinked application user by matching email', async () => {
+    __getUserMock.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: 'supabase-google-1',
+          email: 'alice@example.com',
+          user_metadata: { full_name: 'Alice Cooper' },
+        },
+      },
+      error: null,
+    });
+
+    const unlinkedLocalUser = {
+      id: 'local-alice',
+      supabaseUserId: null,
+      email: 'alice@example.com',
+      name: 'Alice',
+    };
+
+    const linkedLocalUser = {
+      ...unlinkedLocalUser,
+      supabaseUserId: 'supabase-google-1',
+    };
+
+    (prisma.user.findUnique as any)
+      .mockResolvedValueOnce(null) // lookup by supabaseUserId
+      .mockResolvedValueOnce(unlinkedLocalUser) // lookup by email
+      .mockResolvedValueOnce(linkedLocalUser); // getMe lookup by id
+
+    (prisma.user.update as any).mockResolvedValueOnce(linkedLocalUser);
+
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', 'Bearer valid-google-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.id).toBe('local-alice');
+    expect(prisma.user.update).toHaveBeenCalledWith({
+      where: { id: 'local-alice' },
+      data: { supabaseUserId: 'supabase-google-1' },
+    });
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects authentication when email is already linked to a conflicting Supabase user', async () => {
+    __getUserMock.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: 'supabase-attacker',
+          email: 'alice@example.com',
+        },
+      },
+      error: null,
+    });
+
+    const alreadyLinkedUser = {
+      id: 'local-alice',
+      supabaseUserId: 'supabase-legitimate-alice',
+      email: 'alice@example.com',
+      name: 'Alice',
+    };
+
+    (prisma.user.findUnique as any)
+      .mockResolvedValueOnce(null) // lookup by supabaseUserId
+      .mockResolvedValueOnce(alreadyLinkedUser); // lookup by email
+
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', 'Bearer conflicting-token');
+
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('This email is linked to another authentication account');
+    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(prisma.user.create).not.toHaveBeenCalled();
+  });
+
   describe('DELETE /api/auth/account', () => {
     it('deletes a user with resumes and sessions, then deletes the Supabase user', async () => {
       __getUserMock.mockResolvedValueOnce({

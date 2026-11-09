@@ -18,7 +18,9 @@ vi.mock('../db', () => ({
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn(), findUniqueOrThrow: vi.fn() },
     turn: { update: vi.fn(), updateMany: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
-    feedback: { findUnique: vi.fn(), upsert: vi.fn() },
+    feedback: { findUnique: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
+    job: { create: vi.fn() },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -46,9 +48,30 @@ const JOB = {
   attempts: 1, lockedBy: 'w', lockedAt: new Date(), lastError: null, createdAt: new Date(), updatedAt: new Date(),
 };
 const SCORES = [
-  { category: 'Communication', score: 4, comment: 'Clear.' },
-  { category: 'Technical depth', score: 3, comment: 'Surface level.' },
-  { category: 'Structure', score: 4, comment: 'Organised.' },
+  {
+    category: 'Communication',
+    score: 4,
+    comment: 'Clear.',
+    strengths: ['Concise and clear explanations.'],
+    improvements: ['Could elaborate on architecture choices.'],
+    quote: 'I built one.',
+  },
+  {
+    category: 'Technical depth',
+    score: 3,
+    comment: 'Surface level.',
+    strengths: ['Basic knowledge demonstrated.'],
+    improvements: ['Include specific technical trade-offs.'],
+    quote: 'I built one.',
+  },
+  {
+    category: 'Structure',
+    score: 4,
+    comment: 'Organised.',
+    strengths: ['Well-structured approach.'],
+    improvements: ['Could structure with STAR.'],
+    quote: 'I built one.',
+  },
 ];
 
 beforeEach(() => {
@@ -65,25 +88,38 @@ describe('FB3 — session.ended job handler', () => {
     await handleSessionEnded(JOB);
 
     expect(evaluateTranscript).toHaveBeenCalledWith(
-      { roleLabel: 'Backend Developer', turns: TURNS },
+      { roleId: 'backend-developer', turns: TURNS },
       {}
     );
     expect(prisma.feedback.upsert).toHaveBeenCalledWith({
       where: { sessionId: 'sess-1' },
-      create: { sessionId: 'sess-1', status: 'ready', summary: 'Solid.', scores: SCORES },
-      update: { status: 'ready', summary: 'Solid.', scores: SCORES },
+      create: { sessionId: 'sess-1', status: 'ready', summary: 'Solid.', scores: SCORES, error: null },
+      update: { status: 'ready', summary: 'Solid.', scores: SCORES, error: null },
     });
   });
 
-  it('given the evaluator fails, then feedback is marked failed, the job fails, and the transcript is untouched (NFR-04)', async () => {
+  it('given the evaluator fails, then feedback is marked failed with error message, the job fails, and the transcript is untouched (NFR-04)', async () => {
     (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({ ...SESSION, turns: TURNS });
     vi.mocked(evaluateTranscript).mockRejectedValueOnce(new Error('Evaluation timed out after 12000 ms'));
 
     await expect(handleSessionEnded(JOB)).rejects.toThrow('timed out');
 
-    expect(prisma.feedback.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ update: expect.objectContaining({ status: 'failed' }) })
-    );
+    expect(prisma.feedback.upsert).toHaveBeenCalledWith({
+      where: { sessionId: 'sess-1' },
+      create: {
+        sessionId: 'sess-1',
+        status: 'failed',
+        summary: null,
+        scores: [],
+        error: 'Evaluation timed out after 12000 ms',
+      },
+      update: {
+        status: 'failed',
+        summary: null,
+        scores: [],
+        error: 'Evaluation timed out after 12000 ms',
+      },
+    });
     expect(prisma.turn.update).not.toHaveBeenCalled();
     expect(prisma.turn.updateMany).not.toHaveBeenCalled();
     expect(prisma.turn.delete).not.toHaveBeenCalled();
@@ -127,8 +163,151 @@ describe('FB3 — GET /api/sessions/:id/feedback', () => {
     expect(prisma.feedback.findUnique).not.toHaveBeenCalled();
   });
 
+  // Test 4: Deleted session feedback
+  it('TEST 4: given a deleted session, then retrieving feedback returns 404', async () => {
+    // Once session is deleted, getOwnedSession returns null/NotFoundError
+    (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+    const res = await get('deleted-sess-1');
+
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('Resource not found');
+    expect(prisma.feedback.findUnique).not.toHaveBeenCalled();
+  });
+
   it('given no token, then 401', async () => {
     const res = await request(app).get('/api/sessions/sess-1/feedback');
     expect(res.status).toBe(401);
+  });
+});
+
+describe('Retry Feedback Evaluation (Issue #92)', () => {
+  const retry = (id: string, token: string = 'Bearer valid-supabase-token') =>
+    request(app).post(`/api/sessions/${id}/feedback/retry`).set('Authorization', token);
+
+  it('TEST 1: owner can retry failed feedback, changing status to pending and enqueueing a session.ended job in one transaction', async () => {
+    (prisma.session.findFirst as any).mockResolvedValueOnce({ ...SESSION, status: 'ENDED' });
+
+    (prisma.$transaction as any).mockImplementationOnce(async (callback: any) => {
+      const tx = {
+        feedback: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        job: {
+          create: vi.fn().mockResolvedValue({ id: 'job-retry-1', type: 'session.ended', sessionId: 'sess-1', status: 'pending' }),
+        },
+      };
+      return callback(tx);
+    });
+
+    const res = await retry('sess-1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ sessionId: 'sess-1', status: 'pending' });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("TEST 2: another user's session cannot be retried, returning 404 (FR-27) without creating a job", async () => {
+    (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+    const res = await retry('someone-elses');
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toBe('Resource not found');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('TEST 3: cannot retry ready feedback, returning 409 Conflict without creating a job', async () => {
+    (prisma.session.findFirst as any).mockResolvedValueOnce({ ...SESSION, status: 'ENDED' });
+
+    (prisma.$transaction as any).mockImplementationOnce(async (callback: any) => {
+      const tx = {
+        feedback: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        job: {
+          create: vi.fn(),
+        },
+      };
+      return callback(tx);
+    });
+
+    const res = await retry('sess-1');
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe('Only failed feedback evaluations can be retried');
+  });
+
+  it('TEST 4: cannot retry pending feedback, returning 409 Conflict without creating duplicate jobs', async () => {
+    (prisma.session.findFirst as any).mockResolvedValueOnce({ ...SESSION, status: 'ENDED' });
+
+    (prisma.$transaction as any).mockImplementationOnce(async (callback: any) => {
+      const tx = {
+        feedback: {
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        job: {
+          create: vi.fn(),
+        },
+      };
+      return callback(tx);
+    });
+
+    const res = await retry('sess-1');
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe('Only failed feedback evaluations can be retried');
+  });
+
+  it('TEST 5: concurrent retry requests: atomic updateMany allows exactly one retry to succeed while other receives 409', async () => {
+    (prisma.session.findFirst as any).mockResolvedValue({ ...SESSION, status: 'ENDED' });
+
+    let callCount = 0;
+    (prisma.$transaction as any).mockImplementation(async (callback: any) => {
+      callCount++;
+      const count = callCount === 1 ? 1 : 0;
+      const tx = {
+        feedback: {
+          updateMany: vi.fn().mockResolvedValue({ count }),
+        },
+        job: {
+          create: vi.fn().mockResolvedValue({ id: 'job-1', type: 'session.ended', sessionId: 'sess-1', status: 'pending' }),
+        },
+      };
+      return callback(tx);
+    });
+
+    const [res1, res2] = await Promise.all([retry('sess-1'), retry('sess-1')]);
+
+    const statuses = [res1.status, res2.status].sort();
+    expect(statuses).toEqual([200, 409]);
+  });
+
+  it('TEST 6: interview transcript remains unchanged: turns and candidate answers are read-only (NFR-04)', async () => {
+    const originalTurns = structuredClone(TURNS);
+
+    (prisma.session.findFirst as any).mockResolvedValueOnce({ ...SESSION, status: 'ENDED' });
+
+    (prisma.$transaction as any).mockImplementationOnce(async (callback: any) => {
+      const tx = {
+        feedback: {
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        job: {
+          create: vi.fn().mockResolvedValue({ id: 'job-retry-1', type: 'session.ended', sessionId: 'sess-1', status: 'pending' }),
+        },
+      };
+      return callback(tx);
+    });
+
+    const res = await retry('sess-1');
+    expect(res.status).toBe(200);
+
+    expect(TURNS).toEqual(originalTurns);
+    expect(prisma.turn.update).not.toHaveBeenCalled();
+    expect(prisma.turn.updateMany).not.toHaveBeenCalled();
+    expect(prisma.turn.delete).not.toHaveBeenCalled();
+    expect(prisma.turn.deleteMany).not.toHaveBeenCalled();
   });
 });

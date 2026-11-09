@@ -1,0 +1,24 @@
+{
+  "role": "backend-developer",
+  "scores": [
+    {
+      "category": "Communication",
+      "min": 2,
+      "max": 4,
+      "reason": "Answers are understandable; offset pagination and basic JWT described clearly but with gaps."
+    },
+    {
+      "category": "Technical depth",
+      "min": 2,
+      "max": 3,
+      "reason": "Offset pagination used without noting deep-page issues; logout timestamp approach mentioned but blocklist not known; unit tests over integration tests."
+    },
+    {
+      "category": "Structure",
+      "min": 2,
+      "max": 4,
+      "reason": "Some structure present but answers tend to stop at the first solution without discussing trade-offs or edge cases."
+    }
+  ]
+}
+

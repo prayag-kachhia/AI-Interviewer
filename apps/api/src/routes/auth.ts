@@ -1,14 +1,14 @@
 import { Router } from 'express';
+import { authenticate } from '../middleware/auth';
 import { createClient } from '@supabase/supabase-js';
 import prisma from '../db';
-import { authenticate } from '../middleware/auth';
+
+const router = Router();
 
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
   process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 );
-
-const router = Router();
 
 // All application auth/profile operations are protected by Supabase Auth.
 // Sign-in, sign-up, and sign-out happen directly through Supabase in the
@@ -16,7 +16,7 @@ const router = Router();
 
 /**
  * Return the current application's user profile.
- * Authentication is handled by Supabase before this controller runs.
+ * Authentication is handled by Supabase before this handler runs.
  */
 router.get('/me', authenticate, async (req, res) => {
   try {
