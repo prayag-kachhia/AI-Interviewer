@@ -142,37 +142,19 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
       throw new SessionEndedError();
     }
 
-    // Look up the candidate's resume associated with this session (FR-08, FR-09)
-    let resumeParsedProfile: string | null = null;
+    // Look up the resume associated with this session
+    let resumeSummary: string | undefined;
 
-    if (session.resumeId && prisma.resume?.findUnique) {
+    if (session.resumeId) {
       const resume = await prisma.resume.findUnique({
         where: { id: session.resumeId },
         select: { parsedProfile: true },
       });
-      resumeParsedProfile = resume?.parsedProfile ?? null;
-    }
 
-    // Fallback if session has no direct resumeId or not found (e.g. legacy sessions or test mocks)
-    if (!resumeParsedProfile && prisma.resume?.findFirst) {
-      const fallbackResume = await prisma.resume.findFirst({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        select: { parsedProfile: true },
-      });
-      resumeParsedProfile = fallbackResume?.parsedProfile ?? null;
-    }
-
-    let resumeSummary: string | undefined;
-
-    if (resumeParsedProfile) {
-      try {
-        const profile = JSON.parse(resumeParsedProfile);
+      if (resume?.parsedProfile) {
+        const profile = JSON.parse(resume.parsedProfile);
         const summary = summarizeProfile(profile);
         resumeSummary = summary.trim() ? summary : undefined;
-      } catch {
-        // Fallback for raw text profiles (e.g. in test fixtures or legacy records)
-        resumeSummary = resumeParsedProfile.trim() || undefined;
       }
     }
 
