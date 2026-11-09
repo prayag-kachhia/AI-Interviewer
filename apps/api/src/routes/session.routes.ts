@@ -3,11 +3,13 @@ import { authenticate } from '../middleware/auth';
 import {
   getRoles,
   postSession,
+  getSessions,
   getSessionById,
   getTurns,
   postTurn,
   postEndSession,
   postVoiceToken,
+  postNextQuestion,
   deleteSessionById,
 } from '../controllers/session.controller';
 
@@ -16,11 +18,13 @@ const router = Router();
 // All session routes require a signed-in candidate.
 router.get('/roles', authenticate, getRoles);
 router.post('/', authenticate, postSession);
+router.get('/', authenticate, getSessions);
 router.get('/:id', authenticate, getSessionById);
-router.delete('/:id', authenticate, deleteSessionById);
 router.get('/:id/turns', authenticate, getTurns);
 router.post('/:id/turns', authenticate, postTurn);
 router.post('/:id/end', authenticate, postEndSession);
 router.post('/:id/voice-token', authenticate, postVoiceToken);
+router.post('/:id/next-question', authenticate, postNextQuestion);
+router.delete('/:id', authenticate, deleteSessionById);
 
 export default router;

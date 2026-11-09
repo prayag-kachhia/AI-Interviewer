@@ -297,7 +297,7 @@ async function main() {
               const apiKey = process.env.GEMINI_API_KEY?.trim();
               if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
               const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: BENCH_TIMEOUT_MS } });
-              const brokenP = buildBrokenPrompt({ roleLabel: role.label, turns });
+              const brokenP = buildBrokenPrompt({ roleId: role.id, turns });
               const response = await ai.models.generateContent({
                 model: process.env.GEMINI_EVAL_MODEL?.trim() ?? 'gemini-3.8-flash',
                 contents: brokenP,
@@ -323,7 +323,7 @@ async function main() {
         const result = await runWithRetry(
           () =>
             evaluateTranscript(
-              { roleLabel: role.label, turns },
+              { roleId: role.id, turns },
               generateFn ? { generate: generateFn, timeoutMs: BENCH_TIMEOUT_MS } : { timeoutMs: BENCH_TIMEOUT_MS }
             ),
           MAX_RETRIES,
