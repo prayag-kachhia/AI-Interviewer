@@ -214,7 +214,7 @@ About 5.5 days · 8 counted PRs (0 already merged) · 2 Hard, 5 Medium, 1 Easy �
 
 A voice adapter that holds a real spoken conversation with Gemini Live, ready for the room to plug in.
 
-- `lib/geminiLiveAdapter.ts` implements `VoiceSessionAdapter` on top of `useGeminiLive`'s connection code.
+- `lib/geminiLiveAdapter.ts` implements `VoiceSessionAdapter` with the Gemini Live connection code (it replaces the unused `useGeminiLive` hook).
 - Slim the interface to what the room needs: `connect`, `disconnect`, `setMuted`, `sendText`, plus callbacks for transcript, state, level and error. Question-asking moves inside each adapter, so update `BrowserWebSpeechVoiceAdapter` to the same interface.
 - Use model `gemini-3.8-live`, wait for `setupComplete` before streaming, and send no `systemInstruction` from the browser (the token carries it). `interrupted` stops playback. `sendText` sends a text cue into the Live session (used by K-6 and VI-6).
 - Add mock-socket tests.
