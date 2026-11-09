@@ -163,6 +163,19 @@ describe('FB3 — GET /api/sessions/:id/feedback', () => {
     expect(prisma.feedback.findUnique).not.toHaveBeenCalled();
   });
 
+  // Test 4: Deleted session feedback
+  it('TEST 4: given a deleted session, then retrieving feedback returns 404', async () => {
+    // Once session is deleted, getOwnedSession returns null/NotFoundError
+    (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+    const res = await get('deleted-sess-1');
+
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('Resource not found');
+    expect(prisma.feedback.findUnique).not.toHaveBeenCalled();
+  });
+
   it('given no token, then 401', async () => {
     const res = await request(app).get('/api/sessions/sess-1/feedback');
     expect(res.status).toBe(401);

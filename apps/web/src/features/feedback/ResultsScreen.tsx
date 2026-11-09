@@ -1,5 +1,7 @@
 // ResultsScreen.tsx
 import { useState } from "react";
+import { useNavigate } from "react-router";
+import { deleteSession } from "../../lib/api";
 import { useFeedback, useTurns } from "./useFeedback";
 import { retryFeedback } from "./feedbackApi";
 import type { TurnSpeaker } from "@interview/contracts";
@@ -23,6 +25,9 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const navigate = useNavigate();
   const { feedback, error: feedbackError, isLongWait } = useFeedback(sessionId, reloadKey);
   const { turns, isLoading, error } = useTurns(sessionId);
 
@@ -36,6 +41,19 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
       setRetryError("Couldn't restart the feedback. Please try again.");
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("Are you sure you want to delete this interview? This action cannot be undone.")) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteSession(sessionId);
+      navigate("/history");
+    } catch {
+      setDeleteError("Couldn't delete the interview. Please try again.");
+      setDeleting(false);
     }
   }
 
@@ -139,6 +157,11 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
           </ol>
         )}
       </details>
+
+      {deleteError && <p role="alert">{deleteError}</p>}
+      <button type="button" className="btn btn-outline" onClick={handleDelete} disabled={deleting}>
+        {deleting ? "Deleting…" : "Delete interview"}
+      </button>
     </div>
   );
 }

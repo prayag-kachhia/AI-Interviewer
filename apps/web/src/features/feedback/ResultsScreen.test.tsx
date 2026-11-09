@@ -1,16 +1,30 @@
 // ResultsScreen.test.tsx
 import "@testing-library/jest-dom/vitest";
 import { test, expect, vi, afterEach } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { ResultsScreen } from "./ResultsScreen";
 import * as api from "./feedbackApi";
-import { getTurns } from "../../lib/api";
+import { deleteSession, getTurns } from "../../lib/api";
 
 // The real API client creates a Supabase client on import; these tests replace fetchFeedback and getTurns anyway.
 vi.mock("../../lib/api", () => ({
   getFeedback: vi.fn(),
   getTurns: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  deleteSession: vi.fn(),
 }));
+
+// The results screen navigates after a delete, so it renders inside a router with a History stand-in.
+function render(ui: React.ReactElement) {
+  return rtlRender(
+    <MemoryRouter initialEntries={["/results"]}>
+      <Routes>
+        <Route path="/results" element={ui} />
+        <Route path="/history" element={<p>History page</p>} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -343,4 +357,39 @@ test("while transcript is loading, displays a loading message", async () => {
 
   expect(await screen.findByText("No transcript turns recorded.")).toBeInTheDocument();
   expect(screen.queryByText("Loading transcript…")).not.toBeInTheDocument();
+});
+
+test("given I cancel the confirmation, then nothing is deleted", async () => {
+  vi.spyOn(api, "fetchFeedback").mockResolvedValue({ sessionId: "s1", status: "failed" });
+  vi.spyOn(window, "confirm").mockReturnValue(false);
+
+  render(<ResultsScreen sessionId="s1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete interview" }));
+
+  expect(window.confirm).toHaveBeenCalled();
+  expect(deleteSession).not.toHaveBeenCalled();
+});
+
+test("given I confirm, then the interview is deleted and I go to History", async () => {
+  vi.spyOn(api, "fetchFeedback").mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Great job.", scores: [] });
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(deleteSession).mockResolvedValueOnce({ success: true });
+
+  render(<ResultsScreen sessionId="s1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete interview" }));
+
+  expect(await screen.findByText("History page")).toBeInTheDocument();
+  expect(deleteSession).toHaveBeenCalledWith("s1");
+});
+
+test("given the delete fails, then an error shows and I can try again", async () => {
+  vi.spyOn(api, "fetchFeedback").mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Great job.", scores: [] });
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.mocked(deleteSession).mockRejectedValueOnce(new Error("Network error"));
+
+  render(<ResultsScreen sessionId="s1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Delete interview" }));
+
+  expect(await screen.findByText("Couldn't delete the interview. Please try again.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Delete interview" })).toBeEnabled();
 });

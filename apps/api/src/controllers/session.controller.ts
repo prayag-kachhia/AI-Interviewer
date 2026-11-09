@@ -6,6 +6,7 @@ import {
   listTurns,
   addTurn,
   endSession,
+  deleteSession,
   InvalidRoleError,
   InvalidTimestampError,
   SessionEndedError,
@@ -200,5 +201,23 @@ export const postNextQuestion = async (req: Request, res: Response): Promise<voi
     }
     console.error('Next question error:', error);
     res.status(500).json({ success: false, message: 'Failed to generate next interview question' });
+  }
+};
+
+// DELETE /api/sessions/:id
+export const deleteSessionById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const id = req.params.id as string;
+
+    await deleteSession(id, userId);
+    res.status(200).json({ success: true, message: 'Session deleted successfully' });
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+    console.error('Delete session error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete session' });
   }
 };

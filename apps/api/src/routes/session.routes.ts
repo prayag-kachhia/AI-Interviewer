@@ -10,6 +10,7 @@ import {
   postEndSession,
   postVoiceToken,
   postNextQuestion,
+  deleteSessionById,
 } from '../controllers/session.controller';
 
 const router = Router();
@@ -24,5 +25,6 @@ router.post('/:id/turns', authenticate, postTurn);
 router.post('/:id/end', authenticate, postEndSession);
 router.post('/:id/voice-token', authenticate, postVoiceToken);
 router.post('/:id/next-question', authenticate, postNextQuestion);
+router.delete('/:id', authenticate, deleteSessionById);
 
 export default router;
