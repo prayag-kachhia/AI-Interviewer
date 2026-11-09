@@ -10,7 +10,7 @@ import { NotFoundError } from '../utils/resource';
 vi.mock('../utils/db', () => ({
   default: {
     session: { findFirst: vi.fn() },
-    resume: { findFirst: vi.fn(), findUnique: vi.fn() },
+    resume: { findUnique: vi.fn() },
     turn: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   },
 }));
@@ -36,10 +36,11 @@ describe('interviewer.service', () => {
     (prisma.resume.findUnique as any).mockResolvedValue({
       id: 'resume-1',
       parsedProfile: JSON.stringify({
-        fullName: 'Candidate',
-        headline: 'Frontend Engineer',
+        name: 'Candidate',
         skills: ['React', 'TypeScript', 'Node.js'],
-        experience: [{ title: 'Frontend Developer', company: 'Tech Corp' }],
+        projects: [],
+        experience: ['Frontend Developer at Tech Corp'],
+        education: [],
       }),
     });
     (prisma.turn.create as any).mockImplementation(({ data }: any) =>

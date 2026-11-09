@@ -20,7 +20,7 @@ vi.mock('../utils/db', () => ({
   default: {
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    resume: { findFirst: vi.fn(), findUnique: vi.fn() },
+    resume: { findUnique: vi.fn() },
     turn: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   },
 }));
@@ -58,7 +58,7 @@ const OWN_LIVE_SESSION = {
   resumeId: null,
 };
 
-describe('PK-3 — POST /api/sessions/:id/next-question (server-side interviewer)', () => {
+describe('POST /api/sessions/:id/next-question (server-side interviewer)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     __getUserMock.mockResolvedValue({
@@ -76,7 +76,6 @@ describe('PK-3 — POST /api/sessions/:id/next-question (server-side interviewer
     });
     (prisma.session.findFirst as any).mockResolvedValue(OWN_LIVE_SESSION);
     (prisma.turn.findMany as any).mockResolvedValue([]);
-    (prisma.resume.findFirst as any).mockResolvedValue(null);
   });
 
   describe('buildNextQuestionPrompt', () => {

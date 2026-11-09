@@ -400,7 +400,7 @@ use goes here, in the same PR as the code that needs it.
   - V2: the interviewer's instructions (role, structure, time limit) are built on the server and
     locked into the token, so the browser can't change them.
   - P1: those instructions also include the candidate's resume.
-- **Why audio skips our server:** the 2-second response target (NFR-01). A hop through our API
+- **Why audio skips our server:** the 5-second response target (NFR-01). A hop through our API
   would add delay, and the key stays private because the browser only has a single-use token.
   The research spike is on the `sessions/voice-spike` branch.
 
@@ -498,7 +498,7 @@ Deployment (Google Cloud) is described in [sprint-2.md](sprint-2.md).
 ## 17. Likely evaluation questions
 
 **"Why is the voice not going through your server?"**
-Latency (NFR-01: under 2 s) and cost. The server only mints a single-use, short-lived token, so
+Latency (NFR-01: under 5 s) and cost. The server only mints a single-use, short-lived token, so
 the API key never reaches the browser (NFR-09).
 
 **"What happens if the LLM is down when an interview ends?"**
@@ -634,7 +634,7 @@ Gemini Live means adding one class, not rewriting the screen. The browser adapte
 as the fallback.
 
 **Why doesn't the audio go through our server?**
-The interviewer has to start answering within 2 seconds (NFR-01), and relaying audio through
+The interviewer has to start answering within 5 seconds (NFR-01), and relaying audio through
 our API would add delay and cost. Instead, `POST /api/sessions/:id/voice-token` returns a
 token that works once, expires in 30 minutes and must be used within 2. The browser connects
 to Google with it, and our Gemini key never reaches the browser (NFR-09). The token

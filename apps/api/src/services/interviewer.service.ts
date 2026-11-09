@@ -1,8 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { getOwnedSession, addTurn, listTurns, SessionEndedError } from './session.service';
-import { buildBriefing } from './briefing.service';
-import { summarizeProfile } from './resume-summary';
-import prisma from '../utils/db';
+import { briefingFor } from './briefing.service';
 
 export const NEXT_QUESTION_TIMEOUT_MS = 15_000;
 const DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -49,10 +47,7 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<string> {
   }
 
   const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: timeoutMs } });
-  const model =
-    process.env.GEMINI_INTERVIEW_MODEL?.trim() ||
-    process.env.GEMINI_EVAL_MODEL?.trim() ||
-    DEFAULT_MODEL;
+  const model = process.env.GEMINI_EVAL_MODEL?.trim() || DEFAULT_MODEL;
 
   try {
     const response = await ai.models.generateContent({
@@ -65,12 +60,9 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<string> {
     });
 
     return response.text ?? '';
-  } catch (err: any) {
-    if (
-      err?.name === 'TimeoutError' ||
-      err?.message?.toLowerCase().includes('timeout') ||
-      err?.code === 'ETIMEDOUT'
-    ) {
+  } catch (err) {
+    // The abort signal rejects with a TimeoutError or AbortError once the time is up.
+    if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
       throw new InterviewerTimeoutError();
     }
     throw err;
@@ -93,50 +85,12 @@ export async function generateNextQuestion(
 
   const turns = await listTurns(sessionId, userId);
 
-  let resumeParsedProfile: string | null = null;
-  if (session.resumeId && prisma.resume?.findUnique) {
-    const resume = await prisma.resume.findUnique({
-      where: { id: session.resumeId },
-      select: { parsedProfile: true },
-    });
-    resumeParsedProfile = resume?.parsedProfile ?? null;
-  }
-
-  if (!resumeParsedProfile && prisma.resume?.findFirst) {
-    const fallbackResume = await prisma.resume.findFirst({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      select: { parsedProfile: true },
-    });
-    resumeParsedProfile = fallbackResume?.parsedProfile ?? null;
-  }
-
-  let resumeSummary: string | undefined;
-  if (resumeParsedProfile) {
-    try {
-      const profile = JSON.parse(resumeParsedProfile);
-      const summary = summarizeProfile(profile);
-      resumeSummary = summary.trim() ? summary : undefined;
-    } catch {
-      resumeSummary = resumeParsedProfile.trim() || undefined;
-    }
-  }
-
-  const briefing = buildBriefing({
-    roleId: session.role,
-    focus: (session as any).focus,
-    resumeSummary,
-  });
-
+  const briefing = await briefingFor(session);
   const prompt = buildNextQuestionPrompt(briefing, turns);
   const timeoutMs = options.timeoutMs ?? NEXT_QUESTION_TIMEOUT_MS;
 
-  let rawQuestion: string;
-  if (options.generate) {
-    rawQuestion = await options.generate(prompt);
-  } else {
-    rawQuestion = await callGemini(prompt, timeoutMs);
-  }
+  const generate = options.generate ?? ((p: string) => callGemini(p, timeoutMs));
+  const rawQuestion = await generate(prompt);
 
   const questionText = rawQuestion
     .trim()
