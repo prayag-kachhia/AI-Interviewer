@@ -60,39 +60,31 @@ test("given user has no interviews, renders empty state with start interview but
   expect(mockNavigate).toHaveBeenCalledWith("/new-interview");
 });
 
-test("given user has past interviews, renders them sorted newest first with details and results link", async () => {
-  const mockData = [
-    {
-      id: "session-old",
-      userId: "u1",
-      roleId: "r1",
-      status: "ENDED" as const,
-      startedAt: "2026-10-01T10:00:00Z",
-      endedAt: "2026-10-01T10:20:00Z",
-      createdAt: "2026-10-01T10:00:00Z",
-      updatedAt: "2026-10-01T10:20:00Z",
-      role: { id: "r1", name: "Backend Engineer" },
-      feedbackStatus: "ready" as const,
-      endedEarly: false,
-    },
-    {
-      id: "session-new",
-      userId: "u1",
-      roleId: "r2",
-      status: "ENDED" as const,
-      startedAt: "2026-11-01T10:00:00Z",
-      endedAt: "2026-11-01T10:05:00Z",
-      createdAt: "2026-11-01T10:00:00Z",
-      updatedAt: "2026-11-01T10:05:00Z",
-      role: { id: "r2", name: "Frontend Engineer" },
-      feedbackStatus: "ready" as const,
-      endedEarly: true,
-    },
-  ];
-
+test("given past interviews, lists them in the order the API returns with details and results links", async () => {
   vi.mocked(getSessions).mockResolvedValue({
     success: true,
-    data: mockData,
+    data: [
+      {
+        id: "session-new",
+        userId: "u1",
+        role: "backend-developer",
+        status: "ENDED",
+        startedAt: "2026-11-01T10:00:00Z",
+        endedAt: "2026-11-01T10:05:00Z",
+        feedbackStatus: "ready",
+        endedEarly: true,
+      },
+      {
+        id: "session-old",
+        userId: "u1",
+        role: "data-analyst",
+        status: "ENDED",
+        startedAt: "2026-10-01T10:00:00Z",
+        endedAt: "2026-10-01T10:20:00Z",
+        feedbackStatus: "failed",
+        endedEarly: false,
+      },
+    ],
   });
 
   render(
@@ -101,28 +93,16 @@ test("given user has past interviews, renders them sorted newest first with deta
     </MemoryRouter>
   );
 
-  // Both role titles rendered
-  expect(await screen.findByText("Frontend Engineer")).toBeInTheDocument();
-  expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
+  expect(await screen.findByText("Backend Developer")).toBeInTheDocument();
+  expect(screen.getByText("Data Analyst")).toBeInTheDocument();
+  expect(screen.getAllByTestId("history-ended-early")).toHaveLength(1);
 
-  // "Ended early" badge rendered for session-new, but not for session-old
-  const endedEarlyBadges = screen.getAllByTestId("history-ended-early");
-  expect(endedEarlyBadges).toHaveLength(1);
-
-  // Results link for each session
   const viewLinks = screen.getAllByRole("link", { name: /View Results/i });
-  expect(viewLinks).toHaveLength(2);
   expect(viewLinks[0]).toHaveAttribute("href", "/interview/session-new/feedback");
   expect(viewLinks[1]).toHaveAttribute("href", "/interview/session-old/feedback");
-
-  // Sorted newest first: session-new appears before session-old
-  const sessionNewEl = screen.getByTestId("history-session-session-new");
-  const sessionOldEl = screen.getByTestId("history-session-session-old");
-  const DOCUMENT_POSITION_FOLLOWING = 4;
-  expect(sessionNewEl.compareDocumentPosition(sessionOldEl) & DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
-test("displays error message when getSessions fails", async () => {
+test("given the history request fails, shows an error", async () => {
   vi.mocked(getSessions).mockRejectedValue(new Error("Database connection failed"));
 
   render(
@@ -131,6 +111,5 @@ test("displays error message when getSessions fails", async () => {
     </MemoryRouter>
   );
 
-  expect(await screen.findByRole("alert")).toBeInTheDocument();
-  expect(screen.getByText("Database connection failed")).toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Failed to load interview history");
 });

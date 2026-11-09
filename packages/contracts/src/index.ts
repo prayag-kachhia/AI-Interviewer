@@ -57,6 +57,7 @@ export type FeedbackStatus = z.infer<typeof FeedbackStatus>;
 export const Session = z.object({
   id: z.string(),
   userId: z.string(),
+  resumeId: z.string().nullable().optional(),
   role: z.string(),
   status: SessionStatus,
   startedAt: z.string(),
@@ -78,6 +79,9 @@ export const FeedbackScore = z.object({
   category: z.string().min(1),
   score: z.number().int().min(1).max(5),
   comment: z.string(),
+  strengths: z.array(z.string()),
+  improvements: z.array(z.string()),
+  quote: z.string(),
 });
 export type FeedbackScore = z.infer<typeof FeedbackScore>;
 

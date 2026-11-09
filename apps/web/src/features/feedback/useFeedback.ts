@@ -1,40 +1,30 @@
 // useFeedback.ts
 import { useEffect, useState } from "react";
-import type { Feedback, Turn, Session } from "@interview/contracts";
-import { getTurns, getSession } from "../../lib/api";
+import type { Feedback, Turn } from "@interview/contracts";
+import { getTurns } from "../../lib/api";
 import { fetchFeedback } from "./feedbackApi";
 
 const POLL_INTERVAL_MS = 3000;
-const LONG_WAIT_THRESHOLD_MS = 60000;
+// After this long still pending, the screen says it is taking longer than usual.
+const LONG_WAIT_MS = 60_000;
 
-export interface UseFeedbackResult {
-  feedback: Feedback | null;
-  error: string | null;
-  isLongWaiting: boolean;
-}
-
-export function useFeedback(sessionId: string, reloadTrigger = 0): UseFeedbackResult {
+// Polls until the feedback is ready or failed. Bump `reloadKey` (after a retry) to start polling again.
+export function useFeedback(sessionId: string, reloadKey = 0) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLongWaiting, setIsLongWaiting] = useState<boolean>(false);
+  const [isLongWait, setIsLongWait] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     let intervalId: ReturnType<typeof setInterval>;
-    let longWaitTimer: ReturnType<typeof setTimeout>;
-
     setError(null);
-    setIsLongWaiting(false);
+    setIsLongWait(false);
+    const longWaitId = setTimeout(() => setIsLongWait(true), LONG_WAIT_MS);
 
-    if (reloadTrigger > 0) {
-      setFeedback({ sessionId, status: "pending" });
+    function stop() {
+      clearInterval(intervalId);
+      clearTimeout(longWaitId);
     }
-
-    longWaitTimer = setTimeout(() => {
-      if (!cancelled) {
-        setIsLongWaiting(true);
-      }
-    }, LONG_WAIT_THRESHOLD_MS);
 
     async function poll() {
       try {
@@ -42,88 +32,70 @@ export function useFeedback(sessionId: string, reloadTrigger = 0): UseFeedbackRe
         if (cancelled) return;
         setFeedback(result);
         setError(null);
-
-        if (result.status !== "pending") {
-          clearInterval(intervalId);
-          clearTimeout(longWaitTimer);
-          setIsLongWaiting(false);
-        }
-      } catch (err: any) {
-        if (cancelled) return;
-        const msg =
-          err?.response?.data?.message ||
-          err?.message ||
-          "Unable to load feedback. Please try again.";
-        setError(msg);
-      }
-    }
-
-    intervalId = setInterval(poll, POLL_INTERVAL_MS);
-    poll(); // fetch immediately on mount
-
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-      clearTimeout(longWaitTimer);
-    };
-  }, [sessionId, reloadTrigger]);
-
-  return { feedback, error, isLongWaiting };
-}
-
-export function useSessionDetails(sessionId: string): Session | null {
-  const [session, setSession] = useState<Session | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadSession() {
-      try {
-        if (typeof getSession === "function") {
-          const res = await getSession(sessionId);
-          if (!cancelled && res?.data) {
-            setSession(res.data);
-          }
-        }
+        if (result.status !== "pending") stop();
       } catch {
-        // ignore errors
+        // Keep polling: a dropped request shouldn't end the wait, but the screen says so.
+        if (!cancelled) setError("Unable to load feedback. Retrying…");
       }
     }
 
-    if (sessionId) {
-      loadSession();
-    }
+    poll(); // fetch immediately on mount
+    intervalId = setInterval(poll, POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      stop();
     };
-  }, [sessionId]);
+  }, [sessionId, reloadKey]);
 
-  return session;
+  return { feedback, error, isLongWait };
 }
 
-export function useTurns(sessionId: string): Turn[] {
+export interface UseTurnsResult {
+  turns: Turn[];
+  isLoading: boolean;
+  isError: boolean;
+  error: string | null;
+  status: "loading" | "success" | "error";
+}
+
+export function useTurns(sessionId: string): UseTurnsResult {
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(Boolean(sessionId));
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadTurns() {
+      setIsLoading(true);
+      setError(null);
+
       try {
         const response = await getTurns(sessionId);
         if (cancelled) return;
+        if (response && response.success === false) {
+          throw new Error(response.message || "Unable to load transcript. Please try again.");
+        }
         const data = response?.data ?? [];
         const sorted = [...data].sort((a, b) => a.turnIndex - b.turnIndex);
         setTurns(sorted);
+        setError(null);
+        setIsLoading(false);
       } catch {
         if (!cancelled) {
-          setTurns([]);
+          setError("Unable to load transcript. Please try again.");
+          setIsLoading(false);
         }
       }
     }
 
     if (sessionId) {
       loadTurns();
+    } else {
+      setIsLoading(false);
+      setTurns([]);
+      setError(null);
     }
 
     return () => {
@@ -131,7 +103,8 @@ export function useTurns(sessionId: string): Turn[] {
     };
   }, [sessionId]);
 
-  return turns;
-}
+  const isError = error !== null;
+  const status = isLoading ? "loading" : isError ? "error" : "success";
 
-export const useTranscript = useTurns;
+  return { turns, isLoading, isError, error, status };
+}

@@ -1,0 +1,35 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Backend Developer interview. How would you design a REST API endpoint that supports pagination, sorting, and filtering?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would add query parameters like page and limit so the client can request a specific page. For sorting I would accept a sort parameter with the column name. For filtering, the client passes key-value pairs like status=active. On the server I calculate the offset as page minus one multiplied by limit, apply WHERE clauses for the filters, and add ORDER BY for sorting. I would return the results along with a total count so the frontend can build a page-number component."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you implement token-based authentication and handle revocation when a user logs out?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would generate a JWT when the user logs in with their email and password. The token contains the user ID and an expiry time. On each request the middleware verifies the JWT signature using the secret key. For logout, since JWTs are stateless it is tricky. One approach I know is to store a logout timestamp in the user table and reject tokens issued before that time. This requires a database lookup per request but avoids maintaining a separate blocklist."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you handle errors in an Express application?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Express supports a four-argument error-handling middleware that you register at the end. When an error is thrown in a route, you call next(err) and Express routes it to that middleware. Inside it you check the error and return the appropriate HTTP status and a message to the client. I usually wrap async route handlers in try-catch blocks and call next(err) in the catch."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you test a route that creates a user and sends a welcome email?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would use Supertest to send a POST request to the route and check the response is 201 and has the user's details in the body. I would mock the email-sending function so it does not actually send emails during tests. I have mostly done unit tests for controller logic in my projects rather than full integration tests with a real database, but I know that is the more thorough approach."
+  }
+]
+

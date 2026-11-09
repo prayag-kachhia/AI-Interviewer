@@ -2,4 +2,3 @@
 // Owner: feedback pair. Results and history screens, polling for feedback.
 export { ResultsPage } from './ResultsPage';
 export { HistoryPage } from './HistoryPage';
-export { ResultsScreen } from './ResultsScreen';

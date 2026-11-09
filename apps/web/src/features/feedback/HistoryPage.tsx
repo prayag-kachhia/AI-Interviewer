@@ -3,11 +3,10 @@ import { Link, useNavigate } from "react-router";
 import { Clock, Calendar, ArrowRight, AlertCircle, Loader2, Sparkles, CheckCircle2 } from "lucide-react";
 import { ROLES } from "@interview/contracts";
 import { getSessions } from "../../lib/api";
-import { isEndedEarly } from "../../lib/sessionUtils";
-import type { SessionListItem } from "../../types";
+import type { SessionData } from "../../types";
 
 export const HistoryPage: React.FC = () => {
-  const [sessions, setSessions] = useState<SessionListItem[]>([]);
+  const [sessions, setSessions] = useState<SessionData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -19,19 +18,10 @@ export const HistoryPage: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        const res = await getSessions();
-        if (cancelled) return;
-        const list = res?.data || [];
-        // Ensure sorted newest first
-        const sorted = [...list].sort((a, b) => {
-          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-          return timeB - timeA;
-        });
-        setSessions(sorted);
-      } catch (err: any) {
-        if (cancelled) return;
-        setError(err?.response?.data?.message || err?.message || "Failed to load interview history");
+        const res = await getSessions(); // newest first
+        if (!cancelled) setSessions(res.data ?? []);
+      } catch {
+        if (!cancelled) setError("Failed to load interview history");
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -46,24 +36,16 @@ export const HistoryPage: React.FC = () => {
     };
   }, []);
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return "Unknown date";
-    try {
-      const d = new Date(dateString);
-      if (Number.isNaN(d.getTime())) return dateString;
-      return d.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return dateString;
-    }
-  };
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
-  const renderFeedbackStatus = (status?: string) => {
+  const renderFeedbackStatus = (status: SessionData["feedbackStatus"]) => {
     switch (status) {
       case "ready":
         return (
@@ -189,11 +171,7 @@ export const HistoryPage: React.FC = () => {
       {!loading && !error && sessions.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           {sessions.map((session) => {
-            const endedEarly = isEndedEarly(session);
-            const roleName =
-              typeof session.role === "string"
-                ? ROLES.find((r) => r.id === session.role)?.label || session.role
-                : session.role?.name || (session.role as any)?.label || "General Interview";
+            const roleName = ROLES.find((r) => r.id === session.role)?.label ?? session.role;
 
             return (
               <div
@@ -212,7 +190,7 @@ export const HistoryPage: React.FC = () => {
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
                     <h3 style={{ margin: 0, fontSize: "1.2rem" }}>{roleName}</h3>
-                    {endedEarly && (
+                    {session.endedEarly && (
                       <span
                         data-testid="history-ended-early"
                         style={{
@@ -242,7 +220,7 @@ export const HistoryPage: React.FC = () => {
                   >
                     <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
                       <Calendar size={15} />
-                      {formatDate(session.createdAt)}
+                      {formatDate(session.startedAt)}
                     </span>
                     <span>•</span>
                     <span>Session: {session.status}</span>

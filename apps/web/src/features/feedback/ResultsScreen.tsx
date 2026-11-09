@@ -1,9 +1,8 @@
 // ResultsScreen.tsx
 import { useState } from "react";
-import type { TurnSpeaker, Session, Turn } from "@interview/contracts";
-import { useFeedback, useTurns, useSessionDetails } from "./useFeedback";
+import { useFeedback, useTurns } from "./useFeedback";
 import { retryFeedback } from "./feedbackApi";
-import { isEndedEarly } from "../../lib/sessionUtils";
+import type { TurnSpeaker } from "@interview/contracts";
 
 export function formatSpeaker(speaker: TurnSpeaker | string): string {
   if (speaker === "AI") return "AI Interviewer";
@@ -20,226 +19,126 @@ export function formatElapsedTime(seconds: number): string {
   return `${mm}:${ss}`;
 }
 
-export function TranscriptSection({ turns }: { turns: Turn[] }) {
-  return (
-    <details open className="transcript-section" style={{ marginTop: "1.5rem" }}>
-      <summary
-        style={{
-          cursor: "pointer",
-          fontWeight: 600,
-          fontSize: "1.15rem",
-          marginBottom: "0.75rem",
-        }}
-      >
-        Transcript
-      </summary>
-      {turns.length === 0 ? (
-        <p className="empty-state">No transcript turns recorded.</p>
-      ) : (
-        <ol
-          style={{
-            listStyle: "none",
-            padding: 0,
-            margin: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.75rem",
-          }}
-        >
-          {turns.map((turn) => (
-            <li
-              key={turn.id || `${turn.turnIndex}-${turn.timestampSec}`}
-              data-testid={`transcript-turn-${turn.turnIndex}`}
-              style={{
-                border: "1px solid var(--border-color)",
-                borderRadius: "8px",
-                padding: "0.75rem 1rem",
-                background:
-                  turn.speaker === "AI" ? "var(--primary-light)" : "var(--surface-color)",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "0.85rem",
-                  fontWeight: 600,
-                  marginBottom: "0.25rem",
-                  color: "var(--text-muted)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                }}
-              >
-                <span>{formatSpeaker(turn.speaker)}</span>
-                <span>•</span>
-                <span>{formatElapsedTime(turn.timestampSec)}</span>
-              </div>
-              <div style={{ color: "var(--text-main)", fontSize: "0.95rem" }}>{turn.text}</div>
-            </li>
-          ))}
-        </ol>
-      )}
-    </details>
-  );
-}
-
-export function ResultsScreen({
-  sessionId,
-  initialSession,
-}: {
-  sessionId: string;
-  initialSession?: Session | null;
-}) {
-  const [reloadTrigger, setReloadTrigger] = useState(0);
+export function ResultsScreen({ sessionId }: { sessionId: string }) {
+  const [reloadKey, setReloadKey] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const { feedback, error: feedbackError, isLongWait } = useFeedback(sessionId, reloadKey);
+  const { turns, isLoading, error } = useTurns(sessionId);
 
-  const { feedback, error, isLongWaiting } = useFeedback(sessionId, reloadTrigger);
-  const turns = useTurns(sessionId);
-  const fetchedSession = useSessionDetails(sessionId);
-  const session = initialSession ?? fetchedSession;
-  const endedEarly = isEndedEarly(session);
-
-  const handleRetry = async () => {
+  async function handleRetry() {
     setRetrying(true);
     setRetryError(null);
     try {
       await retryFeedback(sessionId);
-      setReloadTrigger((count) => count + 1);
-    } catch (err: any) {
-      const message =
-        err?.response?.data?.message || err?.message || "Failed to retry feedback generation.";
-      setRetryError(message);
+      setReloadKey((key) => key + 1);
+    } catch {
+      setRetryError("Couldn't restart the feedback. Please try again.");
     } finally {
       setRetrying(false);
     }
-  };
-
-  if (error && (!feedback || feedback.status === "pending")) {
-    return (
-      <div>
-        <div role="alert" style={{ marginBottom: "1.5rem" }}>
-          <p>{error}</p>
-          {retryError && (
-            <p style={{ color: "var(--error-color, #ef4444)", marginTop: "0.5rem" }}>
-              {retryError}
-            </p>
-          )}
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleRetry}
-            disabled={retrying}
-            style={{ marginTop: "1rem" }}
-          >
-            {retrying ? "Retrying…" : "Try again"}
-          </button>
-        </div>
-
-        <TranscriptSection turns={turns} />
-      </div>
-    );
   }
 
-  if (!feedback || feedback.status === "pending") {
-    return (
-      <div>
-        <div role="status">
-          <p>Preparing your feedback… this can take a moment.</p>
-          {isLongWaiting && <p>Taking longer than usual</p>}
-        </div>
-
-        <TranscriptSection turns={turns} />
-      </div>
-    );
-  }
-
-  if (feedback.status === "failed") {
-    return (
-      <div>
-        <div role="alert" style={{ marginBottom: "1.5rem" }}>
-          <p>We couldn't generate feedback for this session.</p>
-          {retryError && (
-            <p style={{ color: "var(--error-color, #ef4444)", marginTop: "0.5rem" }}>
-              {retryError}
-            </p>
-          )}
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleRetry}
-            disabled={retrying}
-            style={{ marginTop: "1rem" }}
-          >
-            {retrying ? "Retrying…" : "Try again"}
-          </button>
-        </div>
-
-        <TranscriptSection turns={turns} />
-      </div>
-    );
-  }
-
-  // status === "ready"
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "0.75rem",
-          marginBottom: "0.5rem",
-        }}
-      >
-        <h2 style={{ margin: 0 }}>Your Feedback</h2>
-        {endedEarly && (
-          <span
-            data-testid="ended-early-badge"
+      {(!feedback || feedback.status === "pending") && (
+        <div role="status">
+          <p>Preparing your feedback… this can take a moment.</p>
+          {isLongWait && <p>This is taking longer than usual.</p>}
+          {feedbackError && <p>{feedbackError}</p>}
+        </div>
+      )}
+
+      {feedback?.status === "failed" && (
+        <div role="alert">
+          <p>We couldn't generate feedback for this session.</p>
+          {retryError && <p>{retryError}</p>}
+          <button type="button" className="btn btn-primary" onClick={handleRetry} disabled={retrying}>
+            {retrying ? "Retrying…" : "Try again"}
+          </button>
+        </div>
+      )}
+
+      {feedback?.status === "ready" && (
+        <div>
+          <h2>Your Feedback</h2>
+          <p>{feedback.summary}</p>
+          <ul>
+            {feedback.scores?.map((s) => (
+              <li key={s.category}>
+                <strong>{s.category}:</strong> {s.score}/5 — {s.comment}
+                {s.strengths.length > 0 && <p>Strengths: {s.strengths.join("; ")}</p>}
+                {s.improvements.length > 0 && <p>To improve: {s.improvements.join("; ")}</p>}
+                {s.quote && <blockquote>“{s.quote}”</blockquote>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <details open className="transcript-section" style={{ marginTop: "1.5rem" }}>
+        <summary
+          style={{
+            cursor: "pointer",
+            fontWeight: 600,
+            fontSize: "1.15rem",
+            marginBottom: "0.75rem",
+          }}
+        >
+          Transcript
+        </summary>
+        {isLoading ? (
+          <p className="loading-state">Loading transcript…</p>
+        ) : error ? (
+          <p className="error-state" role="alert">
+            {error}
+          </p>
+        ) : turns.length === 0 ? (
+          <p className="empty-state">No transcript turns recorded.</p>
+        ) : (
+          <ol
             style={{
-              display: "inline-block",
-              backgroundColor: "var(--warning-bg, #fef3c7)",
-              color: "var(--warning-text, #92400e)",
-              border: "1px solid rgba(245, 158, 11, 0.3)",
-              borderRadius: "9999px",
-              padding: "0.2rem 0.6rem",
-              fontSize: "0.8rem",
-              fontWeight: 600,
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.75rem",
             }}
           >
-            Ended early
-          </span>
+            {turns.map((turn) => (
+              <li
+                key={turn.id || `${turn.turnIndex}-${turn.timestampSec}`}
+                data-testid={`transcript-turn-${turn.turnIndex}`}
+                style={{
+                  border: "1px solid var(--border-color)",
+                  borderRadius: "8px",
+                  padding: "0.75rem 1rem",
+                  background:
+                    turn.speaker === "AI" ? "var(--primary-light)" : "var(--surface-color)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "0.85rem",
+                    fontWeight: 600,
+                    marginBottom: "0.25rem",
+                    color: "var(--text-muted)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span>{formatSpeaker(turn.speaker)}</span>
+                  <span>•</span>
+                  <span>{formatElapsedTime(turn.timestampSec)}</span>
+                </div>
+                <div style={{ color: "var(--text-main)", fontSize: "0.95rem" }}>{turn.text}</div>
+              </li>
+            ))}
+          </ol>
         )}
-      </div>
-
-      <p>{feedback.summary}</p>
-      <ul
-        style={{
-          listStyle: "none",
-          padding: 0,
-          margin: "1rem 0",
-          display: "flex",
-          flexDirection: "column",
-          gap: "1rem",
-        }}
-      >
-        {feedback.scores?.map((s) => (
-          <li
-            key={s.category}
-            data-testid={`feedback-score-${s.category.toLowerCase().replace(/\s+/g, "-")}`}
-            style={{
-              border: "1px solid var(--border-color)",
-              borderRadius: "8px",
-              padding: "1rem",
-              background: "var(--surface-color)",
-            }}
-          >
-            <div>
-              <strong>{s.category}:</strong> {s.score}/5 — {s.comment}
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      <TranscriptSection turns={turns} />
+      </details>
     </div>
   );
 }

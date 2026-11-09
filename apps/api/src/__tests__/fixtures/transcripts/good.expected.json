@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "scores": [
+    {
+      "category": "Communication",
+      "min": 3,
+      "max": 5,
+      "reason": "Clear explanations of message queues, dead-letter queues, and idempotency; easy to follow throughout."
+    },
+    {
+      "category": "Technical depth",
+      "min": 3,
+      "max": 5,
+      "reason": "Correct use of exponential backoff with jitter, idempotency keys, and containerised integration tests; solid engineering practice."
+    },
+    {
+      "category": "Structure",
+      "min": 3,
+      "max": 5,
+      "reason": "Responses are well-organised with clear motivation, implementation, and testing sections."
+    }
+  ]
+}
+

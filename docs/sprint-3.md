@@ -1,5 +1,8 @@
 # Sprint 3 and 4 plan
 
+> **Superseded by [final-sprints.md](final-sprints.md).** Sections 5–7 (how to start, test locally and
+> brief an AI assistant) still apply; the owners, tasks and dates below do not.
+
 This plan replaces the old Sprint 2 issues. It covers everything until the final evaluation, so
 the whole team can see the full scope now. Each person owns **one feature that users can see**, end
 to end: the screen, the API, the database and the tests. Each person's work also includes one

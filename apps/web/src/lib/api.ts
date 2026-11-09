@@ -89,8 +89,6 @@ export const getSessions = async (): Promise<SessionsListResponse> => {
   return data;
 };
 
-export const listSessions = getSessions;
-
 export const createSession = async (roleId: string): Promise<SessionResponse> => {
   const { data } = await api.post<SessionResponse>('/sessions', { roleId });
   return data;
@@ -109,13 +107,11 @@ export const getTurns = async (sessionId: string): Promise<TurnsListResponse> =>
 export const postTurn = async (
   sessionId: string,
   speaker: TurnSpeaker,
-  text: string,
-  timestampSec: number
+  text: string
 ): Promise<TurnResponse> => {
   const { data } = await api.post<TurnResponse>(`/sessions/${sessionId}/turns`, {
     speaker,
     text,
-    timestampSec,
   });
   return data;
 };
@@ -142,12 +138,10 @@ export const getFeedback = async (sessionId: string): Promise<Feedback> => {
   return Feedback.parse(data.data);
 };
 
+// Re-queues failed feedback; the reply is the feedback back in the pending state.
 export const retryFeedback = async (sessionId: string): Promise<Feedback> => {
-  const { data } = await api.post<{ success: boolean; data?: unknown } | Feedback>(
-    `/sessions/${sessionId}/feedback/retry`
-  );
-  const payload = (data && typeof data === 'object' && 'data' in data && data.data) ? data.data : data;
-  return Feedback.parse(payload);
+  const { data } = await api.post<{ success: boolean; data?: unknown }>(`/sessions/${sessionId}/feedback/retry`);
+  return Feedback.parse(data.data);
 };
 
 export default api;

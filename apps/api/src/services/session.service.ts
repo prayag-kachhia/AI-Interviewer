@@ -1,6 +1,6 @@
 import prisma from '../utils/db';
 import { NotFoundError } from '../utils/resource';
-import { ROLES } from '@interview/contracts';
+import { FeedbackStatus, ROLES } from '@interview/contracts';
 
 // The role list lives in @interview/contracts so the API and the web app share it.
 const VALID_ROLE_IDS = new Set(ROLES.map((r) => r.id));
@@ -33,13 +33,24 @@ export class SessionEndedError extends Error {
 /**
  * Create a session for a signed-in candidate + a validated role.
  */
+
 export async function createSession(userId: string, roleId: string) {
   if (!isValidRoleId(roleId)) {
     throw new InvalidRoleError(`Unknown role id: ${roleId}`);
   }
 
+  const latestResume = await prisma.resume.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+
   return prisma.session.create({
-    data: { userId, role: roleId },
+    data: {
+      userId,
+      role: roleId,
+      resumeId: latestResume?.id ?? null,
+    },
   });
 }
 
@@ -60,47 +71,29 @@ export async function getOwnedSession(sessionId: string, userId: string) {
   return session;
 }
 
+// Matches the briefing's default time limit; sessions have no per-session limit yet.
 export const EARLY_END_THRESHOLD_MINUTES = 15;
 
-/**
- * List all sessions belonging to the authenticated user, sorted newest first.
- * Includes role, date, session status, feedback status, and endedEarly flag.
- */
+/** The user's sessions, newest first, with their feedback status and whether they ended early. */
 export async function listSessions(userId: string) {
   const sessions = await prisma.session.findMany({
     where: { userId },
     orderBy: { createdAt: 'desc' },
-    include: {
-      feedback: {
-        select: { status: true },
-      },
-    },
+    include: { feedback: { select: { status: true } } },
   });
 
-  return sessions.map((s) => {
-    let endedEarly = false;
-    if (s.status === 'ENDED' && s.startedAt && s.endedAt) {
-      const start = new Date(s.startedAt).getTime();
-      const end = new Date(s.endedAt).getTime();
-      if (!isNaN(start) && !isNaN(end) && end > start) {
-        const durationSec = (end - start) / 1000;
-        if (durationSec < EARLY_END_THRESHOLD_MINUTES * 60) {
-          endedEarly = true;
-        }
-      }
-    }
-
-    return {
-      id: s.id,
-      role: s.role,
-      status: s.status,
-      startedAt: s.startedAt instanceof Date ? s.startedAt.toISOString() : String(s.startedAt),
-      endedAt: s.endedAt ? (s.endedAt instanceof Date ? s.endedAt.toISOString() : String(s.endedAt)) : null,
-      createdAt: s.createdAt instanceof Date ? s.createdAt.toISOString() : String(s.createdAt),
-      feedbackStatus: (s.feedback?.status as any) ?? (s.status === 'ENDED' ? 'pending' : null),
-      endedEarly,
-    };
-  });
+  return sessions.map(({ feedback, ...session }) => ({
+    ...session,
+    // An ended session whose feedback row isn't written yet is still pending.
+    feedbackStatus: feedback
+      ? FeedbackStatus.parse(feedback.status)
+      : session.status === 'ENDED'
+        ? 'pending'
+        : null,
+    endedEarly:
+      session.endedAt !== null &&
+      session.endedAt.getTime() - session.startedAt.getTime() < EARLY_END_THRESHOLD_MINUTES * 60_000,
+  }));
 }
 
 export async function listTurns(sessionId: string, userId: string) {
@@ -112,14 +105,13 @@ export async function listTurns(sessionId: string, userId: string) {
 }
 
 /**
- * Store one transcript turn, after ownership + timestamp validation.
+ * Store one transcript turn, computing timestampSec on the server.
  */
 export async function addTurn(
   sessionId: string,
   userId: string,
   speaker: 'AI' | 'CANDIDATE',
-  text: string,
-  timestampSec: number
+  text: string
 ) {
   const session = await getOwnedSession(sessionId, userId);
 
@@ -128,10 +120,6 @@ export async function addTurn(
   }
 
   const elapsedSec = Math.max(0, (Date.now() - session.startedAt.getTime()) / 1000);
-  if (timestampSec > elapsedSec) {
-    throw new InvalidTimestampError();
-  }
-
   const turnCount = await prisma.turn.count({ where: { sessionId } });
 
   return prisma.turn.create({
@@ -139,7 +127,7 @@ export async function addTurn(
       sessionId,
       speaker,
       text,
-      timestampSec,
+      timestampSec: elapsedSec,
       turnIndex: turnCount + 1,
     },
   });

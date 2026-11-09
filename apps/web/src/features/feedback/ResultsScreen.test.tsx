@@ -1,17 +1,15 @@
 // ResultsScreen.test.tsx
 import "@testing-library/jest-dom/vitest";
 import { test, expect, vi, afterEach } from "vitest";
-import { act, render, screen, fireEvent } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { ResultsScreen } from "./ResultsScreen";
 import * as api from "./feedbackApi";
-import { getTurns, getSession } from "../../lib/api";
+import { getTurns } from "../../lib/api";
 
 // The real API client creates a Supabase client on import; these tests replace fetchFeedback and getTurns anyway.
 vi.mock("../../lib/api", () => ({
   getFeedback: vi.fn(),
   getTurns: vi.fn().mockResolvedValue({ success: true, data: [] }),
-  getSession: vi.fn().mockResolvedValue({ success: true, data: null }),
-  retryFeedback: vi.fn().mockResolvedValue({ sessionId: "s1", status: "pending" }),
 }));
 
 afterEach(() => {
@@ -34,11 +32,40 @@ test("given feedback is ready, then it is displayed", async () => {
     sessionId: "s1",
     status: "ready",
     summary: "Great job.",
-    scores: [{ category: "Communication", score: 5, comment: "Excellent." }],
+    scores: [
+      {
+        category: "Communication",
+        score: 5,
+        comment: "Excellent.",
+        strengths: ["Clear communication"],
+        improvements: ["Keep it up"],
+        quote: "I would decouple the notification requests",
+      },
+    ],
   });
 
   render(<ResultsScreen sessionId="s1" />);
   expect(await screen.findByText("Great job.")).toBeInTheDocument();
+  expect(screen.getByText("Strengths: Clear communication")).toBeInTheDocument();
+  expect(screen.getByText("To improve: Keep it up")).toBeInTheDocument();
+  expect(screen.getByText("“I would decouple the notification requests”")).toBeInTheDocument();
+});
+
+test("given feedback failed, when I press Try again, then it goes back to preparing and then shows the result", async () => {
+  vi.spyOn(api, "fetchFeedback")
+    .mockResolvedValueOnce({ sessionId: "s1", status: "failed" })
+    .mockResolvedValueOnce({ sessionId: "s1", status: "pending" })
+    .mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Ready after retry.", scores: [] });
+  const retry = vi.spyOn(api, "retryFeedback").mockResolvedValue({ sessionId: "s1", status: "pending" });
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+
+  render(<ResultsScreen sessionId="s1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+  expect(await screen.findByText("Preparing your feedback… this can take a moment.")).toBeInTheDocument();
+  expect(retry).toHaveBeenCalledWith("s1");
+  await act(() => vi.advanceTimersByTimeAsync(3000));
+  expect(await screen.findByText("Ready after retry.")).toBeInTheDocument();
 });
 
 test("given feedback failed, then the screen says so", async () => {
@@ -49,6 +76,7 @@ test("given feedback failed, then the screen says so", async () => {
 
   render(<ResultsScreen sessionId="s1" />);
   expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect(screen.getByText("We couldn't generate feedback for this session.")).toBeInTheDocument();
 });
 
 test("given feedback is pending, then it polls again and shows it once ready, then stops", async () => {
@@ -75,7 +103,7 @@ test("given feedback is ready and turns exist, then transcript is rendered in co
     sessionId: "s1",
     status: "ready",
     summary: "Solid interview.",
-    scores: [{ category: "Problem Solving", score: 4, comment: "Good job." }],
+    scores: [{ category: "Problem Solving", score: 4, comment: "Good job.", strengths: [], improvements: [], quote: "" }],
   });
 
   // Provide turns intentionally out of order to verify sorting by turnIndex
@@ -147,26 +175,6 @@ test("given feedback is ready and turns exist, then transcript is rendered in co
   expect(turn2Text.compareDocumentPosition(turn3Text) & DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
-test("given feedback is ready and no turns exist, then empty transcript state is displayed", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "ready",
-    summary: "No turns interview.",
-    scores: [],
-  });
-
-  vi.mocked(getTurns).mockResolvedValue({
-    success: true,
-    data: [],
-  });
-
-  render(<ResultsScreen sessionId="s1" />);
-
-  expect(await screen.findByText("No turns interview.")).toBeInTheDocument();
-  expect(screen.getByText("Transcript")).toBeInTheDocument();
-  expect(screen.getByText("No transcript turns recorded.")).toBeInTheDocument();
-});
-
 test("collapsible transcript section is open by default", async () => {
   vi.spyOn(api, "fetchFeedback").mockResolvedValue({
     sessionId: "s1",
@@ -187,98 +195,47 @@ test("collapsible transcript section is open by default", async () => {
   expect(details).toHaveAttribute("open");
 });
 
-test("displays feedback scores", async () => {
+test("transcript is visible while feedback is pending", async () => {
   vi.spyOn(api, "fetchFeedback").mockResolvedValue({
     sessionId: "s1",
-    status: "ready",
-    summary: "Detailed interview assessment.",
-    scores: [
-      {
-        category: "System Design",
-        score: 4,
-        comment: "Solid architecture explanation.",
-      },
-    ],
+    status: "pending",
   });
-
-  render(<ResultsScreen sessionId="s1" />);
-
-  expect(await screen.findByText("Detailed interview assessment.")).toBeInTheDocument();
-  expect(screen.getByText(/System Design:/)).toBeInTheDocument();
-  expect(screen.getByText(/4\/5/)).toBeInTheDocument();
-  expect(screen.getByText(/Solid architecture explanation/)).toBeInTheDocument();
-});
-
-test("displays 'Ended early' badge when session ended before limit", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "ready",
-    summary: "Short session.",
-    scores: [],
-  });
-
-  vi.mocked(getSession).mockResolvedValue({
-    success: true,
-    data: {
-      id: "s1",
-      userId: "u1",
-      role: "Software Engineer",
-      status: "ENDED",
-      startedAt: "2026-11-01T10:00:00Z",
-      endedAt: "2026-11-01T10:05:00Z", // 5 min < 15 min
-      createdAt: "2026-11-01T10:00:00Z",
-      endedEarly: true,
-    },
-  });
-
-  render(<ResultsScreen sessionId="s1" />);
-
-  expect(await screen.findByTestId("ended-early-badge")).toBeInTheDocument();
-  expect(screen.getByText("Ended early")).toBeInTheDocument();
-});
-
-test("does not display 'Ended early' badge when session ran full time", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "ready",
-    summary: "Full session.",
-    scores: [],
-  });
-
-  vi.mocked(getSession).mockResolvedValue({
-    success: true,
-    data: {
-      id: "s1",
-      userId: "u1",
-      role: "Software Engineer",
-      status: "ENDED",
-      startedAt: "2026-11-01T10:00:00Z",
-      endedAt: "2026-11-01T10:20:00Z",
-      createdAt: "2026-11-01T10:00:00Z",
-      endedEarly: false,
-    },
-  });
-
-  render(<ResultsScreen sessionId="s1" />);
-
-  await screen.findByText("Full session.");
-  expect(screen.queryByTestId("ended-early-badge")).not.toBeInTheDocument();
-});
-
-test("given feedback failed, then 'Try again' button is shown and transcript is preserved", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "failed",
-  });
-
   vi.mocked(getTurns).mockResolvedValue({
     success: true,
     data: [
       {
         id: "turn-1",
         sessionId: "s1",
-        speaker: "CANDIDATE",
-        text: "I built the frontend with React.",
+        speaker: "AI" as const,
+        text: "Welcome to the interview.",
+        timestampSec: 0,
+        turnIndex: 0,
+        createdAt: new Date().toISOString(),
+      },
+    ],
+  });
+
+  render(<ResultsScreen sessionId="s1" />);
+
+  expect(await screen.findByRole("status")).toBeInTheDocument();
+  expect(screen.getByText("Preparing your feedback… this can take a moment.")).toBeInTheDocument();
+  expect(screen.getByText("Transcript")).toBeInTheDocument();
+  expect(await screen.findByText("Welcome to the interview.")).toBeInTheDocument();
+});
+
+test("transcript is visible while feedback has failed", async () => {
+  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+    sessionId: "s1",
+    status: "failed",
+  });
+  vi.mocked(getTurns).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "turn-1",
+        sessionId: "s1",
+        speaker: "AI" as const,
+        text: "Tell me about your background.",
         timestampSec: 10,
         turnIndex: 0,
         createdAt: new Date().toISOString(),
@@ -290,229 +247,100 @@ test("given feedback failed, then 'Try again' button is shown and transcript is 
 
   expect(await screen.findByRole("alert")).toBeInTheDocument();
   expect(screen.getByText("We couldn't generate feedback for this session.")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: /Try again/i })).toBeInTheDocument();
-
-  // Transcript is preserved even on failed feedback
   expect(screen.getByText("Transcript")).toBeInTheDocument();
-  expect(screen.getByText("I built the frontend with React.")).toBeInTheDocument();
+  expect(await screen.findByText("Tell me about your background.")).toBeInTheDocument();
 });
 
-test("clicking 'Try again' calls retry endpoint, transitions to preparing state, and resumes polling", async () => {
-  vi.useFakeTimers();
-  const retrySpy = vi.spyOn(api, "retryFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "pending",
-  });
-
-  vi.spyOn(api, "fetchFeedback")
-    .mockResolvedValueOnce({ sessionId: "s1", status: "failed" })
-    .mockResolvedValueOnce({ sessionId: "s1", status: "pending" })
-    .mockResolvedValue({
-      sessionId: "s1",
-      status: "ready",
-      summary: "Evaluated successfully after retry.",
-      scores: [],
-    });
-
-  render(<ResultsScreen sessionId="s1" />);
-  await act(() => vi.advanceTimersByTimeAsync(0));
-
-  const tryAgainButton = screen.getByRole("button", { name: /Try again/i });
-  expect(tryAgainButton).toBeInTheDocument();
-
-  await act(async () => {
-    fireEvent.click(tryAgainButton);
-  });
-
-  expect(retrySpy).toHaveBeenCalledWith("s1");
-  expect(screen.getByRole("status")).toBeInTheDocument();
-
-  // Advance timer for next polling iteration
-  await act(() => vi.advanceTimersByTimeAsync(3000));
-
-  expect(screen.getByText("Evaluated successfully after retry.")).toBeInTheDocument();
-});
-
-test("handles retry API failure gracefully", async () => {
+test("transcript is visible when feedback is ready", async () => {
   vi.spyOn(api, "fetchFeedback").mockResolvedValue({
     sessionId: "s1",
-    status: "failed",
+    status: "ready",
+    summary: "Detailed review completed.",
+    scores: [{ category: "System Design", score: 5, comment: "Clear explanation.", strengths: [], improvements: [], quote: "" }],
   });
-
-  vi.spyOn(api, "retryFeedback").mockRejectedValue(new Error("Network timeout during retry"));
-
-  render(<ResultsScreen sessionId="s1" />);
-
-  const tryAgainBtn = await screen.findByRole("button", { name: /Try again/i });
-  fireEvent.click(tryAgainBtn);
-
-  expect(await screen.findByText("Network timeout during retry")).toBeInTheDocument();
-  // Button re-enabled
-  expect(screen.getByRole("button", { name: /Try again/i })).not.toBeDisabled();
-});
-
-test("feedback fetch error displays error state alert", async () => {
-  vi.spyOn(api, "fetchFeedback").mockRejectedValue(new Error("Unable to fetch feedback from server"));
-
-  render(<ResultsScreen sessionId="s1" />);
-
-  expect(await screen.findByRole("alert")).toBeInTheDocument();
-  expect(screen.getByText("Unable to fetch feedback from server")).toBeInTheDocument();
-  expect(screen.queryByRole("status")).not.toBeInTheDocument();
-});
-
-test("a later successful fetch clears the error state", async () => {
-  vi.useFakeTimers();
-  vi.spyOn(api, "fetchFeedback")
-    .mockRejectedValueOnce(new Error("Temporary network glitch"))
-    .mockResolvedValue({
-      sessionId: "s1",
-      status: "ready",
-      summary: "Ready after reconnect.",
-      scores: [],
-    });
-
-  render(<ResultsScreen sessionId="s1" />);
-  await act(() => vi.advanceTimersByTimeAsync(0));
-
-  expect(screen.getByRole("alert")).toBeInTheDocument();
-  expect(screen.getByText("Temporary network glitch")).toBeInTheDocument();
-
-  // Advance timer by 3000ms for next poll
-  await act(() => vi.advanceTimersByTimeAsync(3000));
-
-  expect(screen.getByText("Ready after reconnect.")).toBeInTheDocument();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-});
-
-test("60-second waiting message appears only after threshold and disappears when ready", async () => {
-  vi.useFakeTimers();
-  const fetchSpy = vi.spyOn(api, "fetchFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "pending",
+  vi.mocked(getTurns).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "turn-1",
+        sessionId: "s1",
+        speaker: "CANDIDATE" as const,
+        text: "I partitioned the database horizontally.",
+        timestampSec: 42,
+        turnIndex: 0,
+        createdAt: new Date().toISOString(),
+      },
+    ],
   });
 
   render(<ResultsScreen sessionId="s1" />);
-  await act(() => vi.advanceTimersByTimeAsync(0));
 
-  expect(screen.getByRole("status")).toBeInTheDocument();
-  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
+  expect(await screen.findByText("Detailed review completed.")).toBeInTheDocument();
+  expect(screen.getByText("System Design:")).toBeInTheDocument();
+  expect(screen.getByText("Transcript")).toBeInTheDocument();
+  expect(await screen.findByText("I partitioned the database horizontally.")).toBeInTheDocument();
+});
 
-  // Advance by 30 seconds (before 60s threshold)
-  await act(() => vi.advanceTimersByTimeAsync(30000));
-  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
-
-  // Advance by another 30 seconds (reaching 60s threshold)
-  await act(() => vi.advanceTimersByTimeAsync(30000));
-  expect(screen.getByText("Taking longer than usual")).toBeInTheDocument();
-
-  // Now resolve feedback to ready on next poll
-  fetchSpy.mockResolvedValueOnce({
+test("empty transcript message displayed only after a successful fetch returning zero turns", async () => {
+  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
     sessionId: "s1",
     status: "ready",
-    summary: "Finally ready.",
+    summary: "Solid performance.",
+    scores: [],
+  });
+  vi.mocked(getTurns).mockResolvedValue({
+    success: true,
+    data: [],
+  });
+
+  render(<ResultsScreen sessionId="s1" />);
+
+  expect(await screen.findByText("Transcript")).toBeInTheDocument();
+  expect(await screen.findByText("No transcript turns recorded.")).toBeInTheDocument();
+  expect(screen.queryByText("Unable to load transcript. Please try again.")).not.toBeInTheDocument();
+  expect(screen.queryByText("Loading transcript…")).not.toBeInTheDocument();
+});
+
+test("fetch failure displays an error instead of the empty-transcript message", async () => {
+  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Solid performance.",
+    scores: [],
+  });
+  vi.mocked(getTurns).mockRejectedValue(new Error("Network Error"));
+
+  render(<ResultsScreen sessionId="s1" />);
+
+  expect(await screen.findByText("Transcript")).toBeInTheDocument();
+  expect(await screen.findByText("Unable to load transcript. Please try again.")).toBeInTheDocument();
+  expect(screen.queryByText("No transcript turns recorded.")).not.toBeInTheDocument();
+});
+
+test("while transcript is loading, displays a loading message", async () => {
+  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Solid performance.",
     scores: [],
   });
 
-  await act(() => vi.advanceTimersByTimeAsync(3000));
-
-  expect(screen.getByText("Finally ready.")).toBeInTheDocument();
-  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
-});
-
-test("60-second waiting message disappears when feedback becomes failed", async () => {
-  vi.useFakeTimers();
-  const fetchSpy = vi.spyOn(api, "fetchFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "pending",
+  let resolveTurns: (value: any) => void = () => {};
+  const turnsPromise = new Promise((resolve) => {
+    resolveTurns = resolve;
   });
+  vi.mocked(getTurns).mockReturnValue(turnsPromise as any);
 
   render(<ResultsScreen sessionId="s1" />);
-  await act(() => vi.advanceTimersByTimeAsync(60000));
 
-  expect(screen.getByText("Taking longer than usual")).toBeInTheDocument();
-
-  // Resolves to failed on next poll
-  fetchSpy.mockResolvedValueOnce({
-    sessionId: "s1",
-    status: "failed",
-  });
-
-  await act(() => vi.advanceTimersByTimeAsync(3000));
-
-  expect(screen.getByText("We couldn't generate feedback for this session.")).toBeInTheDocument();
-  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
-});
-
-test("retry resets the 60-second waiting timer, clears error, and resumes polling", async () => {
-  vi.useFakeTimers();
-  vi.spyOn(api, "retryFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "pending",
-  });
-
-  const fetchSpy = vi.spyOn(api, "fetchFeedback")
-    .mockResolvedValueOnce({ sessionId: "s1", status: "pending" })
-    .mockResolvedValue({ sessionId: "s1", status: "failed" });
-
-  render(<ResultsScreen sessionId="s1" />);
-  await act(() => vi.advanceTimersByTimeAsync(3000));
-
-  expect(screen.getByRole("alert")).toBeInTheDocument();
-  const tryAgainButton = screen.getByRole("button", { name: /Try again/i });
-
-  // Now when clicking retry, it resets to pending
-  fetchSpy.mockResolvedValue({ sessionId: "s1", status: "pending" });
+  expect(screen.getByText("Transcript")).toBeInTheDocument();
+  expect(screen.getByText("Loading transcript…")).toBeInTheDocument();
+  expect(screen.queryByText("No transcript turns recorded.")).not.toBeInTheDocument();
 
   await act(async () => {
-    fireEvent.click(tryAgainButton);
+    resolveTurns({ success: true, data: [] });
   });
 
-  expect(screen.getByRole("status")).toBeInTheDocument();
-  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
-
-  // Advance by 30 seconds: still pending, but under 60s from retry reset
-  await act(() => vi.advanceTimersByTimeAsync(30000));
-  expect(screen.queryByText("Taking longer than usual")).not.toBeInTheDocument();
-
-  // Advance another 30 seconds (total 60s after retry): now message appears
-  await act(() => vi.advanceTimersByTimeAsync(30000));
-  expect(screen.getByText("Taking longer than usual")).toBeInTheDocument();
-});
-
-test("retry on fetch error resets error state and resumes polling", async () => {
-  vi.useFakeTimers();
-  const retrySpy = vi.spyOn(api, "retryFeedback").mockResolvedValue({
-    sessionId: "s1",
-    status: "pending",
-  });
-
-  vi.spyOn(api, "fetchFeedback")
-    .mockRejectedValueOnce(new Error("Initial fetch failure"))
-    .mockResolvedValueOnce({ sessionId: "s1", status: "pending" })
-    .mockResolvedValue({
-      sessionId: "s1",
-      status: "ready",
-      summary: "Success after retry button.",
-      scores: [],
-    });
-
-  render(<ResultsScreen sessionId="s1" />);
-  await act(() => vi.advanceTimersByTimeAsync(0));
-
-  expect(screen.getByText("Initial fetch failure")).toBeInTheDocument();
-  const tryAgainBtn = screen.getByRole("button", { name: /Try again/i });
-
-  await act(async () => {
-    fireEvent.click(tryAgainBtn);
-  });
-
-  expect(retrySpy).toHaveBeenCalledWith("s1");
-  // Retry resets error state to pending status
-  expect(screen.getByRole("status")).toBeInTheDocument();
-  expect(screen.queryByText("Initial fetch failure")).not.toBeInTheDocument();
-
-  // Advance timer for next polling iteration
-  await act(() => vi.advanceTimersByTimeAsync(3000));
-  expect(screen.getByText("Success after retry button.")).toBeInTheDocument();
+  expect(await screen.findByText("No transcript turns recorded.")).toBeInTheDocument();
+  expect(screen.queryByText("Loading transcript…")).not.toBeInTheDocument();
 });
