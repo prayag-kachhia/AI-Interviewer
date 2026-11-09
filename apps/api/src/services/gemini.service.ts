@@ -13,9 +13,8 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Candid
     try {
       const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 20_000 } });
       const result = await ai.models.generateContent({
-        // gemini-1.5-flash was retired, so every call failed and silently fell back to the
-        // heuristic parser. Pinned to a current model; override with GEMINI_RESUME_MODEL.
-        model: process.env.GEMINI_RESUME_MODEL?.trim() || 'gemini-3.8-flash',
+        // Pinned to a current responsive model; override with GEMINI_RESUME_MODEL.
+        model: process.env.GEMINI_RESUME_MODEL?.trim() || 'gemini-3.5-flash',
         contents: getResumeAnalysisPrompt(extractedText),
         config: { responseMimeType: 'application/json' },
       });

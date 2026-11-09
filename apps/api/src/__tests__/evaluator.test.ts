@@ -113,6 +113,23 @@ describe('FB4 — evaluator', () => {
     );
   });
 
+  it('normalizes case-insensitive rubric categories and rounds float scores', async () => {
+    const rawOutput = JSON.stringify({
+      summary: 'Solid performance.',
+      scores: [
+        { category: 'communication', score: 4.2, comment: 'Clear.' },
+        { category: 'TECHNICAL DEPTH', score: 3.7, comment: 'Good.' },
+        { category: 'structure', score: 5, comment: 'Organized.' },
+      ],
+    });
+    const result = await evaluateTranscript(SAMPLE, { generate: async () => rawOutput });
+    expect(result.scores).toEqual([
+      { category: 'Communication', score: 4, comment: 'Clear.' },
+      { category: 'Technical depth', score: 4, comment: 'Good.' },
+      { category: 'Structure', score: 5, comment: 'Organized.' },
+    ]);
+  });
+
   it('given a transcript with no candidate answers, then it fails without calling the LLM', async () => {
     const emptyTranscript = loadTranscriptFixture('empty-answers.json');
     let called = false;

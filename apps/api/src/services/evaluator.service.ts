@@ -1,6 +1,6 @@
 // The only file that calls the evaluation LLM. Given a transcript and a
 // role, it returns written feedback scored against the generic rubric.
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import { z } from 'zod';
 import { FeedbackScore, type TurnSpeaker } from '@interview/contracts';
 
@@ -25,7 +25,7 @@ export const RUBRIC = [
 export const EVALUATION_TIMEOUT_MS = 12_000;
 // A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
 // Google swaps the model behind the alias.
-const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DEFAULT_MODEL = 'gemini-3.5-flash';
 
 export interface TranscriptTurn {
   speaker: TurnSpeaker;
@@ -93,6 +93,32 @@ async function generateWithGemini(prompt: string, timeoutMs: number): Promise<Ge
     contents: prompt,
     config: {
       responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          summary: { type: Type.STRING },
+          scores: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                category: {
+                  type: Type.STRING,
+                  enum: RUBRIC.map((r) => r.category),
+                },
+                score: {
+                  type: Type.INTEGER,
+                },
+                comment: {
+                  type: Type.STRING,
+                },
+              },
+              required: ['category', 'score', 'comment'],
+            },
+          },
+        },
+        required: ['summary', 'scores'],
+      },
       temperature: 0.2,
       // Cancels the HTTP request itself when the time is up, not just our wait for it.
       abortSignal: AbortSignal.timeout(timeoutMs),
@@ -139,6 +165,33 @@ export async function evaluateTranscript(
   } catch {
     throw new Error('The evaluator did not return valid JSON');
   }
+
+  // Normalize scores: match rubric categories case-insensitively and round float scores
+  // Note: Out-of-bounds scores (< 1 or > 5) will be rejected by Evaluation.parse schema validation.
+  if (json && typeof json === 'object' && 'scores' in json && Array.isArray((json as { scores: unknown }).scores)) {
+    const rawScores = (json as { scores: unknown[] }).scores;
+    (json as { scores: unknown[] }).scores = rawScores.map((item) => {
+      if (item && typeof item === 'object') {
+        const record = { ...(item as Record<string, unknown>) };
+        const rawCategory = record.category;
+        if (typeof rawCategory === 'string') {
+          const matched = RUBRIC.find(
+            (r) => r.category.toLowerCase() === rawCategory.trim().toLowerCase()
+          );
+          if (matched) {
+            record.category = matched.category;
+          }
+        }
+        // Round floats (e.g. 4.5 -> 5) while preserving integer out-of-range checks for Zod
+        if (typeof record.score === 'number' && Number.isFinite(record.score)) {
+          record.score = Math.round(record.score);
+        }
+        return record;
+      }
+      return item;
+    });
+  }
+
   const evaluation = Evaluation.parse(json);
 
   const expected = RUBRIC.map((r) => r.category).sort();
