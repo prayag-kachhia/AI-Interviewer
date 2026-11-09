@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "scores": [
+    {
+      "category": "Communication",
+      "min": 4,
+      "max": 5,
+      "reason": "Precise technical vocabulary; every explanation includes the underlying mechanism (Lua atomicity, index ordering direction)."
+    },
+    {
+      "category": "Technical depth",
+      "min": 4,
+      "max": 5,
+      "reason": "Specific algorithms, complexity analysis (O(1), O(log N + K)), EXPLAIN ANALYZE, and production trade-offs cited."
+    },
+    {
+      "category": "Structure",
+      "min": 4,
+      "max": 5,
+      "reason": "Answers follow context → approach → result and stay tightly on the question asked."
+    }
+  ]
+}
+

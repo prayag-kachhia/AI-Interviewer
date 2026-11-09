@@ -1,5 +1,4 @@
-// Per-role evaluation rubrics with distinct categories and criteria (Issue #93, FR-20, DR-03, DR-04).
-import { ROLES } from '@interview/contracts';
+// The evaluation rubric for each interview role (FR-20, DR-03, DR-04). Changing one needs the lead's approval.
 
 export interface RubricCategory {
   readonly category: string;
@@ -75,29 +74,8 @@ const RUBRICS_BY_ROLE: Record<string, Rubric> = {
   'backend-developer': BACKEND_DEVELOPER_RUBRIC,
 };
 
-/**
- * Returns the role-specific rubric for evaluation.
- * Throws UnknownRoleError if the role ID is not recognized.
- */
 export function getRubric(roleId: string): Rubric {
-  if (!roleId || typeof roleId !== 'string') {
-    throw new UnknownRoleError(String(roleId));
-  }
-
-  const normalized = roleId.trim().toLowerCase();
-
-  // Match by exact role ID
-  if (RUBRICS_BY_ROLE[normalized]) {
-    return RUBRICS_BY_ROLE[normalized];
-  }
-
-  // Fallback match by role label (e.g., "Software Engineer" -> "software-engineer")
-  const matchedRole = ROLES.find(
-    (r) => r.id.toLowerCase() === normalized || r.label.toLowerCase() === normalized
-  );
-  if (matchedRole && RUBRICS_BY_ROLE[matchedRole.id]) {
-    return RUBRICS_BY_ROLE[matchedRole.id];
-  }
-
-  throw new UnknownRoleError(roleId);
+  const rubric = RUBRICS_BY_ROLE[roleId];
+  if (!rubric) throw new UnknownRoleError(roleId);
+  return rubric;
 }

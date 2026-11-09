@@ -1,0 +1,35 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Software Engineer interview. How would you design a URL-shortening service like bit.ly?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "That is a very interesting question. I have always found the internet fascinating because it connects people all over the world. URLs are everywhere in daily life. Technology is advancing so rapidly and I am passionate about keeping up with new trends in the industry."
+  },
+  {
+    "speaker": "AI",
+    "text": "Can you describe the components involved in storing and redirecting shortened URLs at scale?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "In my college group project, everyone had different opinions but we managed to collaborate and finish on time. I think teamwork and good communication are the most important skills in software engineering. I also like to stay updated by reading tech blogs."
+  },
+  {
+    "speaker": "AI",
+    "text": "What encoding scheme would you use to generate the short codes, and how do you avoid collisions?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I studied many data structures in college—arrays, stacks, queues, and trees. The data structures course was my favourite because the professor gave great examples. Knowing data structures is essential for every engineer and I practise on coding platforms in my spare time."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you handle a high volume of redirect requests efficiently?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Efficiency is something I care about deeply in all aspects of life, not just coding. I try to be organised and punctual. I have heard that cloud computing can help handle large amounts of traffic, which seems useful. A good work-life balance also improves overall productivity."
+  }
+]
+

@@ -53,6 +53,7 @@ export type Turn = z.infer<typeof Turn>;
 export const Session = z.object({
   id: z.string(),
   userId: z.string(),
+  resumeId: z.string().nullable().optional(),
   role: z.string(),
   status: SessionStatus,
   startedAt: z.string(),
@@ -87,6 +88,5 @@ export const Feedback = z.object({
   status: FeedbackStatus,
   summary: z.string().optional(),
   scores: z.array(FeedbackScore).optional(),
-  error: z.string().optional(),
 });
 export type Feedback = z.infer<typeof Feedback>;

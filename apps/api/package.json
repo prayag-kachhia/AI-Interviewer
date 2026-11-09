@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit -p .",
     "db:generate": "prisma generate",
     "postinstall": "prisma generate",
-    "worker": "bun src/worker.ts"
+    "worker": "bun src/worker.ts",
+    "bench": "bun scripts/bench.ts"
   },
   "keywords": [],
   "author": "",

@@ -66,6 +66,24 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
   const setupCompleteTimeRef = useRef<number | null>(null);
   const firstAudioLoggedRef = useRef(false);
 
+  // Session resumption state (Issue #91, FR-12, NFR-04)
+  const resumptionHandleRef = useRef<string | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const isDeliberateCloseRef = useRef(false);
+  const connectRef = useRef<() => Promise<void>>(() => Promise.resolve());
+
+  // Initialize stored handle from sessionStorage if available (e.g. on page reload)
+  if (!resumptionHandleRef.current && sessionId) {
+    try {
+      const stored = sessionStorage.getItem(`gemini_resumption_${sessionId}`);
+      if (stored) {
+        resumptionHandleRef.current = stored;
+      }
+    } catch {
+      // ignore storage access errors
+    }
+  }
+
   // Keep callback refs fresh
   const onTranscriptionRef = useRef(onTranscription);
   onTranscriptionRef.current = onTranscription;
@@ -121,6 +139,10 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     if (wsRef.current) {
       const ws = wsRef.current;
       wsRef.current = null;
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
         ws.close();
       }
@@ -130,9 +152,19 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
   }, []);
 
   const disconnect = useCallback(() => {
+    isDeliberateCloseRef.current = true;
+    reconnectAttemptsRef.current = 0;
+    resumptionHandleRef.current = null;
+    if (sessionId) {
+      try {
+        sessionStorage.removeItem(`gemini_resumption_${sessionId}`);
+      } catch {
+        // ignore
+      }
+    }
     cleanupAudioAndSocket();
     setState('closed');
-  }, [cleanupAudioAndSocket]);
+  }, [sessionId, cleanupAudioAndSocket]);
 
   const setMuted = useCallback((muted: boolean) => {
     setIsMutedState(muted);
@@ -143,6 +175,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
   }, []);
 
   const connect = useCallback(async () => {
+    isDeliberateCloseRef.current = false;
+
     if (!sessionId) {
       const err = new Error('No sessionId provided to useGeminiLive');
       setErrorMessage(err.message);
@@ -155,6 +189,23 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
     setErrorMessage(null);
     firstAudioLoggedRef.current = false;
     setupCompleteTimeRef.current = null;
+
+    const triggerReconnect = () => {
+      if (isDeliberateCloseRef.current) return;
+      if (reconnectAttemptsRef.current >= 3) {
+        const maxErr = new Error('Reconnection failed after 3 attempts');
+        setErrorMessage(maxErr.message);
+        setState('failed');
+        onErrorRef.current?.(maxErr);
+        cleanupAudioAndSocket();
+        return;
+      }
+
+      reconnectAttemptsRef.current += 1;
+      console.info(`[useGeminiLive] Reconnecting session (attempt ${reconnectAttemptsRef.current}/3)...`);
+      cleanupAudioAndSocket();
+      connectRef.current();
+    };
 
     try {
       // 1. Fetch ephemeral voice token from backend
@@ -194,22 +245,29 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
 
       ws.onopen = () => {
         // Send initial setup without model or systemInstruction (locked into token by backend)
-        const setupMsg = {
-          setup: {
-            generationConfig: {
-              responseModalities: ['AUDIO'],
-              speechConfig: {
-                voiceConfig: {
-                  prebuiltVoiceConfig: {
-                    voiceName: 'Puck',
-                  },
+        const setup: Record<string, unknown> = {
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: 'Puck',
                 },
               },
             },
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
           },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
         };
+
+        // If resuming an existing session, supply the stored resumption handle (Issue #91)
+        if (resumptionHandleRef.current) {
+          setup.sessionResumption = {
+            handle: resumptionHandleRef.current,
+          };
+        }
+
+        const setupMsg = { setup };
         ws.send(JSON.stringify(setupMsg));
       };
 
@@ -219,9 +277,36 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
             event.data instanceof Blob ? await event.data.text() : (event.data as string);
           const response = JSON.parse(raw);
 
+          // Handle sessionResumptionUpdate (Issue #91, FR-12, NFR-04)
+          const resumptionUpdate = response.sessionResumptionUpdate;
+          if (resumptionUpdate) {
+            const newHandle =
+              resumptionUpdate.newHandle ||
+              resumptionUpdate.handle ||
+              resumptionUpdate.token;
+            if (typeof newHandle === 'string' && newHandle) {
+              resumptionHandleRef.current = newHandle;
+              if (sessionId) {
+                try {
+                  sessionStorage.setItem(`gemini_resumption_${sessionId}`, newHandle);
+                } catch {
+                  // ignore storage errors
+                }
+              }
+            }
+          }
+
+          // Handle GoAway signal from Gemini Live
+          if (response.goAway || response.serverContent?.goAway) {
+            console.info('[useGeminiLive] Received GoAway from Gemini Live, reconnecting with resumption handle...');
+            triggerReconnect();
+            return;
+          }
+
           // Handle setupComplete
           if (response.setupComplete) {
             setupCompleteTimeRef.current = performance.now();
+            reconnectAttemptsRef.current = 0; // Reset reconnection counter on success
             setState('connected');
 
             // Begin microphone audio streaming
@@ -338,18 +423,41 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
       };
 
       ws.onerror = () => {
-        const err = new Error('Gemini Live WebSocket connection failed');
-        setErrorMessage(err.message);
-        setState('failed');
-        onErrorRef.current?.(err);
-        cleanupAudioAndSocket();
+        if (isDeliberateCloseRef.current) return;
+        if (reconnectAttemptsRef.current < 3 && resumptionHandleRef.current) {
+          triggerReconnect();
+        } else {
+          const err = new Error('Gemini Live WebSocket connection failed');
+          setErrorMessage(err.message);
+          setState('failed');
+          onErrorRef.current?.(err);
+          cleanupAudioAndSocket();
+        }
       };
 
       ws.onclose = () => {
-        setState((curr) => (curr === 'failed' ? 'failed' : 'closed'));
-        cleanupAudioAndSocket();
+        if (isDeliberateCloseRef.current) {
+          setState('closed');
+          cleanupAudioAndSocket();
+        } else {
+          // Unexpected socket close while LIVE: try session resumption reconnect
+          if (reconnectAttemptsRef.current < 3) {
+            triggerReconnect();
+          } else {
+            const err = new Error('Reconnection failed after 3 attempts');
+            setErrorMessage(err.message);
+            setState('failed');
+            onErrorRef.current?.(err);
+            cleanupAudioAndSocket();
+          }
+        }
       };
     } catch (err) {
+      if (isDeliberateCloseRef.current) return;
+      if (reconnectAttemptsRef.current < 3 && resumptionHandleRef.current) {
+        triggerReconnect();
+        return;
+      }
       const error = err instanceof Error ? err : new Error(String(err));
       setErrorMessage(error.message);
       setState('failed');
@@ -357,6 +465,8 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveRetur
       cleanupAudioAndSocket();
     }
   }, [sessionId, cleanupAudioAndSocket]);
+
+  connectRef.current = connect;
 
   // Clean up on component unmount
   useEffect(() => {

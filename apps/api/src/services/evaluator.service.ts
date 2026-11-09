@@ -1,17 +1,14 @@
-
-// The only file that calls the evaluation LLM (FB4). Given a transcript and a
-// role, it returns written feedback scored against the role-specific rubric (Issue #93).
+// The only file that calls the evaluation LLM. Given a transcript and a
+// role, it returns written feedback scored against that role's rubric.
 import { GoogleGenAI } from '@google/genai';
 import { z } from 'zod';
 import { FeedbackScore, ROLES, type TurnSpeaker } from '@interview/contracts';
-import { getRubric, SOFTWARE_ENGINEER_RUBRIC } from './rubrics';
-
-// Backwards compatibility export: default rubric for Software Engineer
-export const RUBRIC = SOFTWARE_ENGINEER_RUBRIC;
+import { getRubric } from './rubrics';
 
 // Leaves room inside the 15-second feedback budget for polling and the database.
 export const EVALUATION_TIMEOUT_MS = 12_000;
-// Pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift.
+// A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
+// Google swaps the model behind the alias.
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 export interface TranscriptTurn {
@@ -20,96 +17,46 @@ export interface TranscriptTurn {
 }
 
 export interface EvaluationInput {
-  roleId?: string;
-  roleLabel: string;
+  roleId: string;
   turns: TranscriptTurn[];
+}
+
+export interface EvaluationUsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
 }
 
 const Evaluation = z.object({
   summary: z.string().min(1),
   scores: z.array(FeedbackScore),
 });
-export type Evaluation = z.infer<typeof Evaluation>;
+export type Evaluation = z.infer<typeof Evaluation> & {
+  usageMetadata?: EvaluationUsageMetadata;
+};
+
+export interface GenerateResult {
+  text: string;
+  usageMetadata?: EvaluationUsageMetadata;
+}
 
 export interface EvaluatorOptions {
   // Replaces the Gemini call; tests use it so no test reaches the real API.
-  generate?: (prompt: string) => Promise<string>;
+  generate?: (prompt: string) => Promise<string | GenerateResult>;
   timeoutMs?: number;
 }
 
-/**
- * Resolves the role ID from EvaluationInput, falling back to label lookup.
- */
-export function resolveRoleId(input: EvaluationInput): string {
-  if (input.roleId) {
-    return input.roleId;
-  }
-  const normalized = input.roleLabel.trim().toLowerCase();
-  const matched = ROLES.find(
-    (r) => r.id.toLowerCase() === normalized || r.label.toLowerCase() === normalized
-  );
-  return matched?.id ?? input.roleLabel;
-}
-
-/**
- * Normalizes text by trimming, collapsing consecutive whitespace to single spaces,
- * and stripping surrounding quotation marks.
- */
-export function normalizeQuote(text: string): string {
-  return text
-    .trim()
-    .replace(/^["'“”]/, '')
-    .replace(/["'“”]$/, '')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-/**
- * Validates whether a candidate quote appears verbatim in the candidate's transcript turns.
- */
-export function isQuoteInCandidateTurns(quote: string, candidateTurns: TranscriptTurn[]): boolean {
-  const normalizedQuote = normalizeQuote(quote);
-  if (!normalizedQuote) {
-    return false;
-  }
-  return candidateTurns.some((turn) => {
-    const normalizedTurn = turn.text.replace(/\s+/g, ' ');
-    return normalizedTurn.includes(normalizedQuote);
-  });
-}
-
-/**
- * Strict server-side quote validation against candidate transcript text.
- * Throws an Error if any quote is missing, empty, or not found verbatim in candidate turns.
- */
-export function validateEvaluationQuotes(scores: FeedbackScore[], turns: TranscriptTurn[]): void {
-  const candidateTurns = turns.filter((t) => t.speaker === 'CANDIDATE');
-
-  for (const item of scores) {
-    if (!item.quote || !normalizeQuote(item.quote)) {
-      throw new Error(`Quote validation failed: Quote for category "${item.category}" is empty`);
-    }
-
-    if (!isQuoteInCandidateTurns(item.quote, candidateTurns)) {
-      throw new Error(
-        `Quote validation failed: Quote for category "${item.category}" was not found in candidate transcript: "${item.quote}"`
-      );
-    }
-  }
-}
-
-export function buildEvaluationPrompt(input: EvaluationInput): string {
-  const roleId = resolveRoleId(input);
-  const rubric = getRubric(roleId);
-
-  const rubricText = rubric.map((r) => `- ${r.category}: ${r.criteria}`).join('\n');
-  const transcript = input.turns
+export function buildEvaluationPrompt({ roleId, turns }: EvaluationInput): string {
+  const roleLabel = ROLES.find((r) => r.id === roleId)?.label ?? roleId;
+  const rubric = getRubric(roleId)
+    .map((r) => `- ${r.category}: ${r.criteria}`)
+    .join('\n');
+  const transcript = turns
     .map((t) => `${t.speaker === 'AI' ? 'Interviewer' : 'Candidate'}: ${t.text}`)
     .join('\n');
-
-  return `You are evaluating a mock job interview for the role "${input.roleLabel}".
-Score ONLY the candidate's answers, using this role-specific rubric. Each score is an integer from 1 (poor) to 5 (excellent).
-${rubricText}
+  return `You are evaluating a mock job interview for the role "${roleLabel}".
+Score ONLY the candidate's answers, using this rubric. Each score is an integer from 1 (poor) to 5 (excellent).
+${rubric}
 
 Evaluation Instructions:
 1. Technical & Role-Specific Evaluation:
@@ -154,7 +101,7 @@ Transcript:
 ${transcript}`;
 }
 
-async function generateWithGemini(prompt: string, timeoutMs: number): Promise<string> {
+async function generateWithGemini(prompt: string, timeoutMs: number): Promise<GenerateResult> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured');
@@ -170,7 +117,16 @@ async function generateWithGemini(prompt: string, timeoutMs: number): Promise<st
       abortSignal: AbortSignal.timeout(timeoutMs),
     },
   });
-  return response.text ?? '';
+  return {
+    text: response.text ?? '',
+    usageMetadata: response.usageMetadata
+      ? {
+          promptTokenCount: response.usageMetadata.promptTokenCount,
+          candidatesTokenCount: response.usageMetadata.candidatesTokenCount,
+          totalTokenCount: response.usageMetadata.totalTokenCount,
+        }
+      : undefined,
+  };
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -189,30 +145,30 @@ export async function evaluateTranscript(
     throw new Error('The transcript has no candidate answers to evaluate');
   }
 
-  const roleId = resolveRoleId(input);
-  const rubric = getRubric(roleId);
-
   const timeoutMs = options.timeoutMs ?? EVALUATION_TIMEOUT_MS;
   const prompt = buildEvaluationPrompt(input);
   const generate = options.generate ?? ((p: string) => generateWithGemini(p, timeoutMs));
-  const raw = await withTimeout(generate(prompt), timeoutMs);
+  const rawResult = await withTimeout(generate(prompt), timeoutMs);
+  const text = typeof rawResult === 'string' ? rawResult : rawResult.text;
+  const usageMetadata = typeof rawResult === 'string' ? undefined : rawResult.usageMetadata;
 
   let json: unknown;
   try {
-    json = JSON.parse(raw);
+    json = JSON.parse(text);
   } catch {
     throw new Error('The evaluator did not return valid JSON');
   }
   const evaluation = Evaluation.parse(json);
 
-  const expected = rubric.map((r) => r.category).sort();
+  const expected = getRubric(input.roleId)
+    .map((r) => r.category)
+    .sort();
   const received = evaluation.scores.map((s) => s.category).sort();
   if (JSON.stringify(expected) !== JSON.stringify(received)) {
     throw new Error(`The evaluator scored [${received.join(', ')}] instead of the rubric categories`);
   }
-
-  // Strict server-side quote validation against candidate transcript
-  validateEvaluationQuotes(evaluation.scores, input.turns);
-
-  return evaluation;
+  return {
+    ...evaluation,
+    ...(usageMetadata ? { usageMetadata } : {}),
+  };
 }

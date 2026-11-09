@@ -33,13 +33,24 @@ export class SessionEndedError extends Error {
 /**
  * Create a session for a signed-in candidate + a validated role.
  */
+
 export async function createSession(userId: string, roleId: string) {
   if (!isValidRoleId(roleId)) {
     throw new InvalidRoleError(`Unknown role id: ${roleId}`);
   }
 
+  const latestResume = await prisma.resume.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+
   return prisma.session.create({
-    data: { userId, role: roleId },
+    data: {
+      userId,
+      role: roleId,
+      resumeId: latestResume?.id ?? null,
+    },
   });
 }
 
@@ -69,14 +80,13 @@ export async function listTurns(sessionId: string, userId: string) {
 }
 
 /**
- * Store one transcript turn, after ownership + timestamp validation.
+ * Store one transcript turn, computing timestampSec on the server.
  */
 export async function addTurn(
   sessionId: string,
   userId: string,
   speaker: 'AI' | 'CANDIDATE',
-  text: string,
-  timestampSec: number
+  text: string
 ) {
   const session = await getOwnedSession(sessionId, userId);
 
@@ -85,10 +95,6 @@ export async function addTurn(
   }
 
   const elapsedSec = Math.max(0, (Date.now() - session.startedAt.getTime()) / 1000);
-  if (timestampSec > elapsedSec) {
-    throw new InvalidTimestampError();
-  }
-
   const turnCount = await prisma.turn.count({ where: { sessionId } });
 
   return prisma.turn.create({
@@ -96,7 +102,7 @@ export async function addTurn(
       sessionId,
       speaker,
       text,
-      timestampSec,
+      timestampSec: elapsedSec,
       turnIndex: turnCount + 1,
     },
   });

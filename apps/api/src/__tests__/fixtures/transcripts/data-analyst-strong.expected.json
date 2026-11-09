@@ -1,0 +1,24 @@
+{
+  "role": "data-analyst",
+  "scores": [
+    {
+      "category": "Communication",
+      "min": 4,
+      "max": 5,
+      "reason": "SQL quoted in-line with precise semantics (ROWS vs RANGE distinction); reasoning is clear and self-contained."
+    },
+    {
+      "category": "Technical depth",
+      "min": 4,
+      "max": 5,
+      "reason": "Correct window function syntax, layered pipeline validation strategy, and structured root-cause decomposition."
+    },
+    {
+      "category": "Structure",
+      "min": 4,
+      "max": 5,
+      "reason": "Every answer follows a clear method: profile → approach → edge cases → stakeholder communication."
+    }
+  ]
+}
+
