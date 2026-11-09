@@ -113,7 +113,7 @@ export async function runCLI(argv: string[] = process.argv.slice(2)) {
 
     const start = performance.now();
     const evaluation = await evaluateTranscript({
-      roleLabel: role.label,
+      roleId: role.id,
       turns,
     });
     const wallTimeMs = Math.round(performance.now() - start);

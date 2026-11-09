@@ -32,7 +32,16 @@ test("given feedback is ready, then it is displayed", async () => {
     sessionId: "s1",
     status: "ready",
     summary: "Great job.",
-    scores: [{ category: "Communication", score: 5, comment: "Excellent." }],
+    scores: [
+      {
+        category: "Communication",
+        score: 5,
+        comment: "Excellent.",
+        strengths: ["Clear communication"],
+        improvements: ["Keep it up"],
+        quote: "I would decouple the notification requests",
+      },
+    ],
   });
 
   render(<ResultsScreen sessionId="s1" />);
@@ -74,7 +83,7 @@ test("given feedback is ready and turns exist, then transcript is rendered in co
     sessionId: "s1",
     status: "ready",
     summary: "Solid interview.",
-    scores: [{ category: "Problem Solving", score: 4, comment: "Good job." }],
+    scores: [{ category: "Problem Solving", score: 4, comment: "Good job.", strengths: [], improvements: [], quote: "" }],
   });
 
   // Provide turns intentionally out of order to verify sorting by turnIndex
@@ -227,7 +236,7 @@ test("transcript is visible when feedback is ready", async () => {
     sessionId: "s1",
     status: "ready",
     summary: "Detailed review completed.",
-    scores: [{ category: "System Design", score: 5, comment: "Clear explanation." }],
+    scores: [{ category: "System Design", score: 5, comment: "Clear explanation.", strengths: [], improvements: [], quote: "" }],
   });
   vi.mocked(getTurns).mockResolvedValue({
     success: true,
