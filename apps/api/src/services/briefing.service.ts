@@ -1,4 +1,5 @@
 import { ROLES } from '@interview/contracts';
+import type { Session } from '../generated/prisma/client';
 import prisma from '../utils/db';
 import { summarizeProfile } from './resume-summary';
 
@@ -9,17 +10,6 @@ export interface BriefingInput {
   level?: string;
   resumeSummary?: string;
   pastQuestions?: string[];
-  timeLimitMin?: number;
-}
-
-export interface SessionLike {
-  id?: string;
-  role: string;
-  userId?: string;
-  resumeId?: string | null;
-  focus?: string | null;
-  company?: string | null;
-  level?: string | null;
   timeLimitMin?: number;
 }
 
@@ -63,7 +53,7 @@ You are conducting a professional mock technical interview for the position of "
 ${roleInfo.description}`
   );
 
-  // 2. Focus area (if provided, FR-07)
+  // 2. Focus area (if provided)
   if (focus && focus.trim()) {
     sections.push(
       `PRIMARY FOCUS AREA:
@@ -72,7 +62,7 @@ Concentrate your technical evaluation and question scenarios primarily around th
     );
   }
 
-  // 3. Target Company / Organization (if provided, P-7)
+  // 3. Target company (if provided)
   if (company && company.trim()) {
     sections.push(
       `TARGET COMPANY / ORGANIZATION:
@@ -81,7 +71,7 @@ Tailor your questions, engineering culture expectations, and technical scenarios
     );
   }
 
-  // 4. Seniority Level (if provided, P-7)
+  // 4. Seniority level (if provided)
   if (level && level.trim()) {
     sections.push(
       `TARGET SENIORITY LEVEL:
@@ -140,61 +130,23 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
 }
 
 /**
- * Loads role, resume summary (from VM-1's resumeId), focus, company, level,
- * past questions, and time limit for a given session, and builds the unified briefing (K-1, FR-17, DR-01).
- * Powers all interviewer paths: Gemini Live voice tokens, browser-speech fallback, and typed mode (PK-3).
+ * Builds the interviewer briefing for a session: its role plus the summary of its linked resume.
+ * Focus, company and level are passed through once the session stores them.
  */
-export async function briefingFor(session: SessionLike): Promise<string> {
-  const roleId = session.role;
-  const focus = session.focus?.trim() || undefined;
-  const company = session.company?.trim() || undefined;
-  const level = session.level?.trim() || undefined;
-  const timeLimitMin = session.timeLimitMin ?? 15;
+export async function briefingFor(session: Pick<Session, 'role' | 'resumeId'>): Promise<string> {
+  let resumeSummary: string | undefined;
 
-  let resumeParsedProfile: string | null = null;
-
-  // 1. Look up resume by direct resumeId link (VM-1, FR-08, FR-09)
-  if (session.resumeId && prisma.resume?.findUnique) {
+  if (session.resumeId) {
     const resume = await prisma.resume.findUnique({
       where: { id: session.resumeId },
       select: { parsedProfile: true },
     });
-    resumeParsedProfile = resume?.parsedProfile ?? null;
-  }
 
-  // 2. Fallback if session has no direct resumeId or not found (e.g. legacy sessions or test mocks)
-  if (!resumeParsedProfile && session.userId && prisma.resume?.findFirst) {
-    const fallbackResume = await prisma.resume.findFirst({
-      where: { userId: session.userId },
-      orderBy: { createdAt: 'desc' },
-      select: { parsedProfile: true },
-    });
-    resumeParsedProfile = fallbackResume?.parsedProfile ?? null;
-  }
-
-  let resumeSummary: string | undefined;
-
-  if (resumeParsedProfile) {
-    try {
-      const profile = JSON.parse(resumeParsedProfile);
-      const summary = summarizeProfile(profile);
+    if (resume?.parsedProfile) {
+      const summary = summarizeProfile(JSON.parse(resume.parsedProfile));
       resumeSummary = summary.trim() ? summary : undefined;
-    } catch {
-      // Fallback for raw text profiles (e.g. in test fixtures or legacy records)
-      resumeSummary = resumeParsedProfile.trim() || undefined;
     }
   }
 
-  // Past questions will be populated by PK-7; empty until then
-  const pastQuestions: string[] = [];
-
-  return buildBriefing({
-    roleId,
-    focus,
-    company,
-    level,
-    resumeSummary,
-    pastQuestions,
-    timeLimitMin,
-  });
+  return buildBriefing({ roleId: session.role, resumeSummary });
 }
