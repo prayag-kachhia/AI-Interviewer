@@ -11,6 +11,7 @@ import {
 } from '../services/session.service';
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
 import { briefingFor } from '../services/briefing.service';
+import { generateNextQuestion, InterviewerTimeoutError } from '../services/interviewer.service';
 import { NotFoundError } from '../utils/resource';
 import { RoleList, ROLES, VoiceToken } from '@interview/contracts';
 
@@ -160,5 +161,31 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
     // Provider errors can carry provider details; log them, never return them.
     console.error('Voice token error:', error);
     res.status(500).json({ success: false, message: 'Failed to start the voice session' });
+  }
+};
+
+// POST /api/sessions/:id/next-question
+export const postNextQuestion = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const id = req.params.id as string;
+
+    const turn = await generateNextQuestion(id, userId);
+    res.status(200).json({ success: true, data: turn });
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+    if (error instanceof SessionEndedError) {
+      res.status(409).json({ success: false, message: error.message });
+      return;
+    }
+    if (error instanceof InterviewerTimeoutError) {
+      res.status(503).json({ success: false, message: error.message });
+      return;
+    }
+    console.error('Next question error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate next interview question' });
   }
 };
