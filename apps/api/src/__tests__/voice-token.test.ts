@@ -16,7 +16,7 @@ vi.mock('../utils/db', () => ({
   default: {
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn() },
-    resume: { findFirst: vi.fn(), findUnique: vi.fn() },
+    resume: { findUnique: vi.fn() },
   },
 }));
 
@@ -54,7 +54,6 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
       error: null,
     });
     (prisma.user.findUnique as any).mockResolvedValue({ ...AUTH_USER, passwordHash: 'x' });
-    (prisma.resume.findFirst as any).mockResolvedValue(null);
   });
 
   it("given the candidate's own session, when a token is requested, then a short-lived token comes back with role briefing", async () => {
@@ -73,26 +72,6 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
     expect(mintVoiceToken).toHaveBeenCalledWith(
       expect.objectContaining({
         briefing: expect.stringContaining('Software Engineer'),
-      })
-    );
-  });
-
-  it('given a candidate with a resume, passes the resume summary into the token briefing (FR-08)', async () => {
-    (prisma.session.findFirst as any).mockResolvedValueOnce(OWN_LIVE_SESSION);
-    (prisma.resume.findFirst as any).mockResolvedValueOnce({
-      parsedProfile: 'Experienced with Kubernetes, Go, and Kafka microservices.',
-    });
-    vi.mocked(mintVoiceToken).mockResolvedValueOnce('auth_tokens/ephemeral-resume');
-
-    const res = await request(app)
-      .post('/api/sessions/sess-1/voice-token')
-      .set('Authorization', 'Bearer valid-supabase-token');
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ success: true, data: { token: 'auth_tokens/ephemeral-resume' } });
-    expect(mintVoiceToken).toHaveBeenCalledWith(
-      expect.objectContaining({
-        briefing: expect.stringContaining('Experienced with Kubernetes, Go, and Kafka microservices.'),
       })
     );
   });

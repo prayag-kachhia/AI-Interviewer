@@ -4,7 +4,7 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Profile } from './pages/Profile';
 import { NewInterview, InterviewRoom } from './features/sessions';
-import { ResultsPage } from './features/feedback';
+import { ResultsPage, HistoryPage } from './features/feedback';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -22,6 +22,7 @@ function App() {
             {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/history" element={<HistoryPage />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/new-interview" element={<NewInterview />} />
               <Route path="/interview/:sessionId" element={<InterviewRoom />} />

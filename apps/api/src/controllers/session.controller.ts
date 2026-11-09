@@ -2,17 +2,18 @@ import { Request, Response } from 'express';
 import {
   createSession,
   getOwnedSession,
+  listSessions,
   listTurns,
   addTurn,
   endSession,
+  deleteSession,
   InvalidRoleError,
   InvalidTimestampError,
   SessionEndedError,
 } from '../services/session.service';
-import { summarizeProfile } from '../services/resume-summary';
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
-import { buildBriefing } from '../services/briefing.service';
-import prisma from '../utils/db';
+import { briefingFor } from '../services/briefing.service';
+import { generateNextQuestion, InterviewerTimeoutError } from '../services/interviewer.service';
 import { NotFoundError } from '../utils/resource';
 import { RoleList, ROLES, VoiceToken } from '@interview/contracts';
 
@@ -40,6 +41,18 @@ export const postSession = async (req: Request, res: Response): Promise<void> =>
     }
     console.error('Create session error:', error);
     res.status(500).json({ success: false, message: 'Failed to create session' });
+  }
+};
+
+// GET /api/sessions (list sessions for authenticated user)
+export const getSessions = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const sessions = await listSessions(userId);
+    res.status(200).json({ success: true, data: sessions });
+  } catch (error) {
+    console.error('Get sessions error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch sessions' });
   }
 };
 
@@ -142,45 +155,7 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
       throw new SessionEndedError();
     }
 
-    // Look up the candidate's resume associated with this session (FR-08, FR-09)
-    let resumeParsedProfile: string | null = null;
-
-    if (session.resumeId && prisma.resume?.findUnique) {
-      const resume = await prisma.resume.findUnique({
-        where: { id: session.resumeId },
-        select: { parsedProfile: true },
-      });
-      resumeParsedProfile = resume?.parsedProfile ?? null;
-    }
-
-    // Fallback if session has no direct resumeId or not found (e.g. legacy sessions or test mocks)
-    if (!resumeParsedProfile && prisma.resume?.findFirst) {
-      const fallbackResume = await prisma.resume.findFirst({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        select: { parsedProfile: true },
-      });
-      resumeParsedProfile = fallbackResume?.parsedProfile ?? null;
-    }
-
-    let resumeSummary: string | undefined;
-
-    if (resumeParsedProfile) {
-      try {
-        const profile = JSON.parse(resumeParsedProfile);
-        const summary = summarizeProfile(profile);
-        resumeSummary = summary.trim() ? summary : undefined;
-      } catch {
-        // Fallback for raw text profiles (e.g. in test fixtures or legacy records)
-        resumeSummary = resumeParsedProfile.trim() || undefined;
-      }
-    }
-
-    const briefing = buildBriefing({
-      roleId: session.role,
-      focus: (session as any).focus,
-      resumeSummary,
-    });
+    const briefing = await briefingFor(session);
 
     const token = await mintVoiceToken({ briefing });
     res.status(200).json({ success: true, data: VoiceToken.parse({ token }) });
@@ -200,5 +175,49 @@ export const postVoiceToken = async (req: Request, res: Response): Promise<void>
     // Provider errors can carry provider details; log them, never return them.
     console.error('Voice token error:', error);
     res.status(500).json({ success: false, message: 'Failed to start the voice session' });
+  }
+};
+
+// POST /api/sessions/:id/next-question
+export const postNextQuestion = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const id = req.params.id as string;
+
+    const turn = await generateNextQuestion(id, userId);
+    res.status(200).json({ success: true, data: turn });
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+    if (error instanceof SessionEndedError) {
+      res.status(409).json({ success: false, message: error.message });
+      return;
+    }
+    if (error instanceof InterviewerTimeoutError) {
+      res.status(503).json({ success: false, message: error.message });
+      return;
+    }
+    console.error('Next question error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate next interview question' });
+  }
+};
+
+// DELETE /api/sessions/:id
+export const deleteSessionById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const id = req.params.id as string;
+
+    await deleteSession(id, userId);
+    res.status(200).json({ success: true, message: 'Session deleted successfully' });
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      res.status(404).json({ success: false, message: 'Resource not found' });
+      return;
+    }
+    console.error('Delete session error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete session' });
   }
 };

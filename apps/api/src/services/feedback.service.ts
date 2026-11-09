@@ -1,5 +1,5 @@
 import type { Feedback, Job, Prisma } from '../generated/prisma/client';
-import { Feedback as FeedbackContract, ROLES } from '@interview/contracts';
+import { Feedback as FeedbackContract } from '@interview/contracts';
 import prisma from '../utils/db';
 import { evaluateTranscript, type EvaluatorOptions } from './evaluator.service';
 import { getOwnedSession } from './session.service';
@@ -72,10 +72,8 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
     where: { id: job.sessionId },
     include: { turns: { orderBy: { turnIndex: 'asc' } } },
   });
-  const roleLabel = ROLES.find((r) => r.id === session.role)?.label ?? session.role;
-
   try {
-    const evaluation = await evaluateTranscript({ roleLabel, turns: session.turns }, options);
+    const evaluation = await evaluateTranscript({ roleId: session.role, turns: session.turns }, options);
     await saveFeedback({
       sessionId: session.id,
       status: 'ready',

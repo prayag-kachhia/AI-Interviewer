@@ -48,9 +48,30 @@ const JOB = {
   attempts: 1, lockedBy: 'w', lockedAt: new Date(), lastError: null, createdAt: new Date(), updatedAt: new Date(),
 };
 const SCORES = [
-  { category: 'Communication', score: 4, comment: 'Clear.' },
-  { category: 'Technical depth', score: 3, comment: 'Surface level.' },
-  { category: 'Structure', score: 4, comment: 'Organised.' },
+  {
+    category: 'Communication',
+    score: 4,
+    comment: 'Clear.',
+    strengths: ['Concise and clear explanations.'],
+    improvements: ['Could elaborate on architecture choices.'],
+    quote: 'I built one.',
+  },
+  {
+    category: 'Technical depth',
+    score: 3,
+    comment: 'Surface level.',
+    strengths: ['Basic knowledge demonstrated.'],
+    improvements: ['Include specific technical trade-offs.'],
+    quote: 'I built one.',
+  },
+  {
+    category: 'Structure',
+    score: 4,
+    comment: 'Organised.',
+    strengths: ['Well-structured approach.'],
+    improvements: ['Could structure with STAR.'],
+    quote: 'I built one.',
+  },
 ];
 
 beforeEach(() => {
@@ -67,7 +88,7 @@ describe('FB3 — session.ended job handler', () => {
     await handleSessionEnded(JOB);
 
     expect(evaluateTranscript).toHaveBeenCalledWith(
-      { roleLabel: 'Backend Developer', turns: TURNS },
+      { roleId: 'backend-developer', turns: TURNS },
       {}
     );
     expect(prisma.feedback.upsert).toHaveBeenCalledWith({
@@ -139,6 +160,19 @@ describe('FB3 — GET /api/sessions/:id/feedback', () => {
     const res = await get('someone-elses');
 
     expect(res.status).toBe(404);
+    expect(prisma.feedback.findUnique).not.toHaveBeenCalled();
+  });
+
+  // Test 4: Deleted session feedback
+  it('TEST 4: given a deleted session, then retrieving feedback returns 404', async () => {
+    // Once session is deleted, getOwnedSession returns null/NotFoundError
+    (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+    const res = await get('deleted-sess-1');
+
+    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('Resource not found');
     expect(prisma.feedback.findUnique).not.toHaveBeenCalled();
   });
 

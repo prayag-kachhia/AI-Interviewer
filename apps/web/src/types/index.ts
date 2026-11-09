@@ -59,6 +59,12 @@ export type TurnData = Turn;
 
 export type SessionData = Session;
 
+export interface SessionsListResponse {
+  success: boolean;
+  message?: string;
+  data?: SessionData[];
+}
+
 export interface RolesResponse {
   success: boolean;
   message?: string;
