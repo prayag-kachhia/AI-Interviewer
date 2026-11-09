@@ -1,6 +1,6 @@
 // The only file that calls the evaluation LLM. Given a transcript and a
 // role, it returns written feedback scored against that role's rubric.
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type, type Schema } from '@google/genai';
 import { z } from 'zod';
 import { FeedbackScore, ROLES, type TurnSpeaker } from '@interview/contracts';
 import { getRubric } from './rubrics';
@@ -101,7 +101,37 @@ Transcript:
 ${transcript}`;
 }
 
-async function generateWithGemini(prompt: string, timeoutMs: number): Promise<GenerateResult> {
+// Structured output: Gemini must return exactly this shape, with categories limited to the rubric's.
+export function evaluationSchema(categories: string[]): Schema {
+  return {
+    type: Type.OBJECT,
+    properties: {
+      summary: { type: Type.STRING },
+      scores: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            category: { type: Type.STRING, enum: categories },
+            score: { type: Type.INTEGER },
+            comment: { type: Type.STRING },
+            strengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+            improvements: { type: Type.ARRAY, items: { type: Type.STRING } },
+            quote: { type: Type.STRING },
+          },
+          required: ['category', 'score', 'comment', 'strengths', 'improvements', 'quote'],
+        },
+      },
+    },
+    required: ['summary', 'scores'],
+  };
+}
+
+async function generateWithGemini(
+  prompt: string,
+  categories: string[],
+  timeoutMs: number
+): Promise<GenerateResult> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured');
@@ -112,6 +142,7 @@ async function generateWithGemini(prompt: string, timeoutMs: number): Promise<Ge
     contents: prompt,
     config: {
       responseMimeType: 'application/json',
+      responseSchema: evaluationSchema(categories),
       temperature: 0.2,
       // Cancels the HTTP request itself when the time is up, not just our wait for it.
       abortSignal: AbortSignal.timeout(timeoutMs),
@@ -146,8 +177,9 @@ export async function evaluateTranscript(
   }
 
   const timeoutMs = options.timeoutMs ?? EVALUATION_TIMEOUT_MS;
+  const categories = getRubric(input.roleId).map((r) => r.category);
   const prompt = buildEvaluationPrompt(input);
-  const generate = options.generate ?? ((p: string) => generateWithGemini(p, timeoutMs));
+  const generate = options.generate ?? ((p: string) => generateWithGemini(p, categories, timeoutMs));
   const rawResult = await withTimeout(generate(prompt), timeoutMs);
   const text = typeof rawResult === 'string' ? rawResult : rawResult.text;
   const usageMetadata = typeof rawResult === 'string' ? undefined : rawResult.usageMetadata;
@@ -160,9 +192,7 @@ export async function evaluateTranscript(
   }
   const evaluation = Evaluation.parse(json);
 
-  const expected = getRubric(input.roleId)
-    .map((r) => r.category)
-    .sort();
+  const expected = [...categories].sort();
   const received = evaluation.scores.map((s) => s.category).sort();
   if (JSON.stringify(expected) !== JSON.stringify(received)) {
     throw new Error(`The evaluator scored [${received.join(', ')}] instead of the rubric categories`);

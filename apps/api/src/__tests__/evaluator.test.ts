@@ -5,6 +5,7 @@ import { TurnSpeaker } from '@interview/contracts';
 import {
   evaluateTranscript,
   buildEvaluationPrompt,
+  evaluationSchema,
   type EvaluationInput,
   type TranscriptTurn,
 } from '../services/evaluator.service';
@@ -167,5 +168,13 @@ describe('FB4 — evaluator', () => {
     expect(prompt).toContain('"strengths"');
     expect(prompt).toContain('"improvements"');
     expect(prompt).toContain('"quote"');
+  });
+
+  it("limits Gemini's structured output to the role's rubric categories", () => {
+    const categories = getRubric('data-analyst').map((r) => r.category);
+    const item = evaluationSchema(categories).properties?.scores?.items;
+
+    expect(item?.properties?.category?.enum).toEqual(categories);
+    expect(item?.required).toEqual(['category', 'score', 'comment', 'strengths', 'improvements', 'quote']);
   });
 });
