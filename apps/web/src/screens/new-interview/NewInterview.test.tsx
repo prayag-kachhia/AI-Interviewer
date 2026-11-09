@@ -3,9 +3,9 @@ import { test, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { NewInterview } from './NewInterview';
-import * as api from '../lib/api';
+import * as api from '../../lib/api';
 
-vi.mock('../lib/api', () => ({
+vi.mock('../../lib/api', () => ({
   createSession: vi.fn(),
   getRoles: vi.fn().mockResolvedValue({
     success: true,

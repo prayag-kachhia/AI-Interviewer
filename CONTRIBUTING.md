@@ -21,12 +21,8 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
 
 ## Architecture rules
 
-- **Web: import a feature only through `apps/web/src/features/<name>/index.ts`.** Inside a
-  feature, use relative imports.
 - **API: one file per resource.** `routes/<resource>.ts` holds the URLs and handlers, handlers
   call `services/`, and `middleware/auth.ts` and `db.ts` (the Prisma client) are shared.
-- **Dependency direction:** `identity ← profile ← sessions ← feedback`. `sessions` never
-  imports `feedback`; it inserts a `session.ended` job in the same transaction that ends the session instead.
 - **The web calls the API only through `apps/web/src/lib/api.ts`**, which attaches the Supabase
   access token.
 - **The browser never sees provider API keys** and never queries Supabase tables directly.

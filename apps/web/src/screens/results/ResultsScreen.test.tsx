@@ -1,25 +1,25 @@
 // ResultsScreen.test.tsx
 import "@testing-library/jest-dom/vitest";
 import { test, expect, vi, afterEach } from "vitest";
-import { act, fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ResultsScreen } from "./ResultsScreen";
-import * as api from "./feedbackApi";
-import { deleteSession, getTurns } from "../../lib/api";
+import { deleteSession, getFeedback, getTurns, retryFeedback } from "../../lib/api";
 
-// The real API client creates a Supabase client on import; these tests replace fetchFeedback and getTurns anyway.
+// The real API client creates a Supabase client on import; these tests replace its calls anyway.
 vi.mock("../../lib/api", () => ({
   getFeedback: vi.fn(),
+  retryFeedback: vi.fn(),
   getTurns: vi.fn().mockResolvedValue({ success: true, data: [] }),
   deleteSession: vi.fn(),
 }));
 
-// The results screen navigates after a delete, so it renders inside a router with a History stand-in.
-function render(ui: React.ReactElement) {
-  return rtlRender(
-    <MemoryRouter initialEntries={["/results"]}>
+// The screen reads its session id from the route and goes to History after a delete.
+function renderResults() {
+  return render(
+    <MemoryRouter initialEntries={["/interview/s1/feedback"]}>
       <Routes>
-        <Route path="/results" element={ui} />
+        <Route path="/interview/:sessionId/feedback" element={<ResultsScreen />} />
         <Route path="/history" element={<p>History page</p>} />
       </Routes>
     </MemoryRouter>
@@ -29,20 +29,23 @@ function render(ui: React.ReactElement) {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.mocked(getFeedback).mockReset();
+  vi.mocked(retryFeedback).mockReset();
+  vi.mocked(deleteSession).mockReset();
 });
 
 test("given feedback is pending, then it shows preparing and keeps polling", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "pending",
   });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
   expect(await screen.findByRole("status")).toBeInTheDocument();
 });
 
 test("given feedback is ready, then it is displayed", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "ready",
     summary: "Great job.",
@@ -58,7 +61,7 @@ test("given feedback is ready, then it is displayed", async () => {
     ],
   });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
   expect(await screen.findByText("Great job.")).toBeInTheDocument();
   expect(screen.getByText("Strengths: Clear communication")).toBeInTheDocument();
   expect(screen.getByText("To improve: Keep it up")).toBeInTheDocument();
@@ -66,14 +69,14 @@ test("given feedback is ready, then it is displayed", async () => {
 });
 
 test("given feedback failed, when I press Try again, then it goes back to preparing and then shows the result", async () => {
-  vi.spyOn(api, "fetchFeedback")
+  vi.mocked(getFeedback)
     .mockResolvedValueOnce({ sessionId: "s1", status: "failed" })
     .mockResolvedValueOnce({ sessionId: "s1", status: "pending" })
     .mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Ready after retry.", scores: [] });
-  const retry = vi.spyOn(api, "retryFeedback").mockResolvedValue({ sessionId: "s1", status: "pending" });
+  const retry = vi.mocked(retryFeedback).mockResolvedValue({ sessionId: "s1", status: "pending" });
   vi.useFakeTimers({ shouldAdvanceTime: true });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
   fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
 
   expect(await screen.findByText("Preparing your feedback… this can take a moment.")).toBeInTheDocument();
@@ -83,12 +86,12 @@ test("given feedback failed, when I press Try again, then it goes back to prepar
 });
 
 test("given feedback failed, then the screen says so", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "failed",
   });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
   expect(await screen.findByRole("alert")).toBeInTheDocument();
   expect(screen.getByText("We couldn't generate feedback for this session.")).toBeInTheDocument();
 });
@@ -96,11 +99,11 @@ test("given feedback failed, then the screen says so", async () => {
 test("given feedback is pending, then it polls again and shows it once ready, then stops", async () => {
   vi.useFakeTimers();
   const fetchSpy = vi
-    .spyOn(api, "fetchFeedback")
+    .mocked(getFeedback)
     .mockResolvedValueOnce({ sessionId: "s1", status: "pending" })
     .mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Ready now.", scores: [] });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
   await act(() => vi.advanceTimersByTimeAsync(0));
   expect(screen.getByRole("status")).toBeInTheDocument();
 
@@ -113,7 +116,7 @@ test("given feedback is pending, then it polls again and shows it once ready, th
 });
 
 test("given feedback is ready and turns exist, then transcript is rendered in correct order with correct speaker labels and elapsed time", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "ready",
     summary: "Solid interview.",
@@ -156,7 +159,7 @@ test("given feedback is ready and turns exist, then transcript is rendered in co
     data: mockTurns,
   });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
 
   // Wait for ready state
   expect(await screen.findByText("Solid interview.")).toBeInTheDocument();
@@ -190,7 +193,7 @@ test("given feedback is ready and turns exist, then transcript is rendered in co
 });
 
 test("collapsible transcript section is open by default", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "ready",
     summary: "Overview.",
@@ -202,7 +205,7 @@ test("collapsible transcript section is open by default", async () => {
     data: [],
   });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
 
   const summary = await screen.findByText("Transcript");
   const details = summary.closest("details");
@@ -210,7 +213,7 @@ test("collapsible transcript section is open by default", async () => {
 });
 
 test("transcript is visible while feedback is pending", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "pending",
   });
@@ -229,7 +232,7 @@ test("transcript is visible while feedback is pending", async () => {
     ],
   });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
 
   expect(await screen.findByRole("status")).toBeInTheDocument();
   expect(screen.getByText("Preparing your feedback… this can take a moment.")).toBeInTheDocument();
@@ -238,7 +241,7 @@ test("transcript is visible while feedback is pending", async () => {
 });
 
 test("transcript is visible while feedback has failed", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "failed",
   });
@@ -257,7 +260,7 @@ test("transcript is visible while feedback has failed", async () => {
     ],
   });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
 
   expect(await screen.findByRole("alert")).toBeInTheDocument();
   expect(screen.getByText("We couldn't generate feedback for this session.")).toBeInTheDocument();
@@ -266,7 +269,7 @@ test("transcript is visible while feedback has failed", async () => {
 });
 
 test("transcript is visible when feedback is ready", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "ready",
     summary: "Detailed review completed.",
@@ -287,7 +290,7 @@ test("transcript is visible when feedback is ready", async () => {
     ],
   });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
 
   expect(await screen.findByText("Detailed review completed.")).toBeInTheDocument();
   expect(screen.getByText("System Design:")).toBeInTheDocument();
@@ -296,7 +299,7 @@ test("transcript is visible when feedback is ready", async () => {
 });
 
 test("empty transcript message displayed only after a successful fetch returning zero turns", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "ready",
     summary: "Solid performance.",
@@ -307,7 +310,7 @@ test("empty transcript message displayed only after a successful fetch returning
     data: [],
   });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
 
   expect(await screen.findByText("Transcript")).toBeInTheDocument();
   expect(await screen.findByText("No transcript turns recorded.")).toBeInTheDocument();
@@ -316,7 +319,7 @@ test("empty transcript message displayed only after a successful fetch returning
 });
 
 test("fetch failure displays an error instead of the empty-transcript message", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "ready",
     summary: "Solid performance.",
@@ -324,7 +327,7 @@ test("fetch failure displays an error instead of the empty-transcript message", 
   });
   vi.mocked(getTurns).mockRejectedValue(new Error("Network Error"));
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
 
   expect(await screen.findByText("Transcript")).toBeInTheDocument();
   expect(await screen.findByText("Unable to load transcript. Please try again.")).toBeInTheDocument();
@@ -332,7 +335,7 @@ test("fetch failure displays an error instead of the empty-transcript message", 
 });
 
 test("while transcript is loading, displays a loading message", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({
+  vi.mocked(getFeedback).mockResolvedValue({
     sessionId: "s1",
     status: "ready",
     summary: "Solid performance.",
@@ -345,7 +348,7 @@ test("while transcript is loading, displays a loading message", async () => {
   });
   vi.mocked(getTurns).mockReturnValue(turnsPromise as any);
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
 
   expect(screen.getByText("Transcript")).toBeInTheDocument();
   expect(screen.getByText("Loading transcript…")).toBeInTheDocument();
@@ -360,10 +363,10 @@ test("while transcript is loading, displays a loading message", async () => {
 });
 
 test("given I cancel the confirmation, then nothing is deleted", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({ sessionId: "s1", status: "failed" });
+  vi.mocked(getFeedback).mockResolvedValue({ sessionId: "s1", status: "failed" });
   vi.spyOn(window, "confirm").mockReturnValue(false);
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
   fireEvent.click(await screen.findByRole("button", { name: "Delete interview" }));
 
   expect(window.confirm).toHaveBeenCalled();
@@ -371,11 +374,11 @@ test("given I cancel the confirmation, then nothing is deleted", async () => {
 });
 
 test("given I confirm, then the interview is deleted and I go to History", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Great job.", scores: [] });
+  vi.mocked(getFeedback).mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Great job.", scores: [] });
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(deleteSession).mockResolvedValueOnce({ success: true });
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
   fireEvent.click(await screen.findByRole("button", { name: "Delete interview" }));
 
   expect(await screen.findByText("History page")).toBeInTheDocument();
@@ -383,11 +386,11 @@ test("given I confirm, then the interview is deleted and I go to History", async
 });
 
 test("given the delete fails, then an error shows and I can try again", async () => {
-  vi.spyOn(api, "fetchFeedback").mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Great job.", scores: [] });
+  vi.mocked(getFeedback).mockResolvedValue({ sessionId: "s1", status: "ready", summary: "Great job.", scores: [] });
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(deleteSession).mockRejectedValueOnce(new Error("Network error"));
 
-  render(<ResultsScreen sessionId="s1" />);
+  renderResults();
   fireEvent.click(await screen.findByRole("button", { name: "Delete interview" }));
 
   expect(await screen.findByText("Couldn't delete the interview. Please try again.")).toBeInTheDocument();

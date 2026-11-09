@@ -1,20 +1,22 @@
 // useFeedback.ts
 import { useEffect, useState } from "react";
 import type { Feedback, Turn } from "@interview/contracts";
-import { getTurns } from "../../lib/api";
-import { fetchFeedback } from "./feedbackApi";
+import { getFeedback, getTurns } from "../../lib/api";
 
 const POLL_INTERVAL_MS = 3000;
 // After this long still pending, the screen says it is taking longer than usual.
 const LONG_WAIT_MS = 60_000;
 
 // Polls until the feedback is ready or failed. Bump `reloadKey` (after a retry) to start polling again.
-export function useFeedback(sessionId: string, reloadKey = 0) {
+// sessionId is undefined only before the results screen redirects away; the hook then does nothing.
+export function useFeedback(sessionId: string | undefined, reloadKey = 0) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLongWait, setIsLongWait] = useState(false);
 
   useEffect(() => {
+    if (!sessionId) return;
+    const id = sessionId;
     let cancelled = false;
     let intervalId: ReturnType<typeof setInterval>;
     setError(null);
@@ -28,7 +30,7 @@ export function useFeedback(sessionId: string, reloadKey = 0) {
 
     async function poll() {
       try {
-        const result = await fetchFeedback(sessionId);
+        const result = await getFeedback(id);
         if (cancelled) return;
         setFeedback(result);
         setError(null);
@@ -59,7 +61,7 @@ export interface UseTurnsResult {
   status: "loading" | "success" | "error";
 }
 
-export function useTurns(sessionId: string): UseTurnsResult {
+export function useTurns(sessionId: string | undefined): UseTurnsResult {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(Boolean(sessionId));
   const [error, setError] = useState<string | null>(null);
@@ -67,12 +69,12 @@ export function useTurns(sessionId: string): UseTurnsResult {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadTurns() {
+    async function loadTurns(id: string) {
       setIsLoading(true);
       setError(null);
 
       try {
-        const response = await getTurns(sessionId);
+        const response = await getTurns(id);
         if (cancelled) return;
         if (response && response.success === false) {
           throw new Error(response.message || "Unable to load transcript. Please try again.");
@@ -91,7 +93,7 @@ export function useTurns(sessionId: string): UseTurnsResult {
     }
 
     if (sessionId) {
-      loadTurns();
+      loadTurns(sessionId);
     } else {
       setIsLoading(false);
       setTurns([]);

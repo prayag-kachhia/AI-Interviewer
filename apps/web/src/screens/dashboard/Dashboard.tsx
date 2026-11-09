@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { UploadCloud, FileText, CheckCircle, ArrowRight, Loader2, AlertCircle, UserCircle2, BrainCircuit } from 'lucide-react';
-import { uploadResume, getLatestResume } from '../lib/api';
-import { useAuth } from '../context/AuthContext';
+import { uploadResume, getLatestResume } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
 
 export const Dashboard: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);

@@ -186,13 +186,13 @@ Every requirement maps to code, tests, and current delivery status.
 | Req ID | Priority | Description | Issue / PR | Code File(s) | Test File(s) | Status | Notes / Deferral Reason |
 |---|---|---|---|---|---|---|---|
 | **FR-01** | Must | Email/password account creation & sign in | #23, #119 | `apps/web/src/context/AuthContext.tsx`, `apps/api/src/routes/auth.ts` | `apps/api/src/__tests__/auth.test.ts` | Done | Backed by Supabase Auth |
-| **FR-02** | Should | Google OAuth account creation & sign in | #119 | `apps/web/src/pages/Login.tsx`, `apps/web/src/context/AuthContext.tsx` | `apps/web/src/pages/Login.test.tsx` | Done | Google OAuth via Supabase |
-| **FR-03** | Must | Candidate sign out | #23 | `apps/web/src/context/AuthContext.tsx`, `apps/web/src/components/Navbar.tsx` | `apps/web/src/pages/Login.test.tsx` | Done | Invalidates active session |
-| **FR-04** | Should | Password reset via email code | #138 | `apps/web/src/pages/ResetPassword.tsx` | `apps/web/src/__tests__/auth.test.tsx` | In Progress | |
+| **FR-02** | Should | Google OAuth account creation & sign in | #119 | `apps/web/src/screens/login/Login.tsx`, `apps/web/src/context/AuthContext.tsx` | `apps/web/src/screens/login/Login.test.tsx` | Done | Google OAuth via Supabase |
+| **FR-03** | Must | Candidate sign out | #23 | `apps/web/src/context/AuthContext.tsx`, `apps/web/src/components/Navbar.tsx` | `apps/web/src/screens/login/Login.test.tsx` | Done | Invalidates active session |
+| **FR-04** | Should | Password reset via email code | #138 | `apps/web/src/screens/reset-password/ResetPassword.tsx` | `apps/web/src/__tests__/auth.test.tsx` | In Progress | |
 | **FR-05** | Should | End session on browser close unless 'stay signed in' | #139 | `apps/web/src/context/AuthContext.tsx` | | In Progress | |
-| **FR-06** | Must | Role selection list before session start | #24 | `apps/web/src/pages/NewInterview.tsx`, `packages/contracts/src/roles.ts` | `apps/api/src/__tests__/session.test.ts` | Done | Shared contract ROLES catalogue |
-| **FR-07** | Should | Select interview focus within role | #141 | `apps/web/src/pages/NewInterview.tsx` | | In Progress | |
-| **FR-08** | Should | Resume file upload | #25, #123 | `apps/api/src/services/resume.service.ts`, `apps/web/src/pages/ResumeUpload.tsx` | `apps/api/src/__tests__/resume.test.ts` | Done | Stored in Supabase Storage |
+| **FR-06** | Must | Role selection list before session start | #24 | `apps/web/src/screens/new-interview/NewInterview.tsx`, `packages/contracts/src/roles.ts` | `apps/api/src/__tests__/session.test.ts` | Done | Shared contract ROLES catalogue |
+| **FR-07** | Should | Select interview focus within role | #141 | `apps/web/src/screens/new-interview/NewInterview.tsx` | | In Progress | |
+| **FR-08** | Should | Resume file upload | #25, #123 | `apps/api/src/services/resume.service.ts`, `apps/web/src/screens/resume-upload/ResumeUpload.tsx` | `apps/api/src/__tests__/resume.test.ts` | Done | Stored in Supabase Storage |
 | **FR-09** | Should | Ask question referencing resume content | #87, #123 | `apps/api/src/services/briefing.service.ts` | `apps/api/src/__tests__/briefing.test.ts` | Done | Injected into Gemini Live prompt |
 | **FR-10** | Could | GitHub username context retrieval | #158 | `apps/api/src/services/github.service.ts` | | In Progress | |
 | **FR-11** | Could | Custom profile text context upload | #159 | `apps/api/src/services/briefing.service.ts` | | In Progress | |
@@ -202,21 +202,21 @@ Every requirement maps to code, tests, and current delivery status.
 | **FR-15** | Must | No repeated questions in same session | #87 | `apps/api/src/services/briefing.service.ts` | `apps/api/src/__tests__/briefing.test.ts` | Done | Enforced by session prompt history |
 | **FR-16** | Could | No repeated questions across last 3 sessions | #162 | `apps/api/src/services/session.service.ts` | | In Progress | |
 | **FR-17** | Should | Interviewer persona matching role and focus | #87 | `apps/api/src/services/briefing.service.ts` | `apps/api/src/__tests__/briefing.test.ts` | Done | Role-tailored persona prompt |
-| **FR-18** | Must | Early exit from interview session | #26, #126 | `apps/web/src/features/sessions/useInterview.ts`, `apps/api/src/services/session.service.ts` | `apps/api/src/__tests__/session.test.ts` | Done | `POST /api/sessions/:id/end` |
-| **FR-19** | Could | Record early-end reason | #165 | `apps/web/src/features/sessions/InterviewRoom.tsx` | | In Progress | |
+| **FR-18** | Must | Early exit from interview session | #26, #126 | `apps/web/src/screens/interview-room/useInterview.ts`, `apps/api/src/services/session.service.ts` | `apps/api/src/__tests__/session.test.ts` | Done | `POST /api/sessions/:id/end` |
+| **FR-19** | Could | Record early-end reason | #165 | `apps/web/src/screens/interview-room/InterviewRoom.tsx` | | In Progress | |
 | **FR-20** | Must | Evaluation against role-specific rubric | #27, #122 | `apps/api/src/services/evaluator.ts` | `apps/api/src/__tests__/evaluator.test.ts` | Done | Per-role rubric prompts |
 | **FR-21** | Must | Structured feedback with strengths and improvement areas | #27, #122 | `apps/api/src/services/evaluator.ts`, `packages/contracts/src/feedback.ts` | `apps/api/src/__tests__/evaluator.test.ts` | Done | Validated by Zod contract |
-| **FR-22** | Must | Display feedback after session ends | #28 | `apps/web/src/features/feedback/ResultsScreen.tsx` | `apps/web/src/features/feedback/ResultsScreen.test.tsx` | Done | Polling with reactive status |
-| **FR-23** | Should | Live feedback preparation notice without reload | #28 | `apps/web/src/features/feedback/ResultsScreen.tsx` | `apps/web/src/features/feedback/ResultsScreen.test.tsx` | Done | Auto-polling until ready |
+| **FR-22** | Must | Display feedback after session ends | #28 | `apps/web/src/screens/results/ResultsScreen.tsx` | `apps/web/src/screens/results/ResultsScreen.test.tsx` | Done | Polling with reactive status |
+| **FR-23** | Should | Live feedback preparation notice without reload | #28 | `apps/web/src/screens/results/ResultsScreen.tsx` | `apps/web/src/screens/results/ResultsScreen.test.tsx` | Done | Auto-polling until ready |
 | **FR-24** | Must | Transcript persistence for completed session | #26, #106 | `apps/api/src/services/session.service.ts`, `apps/web/src/lib/api.ts` | `apps/api/src/__tests__/session.test.ts` | Done | Stored in `turns` table |
-| **FR-25** | Should | List past sessions with role and outcome | #29 | `apps/web/src/pages/History.tsx` | `apps/api/src/__tests__/session.test.ts` | Done | History screen with session cards |
-| **FR-26** | Should | View past transcripts and feedback | #29 | `apps/web/src/pages/History.tsx`, `apps/web/src/pages/SessionDetails.tsx` | `apps/api/src/__tests__/session.test.ts` | Done | Historical review views |
+| **FR-25** | Should | List past sessions with role and outcome | #29 | `apps/web/src/screens/history/HistoryPage.tsx` | `apps/api/src/__tests__/session.test.ts` | Done | History screen with session cards |
+| **FR-26** | Should | View past transcripts and feedback | #29 | `apps/web/src/screens/history/HistoryPage.tsx`, `apps/web/src/screens/session-details/SessionDetails.tsx` | `apps/api/src/__tests__/session.test.ts` | Done | Historical review views |
 | **FR-27** | Must | Restrict access to candidate's own sessions (404) | #26, #27 | `apps/api/src/services/session.service.ts` (`getOwnedSession`) | `apps/api/src/__tests__/session.test.ts`, `apps/api/src/__tests__/feedback.test.ts` | Done | Ownership check returns 404 |
 | **FR-28** | Must | Delete own past sessions & data | #118 | `apps/api/src/services/session.service.ts` | `apps/api/src/__tests__/session.test.ts` | Done | Cascade delete on user session |
 | **FR-29** | Could | Mark session for retention past 30 days | #170 | `apps/api/src/services/session.service.ts` | | In Progress | |
-| **FR-30** | Should | Full typed interview mode (no microphone needed) | #171 | `apps/web/src/features/sessions/TypedAnswerBox.tsx`, `apps/api/src/routes/session.ts` | `apps/web/src/lib/__tests__/transcriptAccumulator.test.ts` | Done | Spoken & typed answer fallback |
+| **FR-30** | Should | Full typed interview mode (no microphone needed) | #171 | `apps/web/src/screens/interview-room/TypedAnswerBox.tsx`, `apps/api/src/routes/session.ts` | `apps/web/src/lib/__tests__/transcriptAccumulator.test.ts` | Done | Spoken & typed answer fallback |
 | **FR-31** | Should | Add/edit roles without code change | #172 | — | — | Deferred | Out of scope for MVP; roles defined in shared contracts |
-| **FR-32** | Should | Owner dashboard reporting session count, duration, cost | #201 | `apps/api/src/routes/admin.ts`, `apps/web/src/pages/AdminDashboard.tsx` | `apps/api/src/__tests__/admin.test.ts` | In Progress | Sprint 5 task RJ-10 |
+| **FR-32** | Should | Owner dashboard reporting session count, duration, cost | #201 | `apps/api/src/routes/admin.ts`, `apps/web/src/screens/admin-dashboard/AdminDashboard.tsx` | `apps/api/src/__tests__/admin.test.ts` | In Progress | Sprint 5 task RJ-10 |
 | **NFR-01** | Must | Spoken response within 5 seconds for ≥95% of turns | #146 | `apps/web/src/lib/geminiLiveAdapter.ts` | `apps/web/src/lib/geminiLiveAdapter.test.ts` | Done | Directly measured via Gemini Live WebSockets |
 | **NFR-02** | Should | Barge-in interruption stops audio within 500 ms | #105, #110 | `apps/web/src/lib/geminiLiveAdapter.ts` | `apps/web/src/lib/__tests__/transcriptAccumulator.test.ts` | Done | Client stops playback instantly on voice activity |
 | **NFR-03** | Must | Structured feedback within 15 seconds for ≥95% of sessions | #86, #122 | `apps/api/src/services/evaluator.ts`, `apps/api/src/worker.ts` | `apps/api/src/__tests__/evaluator.test.ts` | Done | Timed benchmarked background worker |
@@ -229,7 +229,7 @@ Every requirement maps to code, tests, and current delivery status.
 | **NFR-10** | Must | Server-side transcript corroboration for evaluation | #180 | `apps/api/src/services/session.service.ts` | `apps/api/src/__tests__/session.test.ts` | Done | Server manages and stamps official turn log |
 | **NFR-11** | Must | Auto-delete sessions & recordings within 30 days | #181 | `apps/api/src/worker.ts` | `apps/api/src/__tests__/retention.test.ts` | In Progress | Sprint 5 scheduled cleanup job |
 | **NFR-12** | Must | No personal data transmitted to non-essential third parties | Architecture | `apps/api/src/server.ts` | Codebase audit | Done | Only Gemini API and Supabase accessed |
-| **NFR-13** | Should | First-time user can start session unaided in <5 minutes | UX | `apps/web/src/pages/NewInterview.tsx` | Usability trial | Done | 2-click interview setup flow |
+| **NFR-13** | Should | First-time user can start session unaided in <5 minutes | UX | `apps/web/src/screens/new-interview/NewInterview.tsx` | Usability trial | Done | 2-click interview setup flow |
 | **NFR-14** | Should | Non-audio interface meets WCAG 2.1 AA | #183 | `apps/web/src/components/` | Automated axe/lighthouse audit | In Progress | Ongoing UI accessibility pass |
 | **NFR-15** | Should | Cross-browser support (Chrome, Firefox, Edge, Safari) | #184 | `apps/web/src/lib/voiceAdapter.ts` | Browser test matrix | In Progress | Standard Web APIs and fallbacks |
 | **NFR-16** | Must | Average infrastructure cost per session within ceiling | #201 | `apps/api/src/routes/admin.ts` | Cost monitoring audit | In Progress | Tracked via admin usage stats |
@@ -237,7 +237,7 @@ Every requirement maps to code, tests, and current delivery status.
 | **NFR-18** | Must | ≥80% questions judged relevant to role & focus | #87, #123 | `apps/api/src/services/briefing.service.ts` | Rubric evaluation benchmark | Done | Briefing service guides question relevance |
 | **NFR-19** | Must | ≥80% feedback items judged specific & actionable | #86, #122 | `apps/api/src/services/evaluator.ts` | `docs/evaluation-benchmark.md` | Done | Evaluator prompt includes strict rubric criteria |
 | **DR-01** | Domain | Recognizable recruitment structure: Intro, rounds, closing | Domain | `apps/api/src/services/briefing.service.ts` | `apps/api/src/__tests__/briefing.test.ts` | Done | Multi-turn progression: warm-up, deep-dive, wrap-up |
-| **DR-02** | Domain | Realistic session duration (15–45 minutes) | Domain | `apps/web/src/features/sessions/useInterview.ts` | `apps/web/src/lib/audio.test.ts` | Done | Timer & session duration parameters |
+| **DR-02** | Domain | Realistic session duration (15–45 minutes) | Domain | `apps/web/src/screens/interview-room/useInterview.ts` | `apps/web/src/lib/audio.test.ts` | Done | Timer & session duration parameters |
 | **DR-03** | Domain | Distinct norms, question types, and rubrics per role | Domain | `packages/contracts/src/roles.ts`, `apps/api/src/services/evaluator.ts` | `apps/api/src/__tests__/evaluator.test.ts` | Done | Custom rubrics for SWE, Data Analyst, Backend Dev |
 | **DR-04** | Domain | Behavioral answers evaluated against STAR method | Domain | `apps/api/src/services/evaluator.ts` | `apps/api/src/__tests__/evaluator.test.ts` | Done | STAR criteria in evaluation rubric |
 | **DR-05** | Domain | Technical answers grade reasoning and complexity, not just correctness | Domain | `apps/api/src/services/evaluator.ts` | `apps/api/src/__tests__/evaluator.test.ts` | Done | Evaluator rubric balances complexity & rationale |

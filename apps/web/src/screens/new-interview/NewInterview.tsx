@@ -13,7 +13,7 @@ import {
   CheckCircle2,
   FileText,
 } from 'lucide-react';
-import { createSession, getRoles, getLatestResume } from '../lib/api';
+import { createSession, getRoles, getLatestResume } from '../../lib/api';
 import { RoleList, ROLES, type Role } from '@interview/contracts';
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {

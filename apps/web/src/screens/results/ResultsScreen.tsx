@@ -1,9 +1,8 @@
 // ResultsScreen.tsx
 import { useState } from "react";
-import { useNavigate } from "react-router";
-import { deleteSession } from "../../lib/api";
+import { Navigate, useNavigate, useParams } from "react-router";
+import { deleteSession, retryFeedback } from "../../lib/api";
 import { useFeedback, useTurns } from "./useFeedback";
-import { retryFeedback } from "./feedbackApi";
 import type { TurnSpeaker } from "@interview/contracts";
 
 export function formatSpeaker(speaker: TurnSpeaker | string): string {
@@ -21,7 +20,9 @@ export function formatElapsedTime(seconds: number): string {
   return `${mm}:${ss}`;
 }
 
-export function ResultsScreen({ sessionId }: { sessionId: string }) {
+// Route: /interview/:sessionId/feedback — where ending an interview lands.
+export function ResultsScreen() {
+  const { sessionId } = useParams();
   const [reloadKey, setReloadKey] = useState(0);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
@@ -31,7 +32,11 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
   const { feedback, error: feedbackError, isLongWait } = useFeedback(sessionId, reloadKey);
   const { turns, isLoading, error } = useTurns(sessionId);
 
-  async function handleRetry() {
+  if (!sessionId) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  const handleRetry = async () => {
     setRetrying(true);
     setRetryError(null);
     try {
@@ -42,9 +47,9 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
     } finally {
       setRetrying(false);
     }
-  }
+  };
 
-  async function handleDelete() {
+  const handleDelete = async () => {
     if (!window.confirm("Are you sure you want to delete this interview? This action cannot be undone.")) return;
     setDeleting(true);
     setDeleteError(null);
@@ -55,10 +60,10 @@ export function ResultsScreen({ sessionId }: { sessionId: string }) {
       setDeleteError("Couldn't delete the interview. Please try again.");
       setDeleting(false);
     }
-  }
+  };
 
   return (
-    <div>
+    <div className="container page-wrapper">
       {(!feedback || feedback.status === "pending") && (
         <div role="status">
           <p>Preparing your feedback… this can take a moment.</p>
