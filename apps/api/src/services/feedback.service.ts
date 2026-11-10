@@ -3,6 +3,7 @@ import { Feedback as FeedbackContract } from '@interview/contracts';
 import prisma from '../db';
 import { evaluateTranscript, type EvaluatorOptions } from './evaluator.service';
 import { getOwnedSession } from './session.service';
+import { isTransientError, MAX_ATTEMPTS } from './job-queue.service';
 
 export type FeedbackStatus = 'pending' | 'ready' | 'failed';
 
@@ -60,9 +61,11 @@ export async function getFeedbackForSession(sessionId: string, userId: string): 
 
 /**
  * handler for a `session.ended` job: evaluate the stored transcript and
- * write the feedback. If evaluation fails, the feedback is marked failed and
- * the error rethrown so the job is marked failed too. The transcript is only
- * read, never changed.
+ * write the feedback. If evaluation fails due to a permanent error or because
+ * the job has reached MAX_ATTEMPTS, feedback is marked failed. On transient
+ * errors with attempts < MAX_ATTEMPTS, feedback remains pending so the worker
+ * can retry it. The error is always rethrown so processNextJob can requeue or fail the job.
+ * The transcript is only read, never changed.
  */
 export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {}): Promise<void> {
   if (!job.sessionId) {
@@ -82,11 +85,14 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await saveFeedback({
-      sessionId: session.id,
-      status: 'failed',
-      error: message,
-    });
+    const shouldFailFeedback = !isTransientError(error) || job.attempts >= MAX_ATTEMPTS;
+    if (shouldFailFeedback) {
+      await saveFeedback({
+        sessionId: session.id,
+        status: 'failed',
+        error: message,
+      });
+    }
     throw error;
   }
 }

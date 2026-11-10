@@ -4,6 +4,7 @@ import app from '../server';
 import prisma from '../db';
 import { handleSessionEnded } from '../services/feedback.service';
 import { evaluateTranscript } from '../services/evaluator.service';
+import { isTransientError, processNextJob } from '../services/job-queue.service';
 
 vi.mock('@supabase/supabase-js', () => {
   const getUserMock = vi.fn();
@@ -19,7 +20,7 @@ vi.mock('../db', () => ({
     session: { findFirst: vi.fn(), findUniqueOrThrow: vi.fn() },
     turn: { update: vi.fn(), updateMany: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
     feedback: { findUnique: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
-    job: { create: vi.fn() },
+    job: { create: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -98,11 +99,50 @@ describe('FB3 — session.ended job handler', () => {
     });
   });
 
-  it('given the evaluator fails, then feedback is marked failed with error message, the job fails, and the transcript is untouched (NFR-04)', async () => {
+  it('given a permanent evaluator failure, feedback is marked failed immediately and error rethrown (NFR-04)', async () => {
+    (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({ ...SESSION, turns: TURNS });
+    vi.mocked(evaluateTranscript).mockRejectedValueOnce(new Error('GEMINI_API_KEY is not configured'));
+
+    await expect(handleSessionEnded(JOB)).rejects.toThrow('GEMINI_API_KEY is not configured');
+
+    expect(prisma.feedback.upsert).toHaveBeenCalledWith({
+      where: { sessionId: 'sess-1' },
+      create: {
+        sessionId: 'sess-1',
+        status: 'failed',
+        summary: null,
+        scores: [],
+        error: 'GEMINI_API_KEY is not configured',
+      },
+      update: {
+        status: 'failed',
+        summary: null,
+        scores: [],
+        error: 'GEMINI_API_KEY is not configured',
+      },
+    });
+    expect(prisma.turn.update).not.toHaveBeenCalled();
+    expect(prisma.turn.updateMany).not.toHaveBeenCalled();
+    expect(prisma.turn.delete).not.toHaveBeenCalled();
+    expect(prisma.turn.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('given a transient error on attempt < MAX_ATTEMPTS, feedback is NOT marked failed so it remains pending for retry', async () => {
     (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({ ...SESSION, turns: TURNS });
     vi.mocked(evaluateTranscript).mockRejectedValueOnce(new Error('Evaluation timed out after 12000 ms'));
 
     await expect(handleSessionEnded(JOB)).rejects.toThrow('timed out');
+
+    // Feedback should NOT be marked failed on transient retry
+    expect(prisma.feedback.upsert).not.toHaveBeenCalled();
+  });
+
+  it('given a transient error on attempt >= MAX_ATTEMPTS, feedback is marked failed on the final attempt', async () => {
+    const finalJob = { ...JOB, attempts: 3 };
+    (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({ ...SESSION, turns: TURNS });
+    vi.mocked(evaluateTranscript).mockRejectedValueOnce(new Error('Evaluation timed out after 12000 ms'));
+
+    await expect(handleSessionEnded(finalJob)).rejects.toThrow('timed out');
 
     expect(prisma.feedback.upsert).toHaveBeenCalledWith({
       where: { sessionId: 'sess-1' },
@@ -120,10 +160,143 @@ describe('FB3 — session.ended job handler', () => {
         error: 'Evaluation timed out after 12000 ms',
       },
     });
-    expect(prisma.turn.update).not.toHaveBeenCalled();
-    expect(prisma.turn.updateMany).not.toHaveBeenCalled();
-    expect(prisma.turn.delete).not.toHaveBeenCalled();
-    expect(prisma.turn.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('given a retried job that previously failed transiently, subsequent success writes ready feedback', async () => {
+    const retriedJob = { ...JOB, attempts: 2 };
+    (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({ ...SESSION, turns: TURNS });
+    vi.mocked(evaluateTranscript).mockResolvedValueOnce({ summary: 'Solid.', scores: SCORES });
+
+    await handleSessionEnded(retriedJob);
+
+    expect(prisma.feedback.upsert).toHaveBeenCalledWith({
+      where: { sessionId: 'sess-1' },
+      create: { sessionId: 'sess-1', status: 'ready', summary: 'Solid.', scores: SCORES, error: null },
+      update: { status: 'ready', summary: 'Solid.', scores: SCORES, error: null },
+    });
+  });
+});
+
+describe('isTransientError classification (Issue #162)', () => {
+  it('identifies HTTP 429 as transient', () => {
+    expect(isTransientError({ status: 429, message: 'Too Many Requests' })).toBe(true);
+    expect(isTransientError({ statusCode: 429 })).toBe(true);
+    expect(isTransientError(new Error('429 Resource Exhausted'))).toBe(true);
+  });
+
+  it('identifies HTTP 5xx (500–599) as transient, but not arbitrary codes > 599', () => {
+    expect(isTransientError({ status: 500 })).toBe(true);
+    expect(isTransientError({ status: 501 })).toBe(true);
+    expect(isTransientError({ status: 502 })).toBe(true);
+    expect(isTransientError({ status: 503 })).toBe(true);
+    expect(isTransientError({ status: 504 })).toBe(true);
+    expect(isTransientError({ status: 599 })).toBe(true);
+    expect(isTransientError({ status: 600 })).toBe(false);
+    expect(isTransientError({ status: 999 })).toBe(false);
+    expect(isTransientError(new Error('501 Not Implemented'))).toBe(true);
+    expect(isTransientError(new Error('503 Service Unavailable'))).toBe(true);
+    expect(isTransientError(new Error('504 Gateway Timeout'))).toBe(true);
+    expect(isTransientError(new Error('599 Network Connect Timeout'))).toBe(true);
+    expect(isTransientError(new Error('600 Unknown Error'))).toBe(false);
+    expect(isTransientError(new Error('999 Custom Error'))).toBe(false);
+    expect(isTransientError(new Error('Service is UNAVAILABLE'))).toBe(true);
+  });
+
+  it('identifies timeout and abort errors as transient', () => {
+    expect(isTransientError(new Error('Evaluation timed out after 12000 ms'))).toBe(true);
+    expect(isTransientError(new Error('The operation was aborted'))).toBe(true);
+    expect(isTransientError(new Error('API request timeout'))).toBe(true);
+  });
+
+  it('identifies permanent client and auth errors as NOT transient', () => {
+    expect(isTransientError({ status: 400 })).toBe(false);
+    expect(isTransientError({ status: 401 })).toBe(false);
+    expect(isTransientError({ status: 402, message: 'Your prepayment credits are depleted' })).toBe(false);
+    expect(isTransientError({ status: 403 })).toBe(false);
+    expect(isTransientError({ status: 404 })).toBe(false);
+    expect(isTransientError({ status: 422 })).toBe(false);
+    expect(isTransientError(new Error('GEMINI_API_KEY is not configured'))).toBe(false);
+    expect(isTransientError(new Error('The transcript has no candidate answers to evaluate'))).toBe(false);
+    expect(isTransientError(new Error('The evaluator did not return valid JSON'))).toBe(false);
+  });
+});
+
+describe('processNextJob unit tests with mocked Prisma (Issue #162)', () => {
+  it('requeues job to pending and returns null when handler throws transient error and attempts < MAX_ATTEMPTS', async () => {
+    (prisma.$transaction as any).mockImplementationOnce(async (callback: any) => {
+      return callback({
+        $executeRaw: vi.fn(),
+        $queryRaw: vi.fn().mockResolvedValueOnce([{ ...JOB, attempts: 1 }]),
+      });
+    });
+    (prisma.job.update as any).mockResolvedValueOnce({ ...JOB, status: 'pending' });
+
+    const result = await processNextJob('worker-test', async () => {
+      throw new Error('Evaluation timed out after 12000 ms');
+    });
+
+    expect(result).toBeNull();
+    expect(prisma.job.update).toHaveBeenCalledWith({
+      where: { id: JOB.id },
+      data: {
+        status: 'pending',
+        lastError: 'Evaluation timed out after 12000 ms',
+        lockedBy: null,
+        lockedAt: null,
+      },
+    });
+  });
+
+  it('marks job failed and rethrows when handler throws permanent error on attempt 1', async () => {
+    (prisma.$transaction as any).mockImplementationOnce(async (callback: any) => {
+      return callback({
+        $executeRaw: vi.fn(),
+        $queryRaw: vi.fn().mockResolvedValueOnce([{ ...JOB, attempts: 1 }]),
+      });
+    });
+    (prisma.job.update as any).mockResolvedValueOnce({ ...JOB, status: 'failed' });
+
+    await expect(
+      processNextJob('worker-test', async () => {
+        throw new Error('GEMINI_API_KEY is not configured');
+      })
+    ).rejects.toThrow('GEMINI_API_KEY is not configured');
+
+    expect(prisma.job.update).toHaveBeenCalledWith({
+      where: { id: JOB.id },
+      data: {
+        status: 'failed',
+        lastError: 'GEMINI_API_KEY is not configured',
+        lockedBy: null,
+        lockedAt: null,
+      },
+    });
+  });
+
+  it('marks job failed and rethrows on transient error when attempts >= MAX_ATTEMPTS', async () => {
+    (prisma.$transaction as any).mockImplementationOnce(async (callback: any) => {
+      return callback({
+        $executeRaw: vi.fn(),
+        $queryRaw: vi.fn().mockResolvedValueOnce([{ ...JOB, attempts: 3 }]),
+      });
+    });
+    (prisma.job.update as any).mockResolvedValueOnce({ ...JOB, status: 'failed' });
+
+    await expect(
+      processNextJob('worker-test', async () => {
+        throw new Error('Evaluation timed out after 12000 ms');
+      })
+    ).rejects.toThrow('Evaluation timed out after 12000 ms');
+
+    expect(prisma.job.update).toHaveBeenCalledWith({
+      where: { id: JOB.id },
+      data: {
+        status: 'failed',
+        lastError: 'Evaluation timed out after 12000 ms',
+        lockedBy: null,
+        lockedAt: null,
+      },
+    });
   });
 });
 

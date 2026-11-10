@@ -97,17 +97,57 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
     expect(final.status).toBe('failed');
   });
 
-  it('given a handler that throws, the job is marked failed with the error', async () => {
-    const type = `test.${runId}.throws`;
+  it('given a handler that throws a permanent error, the job is marked failed with the error', async () => {
+    const type = `test.${runId}.throws-perm`;
     const job = await queue.enqueueJob({ type });
     await expect(
       queue.processNextJob('worker-a', async () => {
-        throw new Error('evaluator timed out');
+        throw new Error('GEMINI_API_KEY is not configured');
       }, type)
-    ).rejects.toThrow('evaluator timed out');
+    ).rejects.toThrow('GEMINI_API_KEY is not configured');
     const row = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
     expect(row.status).toBe('failed');
-    expect(row.lastError).toBe('evaluator timed out');
+    expect(row.lastError).toBe('GEMINI_API_KEY is not configured');
+  });
+
+  it('given a handler that throws a transient error on attempt < MAX_ATTEMPTS, the job is requeued as pending without throwing', async () => {
+    const type = `test.${runId}.transient`;
+    const job = await queue.enqueueJob({ type });
+    const result = await queue.processNextJob(
+      'worker-a',
+      async () => {
+        throw new Error('Evaluation timed out after 12000 ms');
+      },
+      type
+    );
+    expect(result).toBeNull();
+    const row = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(row.status).toBe('pending');
+    expect(row.lastError).toBe('Evaluation timed out after 12000 ms');
+    expect(row.lockedBy).toBeNull();
+    expect(row.attempts).toBe(1);
+  });
+
+  it('given a handler that fails transiently on attempt >= MAX_ATTEMPTS, the job is marked failed', async () => {
+    const type = `test.${runId}.transient-max`;
+    const job = await queue.enqueueJob({ type });
+    // Simulate attempts already reaching MAX_ATTEMPTS - 1, so the next claim makes attempts = MAX_ATTEMPTS
+    await prisma.job.update({ where: { id: job.id }, data: { attempts: queue.MAX_ATTEMPTS - 1 } });
+
+    await expect(
+      queue.processNextJob(
+        'worker-a',
+        async () => {
+          throw new Error('429 Resource Exhausted');
+        },
+        type
+      )
+    ).rejects.toThrow('429 Resource Exhausted');
+
+    const row = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(row.status).toBe('failed');
+    expect(row.attempts).toBe(queue.MAX_ATTEMPTS);
+    expect(row.lastError).toBe('429 Resource Exhausted');
   });
 
   it('saving feedback twice for a session keeps one row', async () => {
