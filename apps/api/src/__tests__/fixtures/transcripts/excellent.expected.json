@@ -2,23 +2,22 @@
   "role": "software-engineer",
   "scores": [
     {
-      "category": "Communication",
+      "category": "Problem Solving & Algorithms",
       "min": 4,
       "max": 5,
-      "reason": "Precise technical vocabulary; every explanation includes the underlying mechanism (Lua atomicity, index ordering direction)."
+      "reason": "Demonstrates optimal algorithm selection with clear time/space complexity analysis and handles edge cases proactively."
     },
     {
-      "category": "Technical depth",
+      "category": "Software Design & Architecture",
       "min": 4,
       "max": 5,
-      "reason": "Specific algorithms, complexity analysis (O(1), O(log N + K)), EXPLAIN ANALYZE, and production trade-offs cited."
+      "reason": "Designs scalable, maintainable systems with clear separation of concerns and thoughtful use of design patterns."
     },
     {
-      "category": "Structure",
+      "category": "Technical Communication",
       "min": 4,
       "max": 5,
-      "reason": "Answers follow context → approach → result and stay tightly on the question asked."
+      "reason": "Articulates complex technical concepts clearly with structured reasoning and precise terminology throughout."
     }
   ]
 }
-

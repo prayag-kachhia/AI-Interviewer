@@ -2,23 +2,22 @@
   "role": "data-analyst",
   "scores": [
     {
-      "category": "Communication",
-      "min": 1,
-      "max": 3,
-      "reason": "Ideas are expressed simply but vaguely; references to Excel suggest unfamiliarity with SQL tooling."
-    },
-    {
-      "category": "Technical depth",
+      "category": "SQL & Analytical Reasoning",
       "min": 1,
       "max": 2,
-      "reason": "No knowledge of window functions; self-joins or loops proposed for rolling averages; SELECT DISTINCT for deduplication."
+      "reason": "Cannot write correct SQL for straightforward aggregation problems; reasoning about query logic is flawed."
     },
     {
-      "category": "Structure",
+      "category": "Data Interpretation & Business Insights",
       "min": 1,
       "max": 3,
-      "reason": "Answers lack any analytical methodology; no decomposition, no data-quality checks, no validation strategy."
+      "reason": "Struggles to translate data findings into business context; insights are superficial or missing."
+    },
+    {
+      "category": "Statistical Understanding & Data Quality",
+      "min": 1,
+      "max": 3,
+      "reason": "Limited understanding of data quality concerns and statistical concepts relevant to analysis."
     }
   ]
 }
-

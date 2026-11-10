@@ -2,23 +2,22 @@
   "role": "software-engineer",
   "scores": [
     {
-      "category": "Communication",
+      "category": "Problem Solving & Algorithms",
       "min": 1,
       "max": 2,
-      "reason": "Candidate does not address the questions; answers are rambling and content-free."
+      "reason": "Answers are off-topic and do not demonstrate any algorithmic thinking relevant to the questions asked."
     },
     {
-      "category": "Technical depth",
+      "category": "Software Design & Architecture",
       "min": 1,
       "max": 2,
-      "reason": "No technical content about URL shortening, encoding, data storage, or traffic handling."
+      "reason": "No design reasoning exhibited; responses are unrelated to software engineering."
     },
     {
-      "category": "Structure",
+      "category": "Technical Communication",
       "min": 1,
       "max": 2,
-      "reason": "Responses are completely off-topic and show no attempt to organise a technical answer."
+      "reason": "Responses fail to communicate any relevant technical content."
     }
   ]
 }
-

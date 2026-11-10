@@ -2,23 +2,22 @@
   "role": "data-analyst",
   "scores": [
     {
-      "category": "Communication",
+      "category": "SQL & Analytical Reasoning",
       "min": 4,
       "max": 5,
-      "reason": "SQL quoted in-line with precise semantics (ROWS vs RANGE distinction); reasoning is clear and self-contained."
+      "reason": "Correct window function syntax with ROWS vs RANGE distinction; demonstrates advanced SQL reasoning and query design."
     },
     {
-      "category": "Technical depth",
+      "category": "Data Interpretation & Business Insights",
       "min": 4,
       "max": 5,
-      "reason": "Correct window function syntax, layered pipeline validation strategy, and structured root-cause decomposition."
+      "reason": "Structured root-cause decomposition and clear stakeholder communication show strong business insight from data."
     },
     {
-      "category": "Structure",
+      "category": "Statistical Understanding & Data Quality",
       "min": 4,
       "max": 5,
-      "reason": "Every answer follows a clear method: profile → approach → edge cases → stakeholder communication."
+      "reason": "Layered pipeline validation strategy and awareness of data quality issues demonstrate solid statistical grounding."
     }
   ]
 }
-

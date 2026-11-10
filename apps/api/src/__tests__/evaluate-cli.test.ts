@@ -45,6 +45,18 @@ describe('CLI - evaluate.ts', () => {
         'Missing value for --role flag'
       );
     });
+
+    it('throws when an unknown flag is provided', () => {
+      expect(() =>
+        parseArgs(['path/to/transcript.json', '--roles', 'backend-developer'])
+      ).toThrow('Unknown flag "--roles"');
+    });
+
+    it('throws when unexpected positional arguments are provided', () => {
+      expect(() =>
+        parseArgs(['path/to/transcript.json', 'extra-arg.json'])
+      ).toThrow('Unexpected positional argument: "extra-arg.json"');
+    });
   });
 
   describe('resolveRole', () => {

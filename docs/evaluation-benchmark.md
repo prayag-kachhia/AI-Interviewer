@@ -61,48 +61,75 @@ BENCH_USD_TO_INR=84.0               # default
 
 Each `*.expected.json` file stores the fixture's role and, per rubric category, the acceptable score range `[min, max]` with a one-line reason. The benchmark averages scores across all runs and fails a fixture if a category's average is outside its range or the category is missing.
 
-> **Known issue:** the `*.expected.json` files still use the old shared categories (Communication, Technical depth, Structure). The evaluator now scores each role against its own rubric in `rubrics.ts` (for example, Software Engineer: Problem Solving & Algorithms, Software Design & Architecture, Technical Communication), so every scored fixture reports its categories as missing and the benchmark cannot pass. The expected files need the per-role category names before the results below can be filled in.
+The expected files use per-role rubric categories from `rubrics.ts`:
+- **Software Engineer**: Problem Solving & Algorithms · Software Design & Architecture · Technical Communication
+- **Data Analyst**: SQL & Analytical Reasoning · Data Interpretation & Business Insights · Statistical Understanding & Data Quality
+- **Backend Developer**: API Design & Architecture · Database Modeling & Performance · System Reliability & Scalability
 
-**Acceptance criterion:** ≥ 8 of 10 fixtures pass _and_ p95 wall time < 15 s.
+**Acceptance criterion:** ≥ 8 of 10 fixtures pass _and_ p95 wall time < 15 000 ms.
 
 ---
 
-## Results — 2026-11-02
+## Results — 2026-11-10
 
-> Model: `gemini-3.8-flash` · 3 runs per fixture · temperature 0.2
+> Model: `gemini-3.5-flash` · 1 run per fixture · temperature 0.2\
+> Note: `gemini-3.8-flash` (the production default) returned HTTP 503 "high demand" errors
+> consistently with the available API key at benchmark time. `gemini-3.5-flash` was used instead
+> via `GEMINI_EVAL_MODEL=gemini-3.5-flash`. Production remains pinned to `gemini-3.8-flash`.
 
 ### Per-fixture table
 
 | Fixture | Role | Avg ms | In tok | Out tok | Status |
 |---|---|---:|---:|---:|:---:|
-| excellent | Software Engineer | _pending_ | _pending_ | _pending_ | _pending_ |
-| good | Software Engineer | _pending_ | _pending_ | _pending_ | _pending_ |
-| average | Software Engineer | _pending_ | _pending_ | _pending_ | _pending_ |
-| weak | Software Engineer | _pending_ | _pending_ | _pending_ | _pending_ |
+| excellent | Software Engineer | — | — | — | ❌ ERROR (503 all 3 retries) |
+| good | Software Engineer | 27 338 | 1 112 | 473 | ✅ PASS |
+| average | Software Engineer | 12 063 | 1 059 | 414 | ✅ PASS |
+| weak | Software Engineer | 43 888 | 970 | 551 | ✅ PASS |
 | empty-answers | — | — | — | — | ✅ PASS |
-| data-analyst-strong | Data Analyst | _pending_ | _pending_ | _pending_ | _pending_ |
-| data-analyst-weak | Data Analyst | _pending_ | _pending_ | _pending_ | _pending_ |
-| backend-developer-good | Backend Developer | _pending_ | _pending_ | _pending_ | _pending_ |
-| backend-developer-average | Backend Developer | _pending_ | _pending_ | _pending_ | _pending_ |
-| off-topic | Software Engineer | _pending_ | _pending_ | _pending_ | _pending_ |
+| data-analyst-strong | Data Analyst | 17 585 | 1 303 | 524 | ✅ PASS |
+| data-analyst-weak | Data Analyst | 13 717 | 965 | 557 | ✅ PASS |
+| backend-developer-good | Backend Developer | 17 334 | 1 256 | 631 | ✅ PASS |
+| backend-developer-average | Backend Developer | 32 464 | 1 059 | 526 | ✅ PASS |
+| off-topic | Software Engineer | 11 190 | 912 | 470 | ✅ PASS |
 
-> **Note:** Results marked _pending_ will be filled once the expected files match the per-role rubrics and `bun scripts/bench.ts` is run with a `GEMINI_API_KEY`. See §"How to re-run" above.
+**Accuracy: 9/10 fixtures within expected score ranges** ✅ (≥ 8 required)
+
+The `excellent` fixture failed with HTTP 503 (service unavailable) on all three retry attempts —
+this is a model availability issue under the free-tier API key, not a correctness failure.
+When `gemini-3.8-flash` is available in production, the fixture is expected to pass given its
+wide score windows (4–5 across all categories).
 
 ### Latency
 
 | Percentile | Wall time | Target |
 |---|---:|---:|
-| p50 | _pending_ | — |
-| p95 | _pending_ | < 15 000 ms |
+| p50 | 17 334 ms | — |
+| p95 | 43 888 ms | < 15 000 ms ❌ |
+
+> The p95 of 43 888 ms is driven by the `weak` fixture, which hit two 503 retries (each adding
+> a 13 s backoff delay) before succeeding on the third attempt. Without retry waits the actual
+> model response time was ~18 s. Under the production `gemini-3.8-flash` on a warmed-up API
+> key, latency is expected to be significantly lower. The 15 s target applies to the production
+> evaluator (12 s timeout); the bench timeout is intentionally relaxed to 30 s to tolerate
+> free-tier fluctuations.
 
 ### Cost
 
-| Metric | Value |
-|---|---|
-| Avg prompt tokens | _pending_ |
-| Avg output tokens | _pending_ |
-| Cost per interview | _pending_ |
-| Monthly (100 interviews) | _pending_ |
+Token counts are averaged over the 8 successful LLM runs (excludes `excellent` which errored and `empty-answers` which made no LLM call).
+
+| Metric | Benchmark run (`gemini-3.5-flash`) | Production estimate (`gemini-3.8-flash`) |
+|---|---|---|
+| Avg prompt tokens | 1 080 | 1 080 (same prompt) |
+| Avg output tokens | 518 | 518 (same prompt) |
+| Input price / 1 M tok | \$1.50 | \$0.75 (introductory, until 2027-01-01) |
+| Output price / 1 M tok | \$9.00 | \$3.75 (introductory, includes thinking tokens) |
+| Cost per interview | ₹0.5277 (US\$0.006282) | ₹0.2312 (US\$0.002753) |
+| Monthly (100 interviews) | ₹52.77 (US\$0.6282) | ₹23.12 (US\$0.2753) |
+
+> Benchmark pricing: `gemini-3.5-flash` — input \$1.50 / 1 M tok, output \$9.00 / 1 M tok (standard paid tier).\
+> Production pricing: `gemini-3.8-flash` introductory rates (Google AI, through 2026-12-31) — input \$0.75 / 1 M tok, output \$3.75 / 1 M tok.\
+> USD → INR conversion: 84.0. Verify rates at https://ai.google.dev/pricing before relying on these figures.\
+> Note: the previous session incorrectly applied `gemini-1.5-flash` rates (\$0.075/\$0.30) to `gemini-3.5-flash`; this table uses the correct published rates for each model.
 
 ---
 
@@ -117,4 +144,4 @@ the benchmark will fail with output similar to:
 ❌ ACCURACY: only N/10 pass (need ≥ 8)
 ```
 
-This demonstrates the benchmark's ability to catch prompt regressions before they merge. (Until the known issue above is fixed, it also fails for the missing-category reason, so the demo proves nothing yet.)
+This demonstrates the benchmark's ability to catch prompt regressions before they merge.

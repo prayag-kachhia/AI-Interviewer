@@ -63,7 +63,7 @@ describe('FB4 — evaluator', () => {
   });
 
   it('given a transcript and a role, returns feedback scored against every rubric category', async () => {
-    const result = await evaluateTranscript(SAMPLE, { generate: async () => VALID });
+    const result = await evaluateTranscript(SAMPLE, { generate: async () => ({ text: VALID }) });
     expect(result.summary).toBe('Clear, concrete answers about asynchronous architecture and idempotency.');
     expect(result.scores.map((s) => s.category).sort()).toEqual(RUBRIC.map((r) => r.category).sort());
   });
@@ -105,7 +105,7 @@ describe('FB4 — evaluator', () => {
   });
 
   it('given a reply that is not JSON, then it fails', async () => {
-    await expect(evaluateTranscript(SAMPLE, { generate: async () => 'Great interview!' })).rejects.toThrow(
+    await expect(evaluateTranscript(SAMPLE, { generate: async () => ({ text: 'Great interview!' }) })).rejects.toThrow(
       'valid JSON'
     );
   });
@@ -115,13 +115,13 @@ describe('FB4 — evaluator', () => {
       summary: 'x',
       scores: RUBRIC.map((r) => scoreFor(r.category, 9)),
     });
-    await expect(evaluateTranscript(SAMPLE, { generate: async () => outOfRange })).rejects.toThrow();
+    await expect(evaluateTranscript(SAMPLE, { generate: async () => ({ text: outOfRange }) })).rejects.toThrow();
 
     const missing = JSON.stringify({
       summary: 'x',
       scores: [scoreFor(RUBRIC[0].category)],
     });
-    await expect(evaluateTranscript(SAMPLE, { generate: async () => missing })).rejects.toThrow(
+    await expect(evaluateTranscript(SAMPLE, { generate: async () => ({ text: missing }) })).rejects.toThrow(
       'instead of the rubric categories'
     );
   });
@@ -132,7 +132,7 @@ describe('FB4 — evaluator', () => {
     await expect(
       evaluateTranscript(
         { roleId: 'software-engineer', turns: emptyTranscript },
-        { generate: async () => { called = true; return VALID; } }
+        { generate: async () => { called = true; return { text: VALID }; } }
       )
     ).rejects.toThrow('no candidate answers');
     expect(called).toBe(false);
@@ -156,7 +156,7 @@ describe('FB4 — evaluator', () => {
       for (const r of rubric) expect(buildEvaluationPrompt(input)).toContain(r.category);
 
       const reply = JSON.stringify({ summary: 'x', scores: rubric.map((r) => scoreFor(r.category)) });
-      const result = await evaluateTranscript(input, { generate: async () => reply });
+      const result = await evaluateTranscript(input, { generate: async () => ({ text: reply }) });
       expect(result.scores).toHaveLength(rubric.length);
     }
   );
