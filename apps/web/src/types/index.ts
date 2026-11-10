@@ -53,6 +53,7 @@ export type InterviewVoiceState =
   | 'LISTENING'
   | 'CANDIDATE_SPEAKING'
   | 'PROCESSING'
+  | 'RECONNECTING'
   | 'ERROR';
 
 export type TurnData = Turn;

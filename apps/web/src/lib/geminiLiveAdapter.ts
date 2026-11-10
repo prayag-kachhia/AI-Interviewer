@@ -5,6 +5,7 @@ import type { VoiceAdapterCallbacks, VoiceSessionAdapter } from './voiceAdapter'
 const LIVE_URL =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained';
 const MAX_RECONNECTS = 3;
+const RECONNECT_DELAY_MS = 2500;
 
 // Kept in sessionStorage so a page reload can resume the same Gemini session.
 const resumptionKey = (sessionId: string) => `gemini_resumption_${sessionId}`;
@@ -47,6 +48,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
   private isDeliberateClose = false;
   private resumptionHandle: string | null = null;
   private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   async connect(sessionId: string, callbacks: VoiceAdapterCallbacks): Promise<void> {
     this.cleanupAudioAndSocket();
@@ -61,8 +63,21 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
 
   private async startConnection(): Promise<void> {
     try {
-      // The token is single-use, so every connection (including a resume) needs a new one.
-      const token = await getVoiceToken(this.sessionId);
+      let token: string;
+      try {
+        // The token is single-use, so every connection (including a resume) needs a new one.
+        token = await getVoiceToken(this.sessionId);
+      } catch (err) {
+        if (this.abandoned()) return;
+        const msg = err instanceof Error ? err.message : String(err);
+        // If already reconnecting after a network drop (e.g. Wi-Fi off), keep retrying instead of aborting.
+        if (this.reconnectAttempts > 0) {
+          this.onDropped(msg);
+        } else {
+          this.fail(msg);
+        }
+        return;
+      }
       if (this.abandoned()) return;
 
       const audioOutCtx = new AudioContext({ sampleRate: 24000 });
@@ -122,13 +137,14 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
 
   private handleMessage(response: LiveServerMessage, micStream: MediaStream, ws: WebSocket): void {
     const update = response.sessionResumptionUpdate;
-    if (update?.resumable && update.newHandle) {
+    if (update?.resumable === true && update.newHandle) {
       this.resumptionHandle = update.newHandle;
       sessionStorage.setItem(resumptionKey(this.sessionId), update.newHandle);
     }
 
     if (response.goAway) {
-      this.onDropped('Gemini Live closed the session');
+      // Planned server migration while Wi-Fi is healthy; resume right away without sleeping.
+      this.onDropped('Gemini Live closed the session', 0);
       return;
     }
 
@@ -226,8 +242,9 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     return true;
   }
 
-  /** The socket dropped: resume with the stored handle, or fail if there is none or retries ran out. */
-  private onDropped(message: string): void {
+  /** The socket dropped: resume with the stored handle after a short delay, or fail if none or retries ran out. */
+  private onDropped(message: string, delayMs = RECONNECT_DELAY_MS): void {
+    if (this.isDeliberateClose) return;
     if (!this.resumptionHandle) {
       this.fail(message);
       return;
@@ -239,7 +256,18 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     this.reconnectAttempts += 1;
     console.info(`[geminiLiveAdapter] Reconnecting (attempt ${this.reconnectAttempts}/${MAX_RECONNECTS})`);
     this.cleanupAudioAndSocket();
-    void this.startConnection();
+    this.callbacks?.onStateChange('RECONNECTING');
+
+    if (delayMs > 0) {
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        if (!this.isDeliberateClose) {
+          void this.startConnection();
+        }
+      }, delayMs);
+    } else {
+      void this.startConnection();
+    }
   }
 
   private fail(message: string): void {
@@ -281,6 +309,10 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
   }
 
   private cleanupAudioAndSocket(): void {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;

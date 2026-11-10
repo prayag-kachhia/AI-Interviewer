@@ -316,6 +316,7 @@ export function useInterview() {
   const isAiSpeaking = voiceState === 'AI_SPEAKING';
   const isCandidateSpeaking = voiceState === 'CANDIDATE_SPEAKING' || Boolean(liveCandidateSpeech);
   const isListening = voiceState === 'LISTENING' && !isCandidateSpeaking && !isMuted;
+  const isReconnecting = voiceState === 'RECONNECTING';
 
   return {
     sessionId,
@@ -332,6 +333,7 @@ export function useInterview() {
     isAiSpeaking,
     isCandidateSpeaking,
     isListening,
+    isReconnecting,
     isMuted,
     audioLevel,
     liveCandidateSpeech,
