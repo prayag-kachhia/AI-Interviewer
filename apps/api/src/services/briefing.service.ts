@@ -2,6 +2,7 @@ import { ROLES } from '@interview/contracts';
 import type { Session } from '../generated/prisma/client';
 import prisma from '../db';
 import { summarizeProfile } from './resume-summary';
+import { recentQuestions } from './session.service';
 
 export interface BriefingInput {
   roleId: string;
@@ -205,10 +206,13 @@ You must strictly enforce the following boundaries at all times:
 }
 
 /**
- * Builds the interviewer briefing for a session: its role plus the summary of its linked resume.
+ * Builds the interviewer briefing for a session: its role plus the summary of its linked resume
+ * and previously asked questions for this candidate and role (FR-16).
  * Focus, company and level are passed through once the session stores them.
  */
-export async function briefingFor(session: Pick<Session, 'role' | 'resumeId'>): Promise<string> {
+export async function briefingFor(
+  session: Pick<Session, 'role' | 'resumeId' | 'userId'>
+): Promise<string> {
   let resumeSummary: string | undefined;
 
   if (session.resumeId) {
@@ -223,5 +227,9 @@ export async function briefingFor(session: Pick<Session, 'role' | 'resumeId'>): 
     }
   }
 
-  return buildBriefing({ roleId: session.role, resumeSummary });
+  const pastQuestions = session.userId
+    ? await recentQuestions(session.userId, session.role)
+    : [];
+
+  return buildBriefing({ roleId: session.role, resumeSummary, pastQuestions });
 }

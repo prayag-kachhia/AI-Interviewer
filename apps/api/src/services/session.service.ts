@@ -175,3 +175,41 @@ export async function deleteSession(sessionId: string, userId: string) {
     where: { id: sessionId },
   });
 }
+
+/**
+ * Query AI questions from the candidate's last N ended sessions for a given role (FR-16).
+ * Capped at 30 questions to fit within context limits.
+ */
+export async function recentQuestions(
+  userId: string,
+  roleId: string,
+  limitSessions = 3
+): Promise<string[]> {
+  const pastSessions = await prisma.session.findMany({
+    where: {
+      userId,
+      role: roleId,
+      status: 'ENDED',
+    },
+    orderBy: { endedAt: 'desc' },
+    take: limitSessions,
+    select: { id: true },
+  });
+
+  if (pastSessions.length === 0) {
+    return [];
+  }
+
+  const sessionIds = pastSessions.map((s) => s.id);
+  const aiTurns = await prisma.turn.findMany({
+    where: {
+      sessionId: { in: sessionIds },
+      speaker: 'AI',
+    },
+    orderBy: { turnIndex: 'asc' },
+    take: 30,
+    select: { text: true },
+  });
+
+  return aiTurns.map((t) => t.text.trim()).filter((t) => t.length > 0);
+}

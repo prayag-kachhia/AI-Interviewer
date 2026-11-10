@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import prisma from '../db';
 import { buildBriefing, briefingFor, calculatePhaseTiming } from '../services/briefing.service';
+import { recentQuestions } from '../services/session.service';
+
+vi.mock('../services/session.service', () => ({
+  recentQuestions: vi.fn(),
+}));
 
 vi.mock('../db', () => ({
   default: {
@@ -9,6 +14,10 @@ vi.mock('../db', () => ({
 }));
 
 describe('Briefing Service — buildBriefing (FR-13, FR-15, FR-17, DR-01)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('builds a briefing for a Software Engineer session with structure, timing, and persona', () => {
     const briefing = buildBriefing({ roleId: 'software-engineer' });
 
@@ -98,10 +107,11 @@ describe('Briefing Service — buildBriefing (FR-13, FR-15, FR-17, DR-01)', () =
 describe('Briefing Service — briefingFor(session)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (recentQuestions as any).mockResolvedValue([]);
   });
 
   it('builds a role briefing without a resume when the session has none', async () => {
-    const briefing = await briefingFor({ role: 'software-engineer', resumeId: null });
+    const briefing = await briefingFor({ role: 'software-engineer', resumeId: null, userId: 'user-1' });
 
     expect(prisma.resume.findUnique).not.toHaveBeenCalled();
     expect(briefing).toContain('Software Engineer');
@@ -119,7 +129,7 @@ describe('Briefing Service — briefingFor(session)', () => {
       }),
     });
 
-    const briefing = await briefingFor({ role: 'backend-developer', resumeId: 'resume-456' });
+    const briefing = await briefingFor({ role: 'backend-developer', resumeId: 'resume-456', userId: 'user-1' });
 
     expect(prisma.resume.findUnique).toHaveBeenCalledWith({
       where: { id: 'resume-456' },
@@ -129,6 +139,41 @@ describe('Briefing Service — briefingFor(session)', () => {
     expect(briefing).toContain('CANDIDATE RESUME SUMMARY:');
     expect(briefing).toContain('Strongest skills: TypeScript, Bun, PostgreSQL');
     expect(briefing).toContain('Project 1: Chat Engine: real-time WebSocket server');
+  });
+
+  it('automatically queries recentQuestions and includes them in the briefing (FR-16)', async () => {
+    const mockPastQuestions = [
+      'Can you explain the virtual DOM?',
+      'How do you manage state in large React apps?',
+    ];
+    (recentQuestions as any).mockResolvedValueOnce(mockPastQuestions);
+
+    const session = {
+      role: 'software-engineer',
+      resumeId: null,
+      userId: 'user-1',
+    };
+
+    const briefing = await briefingFor(session);
+
+    expect(recentQuestions).toHaveBeenCalledWith('user-1', 'software-engineer');
+    expect(briefing).toContain('PREVIOUSLY ASKED QUESTIONS (DO NOT REPEAT):');
+    expect(briefing).toContain('- Can you explain the virtual DOM?');
+    expect(briefing).toContain('- How do you manage state in large React apps?');
+  });
+
+  it('does not include past questions section when recentQuestions returns empty', async () => {
+    (recentQuestions as any).mockResolvedValueOnce([]);
+
+    const session = {
+      role: 'software-engineer',
+      resumeId: null,
+      userId: 'user-1',
+    };
+
+    const briefing = await briefingFor(session);
+
+    expect(briefing).not.toContain('PREVIOUSLY ASKED QUESTIONS (DO NOT REPEAT):');
   });
 });
 
@@ -197,7 +242,7 @@ describe('Briefing Service — prompt-injection and off-topic guardrails', () =>
   });
 
   it('applies the guardrails to session briefings from briefingFor()', async () => {
-    const briefing = await briefingFor({ role: 'backend-developer', resumeId: null });
+    const briefing = await briefingFor({ role: 'backend-developer', resumeId: null, userId: 'user-1' });
 
     expect(briefing).toContain('GUARDRAILS & DEFENSIVE INTERVIEWER RULES');
   });
