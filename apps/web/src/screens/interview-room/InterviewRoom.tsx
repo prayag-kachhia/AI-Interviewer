@@ -29,6 +29,7 @@ export const InterviewRoom: React.FC = () => {
     isAiSpeaking,
     isCandidateSpeaking,
     isListening,
+    isReconnecting,
     isMuted,
     audioLevel,
     liveCandidateSpeech,
@@ -152,7 +153,18 @@ export const InterviewRoom: React.FC = () => {
         </div>
       )}
 
-      {voiceWarning && status === 'LIVE' && (
+      {isReconnecting && (
+        <div
+          className="alert alert-warning"
+          role="alert"
+          style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+        >
+          <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
+          <span>Reconnecting… Please hold on.</span>
+        </div>
+      )}
+
+      {voiceWarning && status === 'LIVE' && !isReconnecting && (
         <div className="alert alert-info" style={{ marginBottom: '1.25rem' }}>
           <AlertCircle size={20} />
           <span>{voiceWarning}</span>

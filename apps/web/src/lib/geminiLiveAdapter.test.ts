@@ -125,6 +125,7 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -261,12 +262,14 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
   });
 
   describe('session resumption', () => {
-    it('resumes with the stored handle on GoAway, without going back to IDLE', async () => {
+    it('resumes with the stored handle on GoAway, emits RECONNECTING, and returns to LISTENING', async () => {
       vi.mocked(getVoiceToken).mockResolvedValueOnce('token-first').mockResolvedValueOnce('token-second');
       const { callbacks, ws: ws1 } = await connectReady('session-goaway');
       ws1.simulateMessage({ sessionResumptionUpdate: { newHandle: 'handle-abc', resumable: true } });
 
       ws1.simulateMessage({ goAway: {} });
+
+      expect(callbacks.onStateChange).toHaveBeenCalledWith('RECONNECTING');
 
       await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
       const ws2 = MockWebSocket.instances[1];
@@ -274,6 +277,9 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
       ws2.simulateOpen();
       expect(ws2.sent()[0].setup.sessionResumption).toEqual({ handle: 'handle-abc' });
       expect(vi.mocked(callbacks.onStateChange).mock.calls.filter(([s]) => s === 'IDLE')).toHaveLength(1);
+
+      ws2.simulateMessage({ setupComplete: {} });
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('LISTENING');
     });
 
     it('resumes after a page reload with the handle from sessionStorage', async () => {
@@ -287,11 +293,13 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
       expect(ws.sent()[0].setup.sessionResumption).toEqual({ handle: 'stored-handle' });
     });
 
-    it('ignores a handle that is not resumable', async () => {
+    it('ignores a handle unless resumable is explicitly true', async () => {
       const { ws } = await connectReady();
 
       ws.simulateMessage({ sessionResumptionUpdate: { newHandle: 'not-yet', resumable: false } });
+      expect(sessionStorage.getItem('gemini_resumption_session-1')).toBeNull();
 
+      ws.simulateMessage({ sessionResumptionUpdate: { newHandle: 'missing-flag' } });
       expect(sessionStorage.getItem('gemini_resumption_session-1')).toBeNull();
     });
 
@@ -316,19 +324,67 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
       expect(callbacks.onError).toHaveBeenCalledWith('Permission denied');
     });
 
-    it('gives up after 3 failed reconnects', async () => {
+    it('waits before retrying and gives up after 3 failed reconnects', async () => {
       const { callbacks, ws } = await connectReady();
       ws.simulateMessage({ sessionResumptionUpdate: { newHandle: 'handle-abc', resumable: true } });
 
+      vi.useFakeTimers();
       ws.close();
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('RECONNECTING');
+      expect(MockWebSocket.instances).toHaveLength(1);
+
       for (let attempt = 2; attempt <= 4; attempt++) {
-        await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(attempt));
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(MockWebSocket.instances).toHaveLength(attempt);
         MockWebSocket.instances[attempt - 1].close();
       }
 
       expect(MockWebSocket.instances).toHaveLength(4);
       expect(callbacks.onError).toHaveBeenCalledWith('Reconnection failed after 3 attempts');
       expect(callbacks.onStateChange).toHaveBeenLastCalledWith('ERROR');
+    });
+
+    it('recovers if token fetch fails while offline and succeeds when network returns', async () => {
+      vi.mocked(getVoiceToken)
+        .mockResolvedValueOnce('token-initial')
+        .mockRejectedValueOnce(new Error('Network offline'))
+        .mockResolvedValueOnce('token-recovered');
+
+      const { callbacks, ws } = await connectReady();
+      ws.simulateMessage({ sessionResumptionUpdate: { newHandle: 'handle-offline', resumable: true } });
+
+      vi.useFakeTimers();
+      ws.close();
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('RECONNECTING');
+
+      // Attempt 1 fails because network is still offline -> stays RECONNECTING
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('RECONNECTING');
+
+      // Attempt 2 succeeds after network returns
+      await vi.advanceTimersByTimeAsync(2500);
+      expect(MockWebSocket.instances).toHaveLength(2);
+      const ws2 = MockWebSocket.instances[1];
+      expect(ws2.url).toContain('access_token=token-recovered');
+      ws2.simulateOpen();
+      ws2.simulateMessage({ setupComplete: {} });
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('LISTENING');
+    });
+
+    it('cancels any pending reconnect timer on disconnect', async () => {
+      const { adapter, callbacks, ws } = await connectReady();
+      ws.simulateMessage({ sessionResumptionUpdate: { newHandle: 'handle-abc', resumable: true } });
+
+      vi.useFakeTimers();
+      ws.close();
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('RECONNECTING');
+
+      adapter.disconnect();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('IDLE');
     });
   });
 });
