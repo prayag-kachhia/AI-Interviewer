@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../db';
-import { EARLY_END_THRESHOLD_MINUTES } from '../services/session.service';
+import { EARLY_END_THRESHOLD_MINUTES, computeOverallScore } from '../services/session.service';
 
 vi.mock('@supabase/supabase-js', () => {
   const getUserMock = vi.fn();
@@ -222,7 +222,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(res.status).toBe(401);
     });
 
-    it('GET /api/sessions: returns only sessions belonging to the authenticated user sorted newest first with endedEarly and feedbackStatus', async () => {
+    it('GET /api/sessions: returns only sessions belonging to the authenticated user sorted newest first with role, date, status, feedbackStatus, overallScore, and endedEarly', async () => {
       const now = Date.now();
       const mockSessions = [
         {
@@ -233,7 +233,14 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           startedAt: new Date(now - 1000 * 60 * EARLY_END_THRESHOLD_MINUTES),
           endedAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES - 4)), // 4 mins (< EARLY_END_THRESHOLD_MINUTES -> endedEarly true)
           createdAt: new Date(now - 1000 * 60 * EARLY_END_THRESHOLD_MINUTES),
-          feedback: { status: 'ready' },
+          feedback: {
+            status: 'ready',
+            scores: [
+              { category: 'API Design & Architecture', score: 4 },
+              { category: 'Database Modeling & Performance', score: 5 },
+              { category: 'System Reliability & Scalability', score: 3 },
+            ],
+          },
         },
         {
           id: 'sess-old',
@@ -243,7 +250,17 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           startedAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES + 15)),
           endedAt: new Date(now - 1000 * 60 * 5), // (EARLY_END_THRESHOLD_MINUTES + 10) mins (>= EARLY_END_THRESHOLD_MINUTES -> endedEarly false)
           createdAt: new Date(now - 1000 * 60 * (EARLY_END_THRESHOLD_MINUTES + 15)),
-          feedback: { status: 'failed' },
+          feedback: { status: 'failed', scores: null },
+        },
+        {
+          id: 'sess-live',
+          userId: AUTH_USER.id,
+          role: 'data-analyst',
+          status: 'LIVE',
+          startedAt: new Date(now - 1000 * 60 * 2),
+          endedAt: null,
+          createdAt: new Date(now - 1000 * 60 * 2),
+          feedback: null,
         },
       ];
 
@@ -255,40 +272,233 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.data).toHaveLength(2);
+      expect(res.body.data).toHaveLength(3);
       expect(prisma.session.findMany).toHaveBeenCalledWith({
         where: { userId: AUTH_USER.id },
         orderBy: { createdAt: 'desc' },
-        include: { feedback: { select: { status: true } } },
+        include: { feedback: { select: { status: true, scores: true } } },
       });
 
-      const [first, second] = res.body.data;
-      expect(first.id).toBe('sess-new');
-      expect(first.role).toBe('backend-developer');
-      expect(first.status).toBe('ENDED');
-      expect(first.feedbackStatus).toBe('ready');
-      expect(first.endedEarly).toBe(true);
+      const [newEndedSession, oldEndedSession, liveSession] = res.body.data;
 
-      expect(second.id).toBe('sess-old');
-      expect(second.role).toBe('software-engineer');
-      expect(second.feedbackStatus).toBe('failed');
-      expect(second.endedEarly).toBe(false);
+      // Session 1: Ended, ready feedback with category scores -> overallScore = average (4 + 5 + 3) / 3 = 4
+      expect(newEndedSession.id).toBe('sess-new');
+      expect(newEndedSession.role).toBe('backend-developer');
+      expect(newEndedSession.status).toBe('ENDED');
+      expect(newEndedSession.startedAt).toBeDefined();
+      expect(newEndedSession.createdAt).toBeDefined();
+      expect(newEndedSession.feedbackStatus).toBe('ready');
+      expect(newEndedSession.overallScore).toBe(4);
+      expect(newEndedSession.endedEarly).toBe(true);
+
+      // Session 2: Ended, failed feedback -> overallScore = null
+      expect(oldEndedSession.id).toBe('sess-old');
+      expect(oldEndedSession.role).toBe('software-engineer');
+      expect(oldEndedSession.status).toBe('ENDED');
+      expect(oldEndedSession.feedbackStatus).toBe('failed');
+      expect(oldEndedSession.overallScore).toBeNull();
+      expect(oldEndedSession.endedEarly).toBe(false);
+
+      // Session 3: Live session -> endedEarly = false, feedbackStatus = null, overallScore = null
+      expect(liveSession.id).toBe('sess-live');
+      expect(liveSession.role).toBe('data-analyst');
+      expect(liveSession.status).toBe('LIVE');
+      expect(liveSession.feedbackStatus).toBeNull();
+      expect(liveSession.overallScore).toBeNull();
+      expect(liveSession.endedEarly).toBe(false);
     });
 
-    it('GET /api/sessions: never returns another user\'s sessions (always scopes by userId)', async () => {
-      (prisma.session.findMany as any).mockResolvedValueOnce([]);
+    it('GET /api/sessions: proves that another user\'s sessions never appear', async () => {
+      // Simulate database with sessions belonging to both AUTH_USER and a different user
+      const allDatabaseSessions = [
+        {
+          id: 'own-sess-1',
+          userId: AUTH_USER.id,
+          role: 'backend-developer',
+          status: 'ENDED',
+          startedAt: new Date(),
+          endedAt: new Date(),
+          createdAt: new Date(),
+          feedback: { status: 'ready', scores: [{ category: 'API', score: 5 }] },
+        },
+        {
+          id: 'foreign-sess-1',
+          userId: 'attacker-or-other-user-id',
+          role: 'software-engineer',
+          status: 'ENDED',
+          startedAt: new Date(),
+          endedAt: new Date(),
+          createdAt: new Date(),
+          feedback: { status: 'ready', scores: [{ category: 'Algorithms', score: 1 }] },
+        },
+      ];
+
+      (prisma.session.findMany as any).mockImplementationOnce(async ({ where }: any) => {
+        return allDatabaseSessions.filter((s) => s.userId === where.userId);
+      });
 
       const res = await request(app)
         .get('/api/sessions')
         .set('Authorization', authHeader());
 
       expect(res.status).toBe(200);
-      expect(res.body.data).toEqual([]);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].id).toBe('own-sess-1');
+      expect(res.body.data[0].userId).toBe(AUTH_USER.id);
+      // Explicitly prove foreign session is absent
+      expect(res.body.data.some((s: any) => s.id === 'foreign-sess-1')).toBe(false);
+      expect(res.body.data.some((s: any) => s.userId !== AUTH_USER.id)).toBe(false);
       expect(prisma.session.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { userId: AUTH_USER.id },
         })
       );
+    });
+
+    it('GET /api/sessions: correctly calculates endedEarly using the named constant threshold', async () => {
+      const now = Date.now();
+      const mockSessions = [
+        // Just under threshold (14m 59s) -> endedEarly: true
+        {
+          id: 'sess-under',
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          status: 'ENDED',
+          startedAt: new Date(now - 1000 * 60 * 20),
+          endedAt: new Date(now - 1000 * 60 * 20 + (EARLY_END_THRESHOLD_MINUTES * 60_000 - 1000)),
+          createdAt: new Date(now - 1000 * 60 * 20),
+          feedback: null,
+        },
+        // Exactly threshold (15m 00s) -> endedEarly: false
+        {
+          id: 'sess-exact',
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          status: 'ENDED',
+          startedAt: new Date(now - 1000 * 60 * 20),
+          endedAt: new Date(now - 1000 * 60 * 20 + EARLY_END_THRESHOLD_MINUTES * 60_000),
+          createdAt: new Date(now - 1000 * 60 * 20),
+          feedback: null,
+        },
+        // Over threshold (15m 01s) -> endedEarly: false
+        {
+          id: 'sess-over',
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          status: 'ENDED',
+          startedAt: new Date(now - 1000 * 60 * 20),
+          endedAt: new Date(now - 1000 * 60 * 20 + (EARLY_END_THRESHOLD_MINUTES * 60_000 + 1000)),
+          createdAt: new Date(now - 1000 * 60 * 20),
+          feedback: null,
+        },
+      ];
+
+      (prisma.session.findMany as any).mockResolvedValueOnce(mockSessions);
+
+      const res = await request(app)
+        .get('/api/sessions')
+        .set('Authorization', authHeader());
+
+      expect(res.status).toBe(200);
+      const [under, exact, over] = res.body.data;
+      expect(under.endedEarly).toBe(true);
+      expect(exact.endedEarly).toBe(false);
+      expect(over.endedEarly).toBe(false);
+    });
+
+    it('computeOverallScore: returns null for null, empty or non-array inputs', () => {
+      expect(computeOverallScore(null)).toBeNull();
+      expect(computeOverallScore(undefined)).toBeNull();
+      expect(computeOverallScore([])).toBeNull();
+      expect(computeOverallScore('invalid')).toBeNull();
+      expect(computeOverallScore(123)).toBeNull();
+    });
+
+    it('computeOverallScore: computes rounded average for category scores', () => {
+      const scores = [
+        { category: 'A', score: 4 },
+        { category: 'B', score: 3 },
+        { category: 'C', score: 5 },
+      ];
+      expect(computeOverallScore(scores)).toBe(4);
+    });
+
+    it('computeOverallScore: rounds average to 1 decimal place when fractional', () => {
+      const scores = [
+        { category: 'A', score: 4 },
+        { category: 'B', score: 3 },
+      ];
+      expect(computeOverallScore(scores)).toBe(3.5);
+
+      const scores2 = [
+        { category: 'A', score: 4 },
+        { category: 'B', score: 4 },
+        { category: 'C', score: 3 },
+      ];
+      expect(computeOverallScore(scores2)).toBe(3.7);
+    });
+
+    it('computeOverallScore: ignores Infinity, -Infinity, and NaN', () => {
+      const allNonFinite = [
+        { category: 'A', score: Infinity },
+        { category: 'B', score: -Infinity },
+        { category: 'C', score: NaN },
+      ];
+      expect(computeOverallScore(allNonFinite)).toBeNull();
+
+      const mixedWithValid = [
+        { category: 'A', score: 4 },
+        { category: 'B', score: Infinity },
+        { category: 'C', score: NaN },
+        { category: 'D', score: 2 },
+      ];
+      expect(computeOverallScore(mixedWithValid)).toBe(3);
+    });
+
+    it('computeOverallScore: ignores scores below 1 and scores above 5', () => {
+      const outOfRange = [
+        { category: 'A', score: 0 },
+        { category: 'B', score: -5 },
+        { category: 'C', score: 6 },
+        { category: 'D', score: 100 },
+      ];
+      expect(computeOverallScore(outOfRange)).toBeNull();
+
+      const mixedWithValid = [
+        { category: 'A', score: 0 },
+        { category: 'B', score: 5 },
+        { category: 'C', score: 6 },
+        { category: 'D', score: 3 },
+      ];
+      expect(computeOverallScore(mixedWithValid)).toBe(4);
+    });
+
+    it('computeOverallScore: ignores malformed score objects and non-objects in the array', () => {
+      const malformed = [
+        {},
+        { category: 'A' },
+        { score: '5' },
+        { score: null },
+        { score: undefined },
+        { score: [4] },
+        { score: { value: 4 } },
+        null,
+        undefined,
+        'malformed string',
+        123,
+      ];
+      expect(computeOverallScore(malformed)).toBeNull();
+
+      const mixedWithValid = [
+        {},
+        { category: 'A', score: 4 },
+        null,
+        'not an object',
+        { score: '5' },
+        { category: 'B', score: 2 },
+      ];
+      expect(computeOverallScore(mixedWithValid)).toBe(3);
     });
   });
 

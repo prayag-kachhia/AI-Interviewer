@@ -74,12 +74,42 @@ export async function getOwnedSession(sessionId: string, userId: string) {
 // Matches the briefing's default time limit; sessions have no per-session limit yet.
 export const EARLY_END_THRESHOLD_MINUTES = 15;
 
-/** The user's sessions, newest first, with their feedback status and whether they ended early. */
+/**
+ * Computes an overall feedback score from the rubric scores array.
+ * Only accepts rubric score objects with a finite numeric score between 1 and 5,
+ * ignoring malformed or out-of-range entries.
+ * Returns the average of valid scores rounded to 1 decimal place, or null if no valid scores remain.
+ */
+export function computeOverallScore(scores: unknown): number | null {
+  if (!Array.isArray(scores) || scores.length === 0) {
+    return null;
+  }
+
+  const validScores: number[] = [];
+
+  for (const item of scores) {
+    if (typeof item === 'object' && item !== null && 'score' in item) {
+      const val = (item as { score?: unknown }).score;
+      if (typeof val === 'number' && Number.isFinite(val) && val >= 1 && val <= 5) {
+        validScores.push(val);
+      }
+    }
+  }
+
+  if (validScores.length === 0) {
+    return null;
+  }
+
+  const sum = validScores.reduce((acc, curr) => acc + curr, 0);
+  return Math.round((sum / validScores.length) * 10) / 10;
+}
+
+/** The user's sessions, newest first, with their feedback status, overall score, and whether they ended early. */
 export async function listSessions(userId: string) {
   const sessions = await prisma.session.findMany({
     where: { userId },
     orderBy: { createdAt: 'desc' },
-    include: { feedback: { select: { status: true } } },
+    include: { feedback: { select: { status: true, scores: true } } },
   });
 
   return sessions.map(({ feedback, ...session }) => ({
@@ -90,6 +120,7 @@ export async function listSessions(userId: string) {
       : session.status === 'ENDED'
         ? 'pending'
         : null,
+    overallScore: feedback?.status === 'ready' ? computeOverallScore(feedback.scores) : null,
     endedEarly:
       session.endedAt !== null &&
       session.endedAt.getTime() - session.startedAt.getTime() < EARLY_END_THRESHOLD_MINUTES * 60_000,
