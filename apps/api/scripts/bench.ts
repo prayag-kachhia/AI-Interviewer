@@ -56,17 +56,112 @@ const BENCH_TIMEOUT_MS = 30_000;
 /** Max retries per run for transient 429 / 503 errors. */
 const MAX_RETRIES = 3;
 
+export interface ModelPricing {
+  inputCostPer1M: number;
+  outputCostPer1M: number;
+}
+
 /**
- * Gemini Flash published input/output pricing (USD per 1 M tokens, ≤200 k context).
- * Update if Google changes pricing. See: https://ai.google.dev/pricing
+ * Published pricing for supported Gemini Flash models (USD per 1 M tokens, standard paid tier).
+ * - gemini-3.8-flash (production default): introductory rates active through 2026-12-31.
+ * - gemini-3.5-flash: standard paid tier rates.
+ * See: https://ai.google.dev/gemini-api/docs/pricing
  */
-const INPUT_COST_USD_PER_1M = Number(
-  process.env.BENCH_INPUT_COST_USD_PER_1M ?? 0.075
-);
-const OUTPUT_COST_USD_PER_1M = Number(
-  process.env.BENCH_OUTPUT_COST_USD_PER_1M ?? 0.3
-);
-const USD_TO_INR = Number(process.env.BENCH_USD_TO_INR ?? 84.0);
+export const KNOWN_MODEL_PRICING: Record<string, ModelPricing> = {
+  'gemini-3.8-flash': {
+    inputCostPer1M: 0.75,
+    outputCostPer1M: 3.75,
+  },
+  'gemini-3.5-flash': {
+    inputCostPer1M: 1.5,
+    outputCostPer1M: 9.0,
+  },
+};
+
+export const DEFAULT_BENCH_MODEL = 'gemini-3.8-flash';
+
+/**
+ * Resolves model-aware pricing with environment variable overrides.
+ */
+export function resolveBenchmarkPricing(
+  model?: string,
+  env: NodeJS.ProcessEnv = process.env
+): {
+  model: string;
+  inputCostPer1M: number;
+  outputCostPer1M: number;
+  usdToInr: number;
+  isFallback: boolean;
+} {
+  const resolvedModel =
+    model?.trim() ||
+    env.GEMINI_EVAL_MODEL?.trim() ||
+    DEFAULT_BENCH_MODEL;
+  const normalizedModel = resolvedModel.trim();
+  const isKnown = normalizedModel in KNOWN_MODEL_PRICING;
+  const basePricing =
+    KNOWN_MODEL_PRICING[normalizedModel] ?? KNOWN_MODEL_PRICING[DEFAULT_BENCH_MODEL];
+
+  const envInput = env.BENCH_INPUT_COST_USD_PER_1M;
+  const envOutput = env.BENCH_OUTPUT_COST_USD_PER_1M;
+  const envUsdToInr = env.BENCH_USD_TO_INR;
+
+  const hasExplicitRates =
+    envInput !== undefined && envInput !== '' && envOutput !== undefined && envOutput !== '';
+
+  const inputCostPer1M =
+    envInput !== undefined && envInput !== '' && !Number.isNaN(Number(envInput))
+      ? Number(envInput)
+      : basePricing.inputCostPer1M;
+
+  const outputCostPer1M =
+    envOutput !== undefined && envOutput !== '' && !Number.isNaN(Number(envOutput))
+      ? Number(envOutput)
+      : basePricing.outputCostPer1M;
+
+  const usdToInr =
+    envUsdToInr !== undefined && envUsdToInr !== '' && !Number.isNaN(Number(envUsdToInr))
+      ? Number(envUsdToInr)
+      : 84.0;
+
+  return {
+    model: normalizedModel || DEFAULT_BENCH_MODEL,
+    inputCostPer1M,
+    outputCostPer1M,
+    usdToInr,
+    isFallback: !isKnown && !hasExplicitRates,
+  };
+}
+
+export function calculateBenchmarkCost(
+  avgPromptTokens: number,
+  avgOutputTokens: number,
+  pricing: { inputCostPer1M: number; outputCostPer1M: number; usdToInr: number }
+): {
+  costUSD: number;
+  costINR: number;
+  monthly100USD: number;
+  monthly100INR: number;
+} {
+  const costUSD =
+    (avgPromptTokens / 1_000_000) * pricing.inputCostPer1M +
+    (avgOutputTokens / 1_000_000) * pricing.outputCostPer1M;
+  const costINR = costUSD * pricing.usdToInr;
+  const monthly100USD = costUSD * 100;
+  const monthly100INR = costINR * 100;
+
+  return {
+    costUSD,
+    costINR,
+    monthly100USD,
+    monthly100INR,
+  };
+}
+
+const defaultPricing = resolveBenchmarkPricing();
+const INPUT_COST_USD_PER_1M = defaultPricing.inputCostPer1M;
+const OUTPUT_COST_USD_PER_1M = defaultPricing.outputCostPer1M;
+const USD_TO_INR = defaultPricing.usdToInr;
 
 // ── types ────────────────────────────────────────────────────────────────────
 
@@ -214,6 +309,7 @@ async function runWithRetry(
 
 async function main() {
   const { runs: runsPerFixture, brokenPrompt, delayMs } = parseArgs(process.argv.slice(2));
+  const activeModel = process.env.GEMINI_EVAL_MODEL?.trim() || DEFAULT_BENCH_MODEL;
 
   if (brokenPrompt) {
     console.log(
@@ -475,25 +571,33 @@ async function main() {
   if (n > 0) {
     const avgIn = totalPrompt / n;
     const avgOut = totalOutput / n;
-    const costUSD =
-      (avgIn / 1_000_000) * INPUT_COST_USD_PER_1M +
-      (avgOut / 1_000_000) * OUTPUT_COST_USD_PER_1M;
-    const costINR = costUSD * USD_TO_INR;
-    const monthly100INR = costINR * 100;
+    const pricing = resolveBenchmarkPricing(activeModel);
+    const { costUSD, costINR, monthly100USD, monthly100INR } = calculateBenchmarkCost(
+      avgIn,
+      avgOut,
+      pricing
+    );
 
-    console.log('\nCost (Gemini Flash, avg token counts across all runs):');
+    if (pricing.isFallback) {
+      console.warn(
+        `  ⚠️  Note: "${pricing.model}" has no published pricing in KNOWN_MODEL_PRICING; using ${DEFAULT_BENCH_MODEL} fallback pricing. Set BENCH_INPUT_COST_USD_PER_1M and BENCH_OUTPUT_COST_USD_PER_1M for custom models.`
+      );
+    }
+    console.log(`\nCost (${pricing.model}, avg token counts across all runs):`);
     console.log(`  Avg prompt tokens  : ${Math.round(avgIn)}`);
     console.log(`  Avg output tokens  : ${Math.round(avgOut)}`);
     console.log(
       `  Cost/interview     : ₹${costINR.toFixed(4)}  (US$${costUSD.toFixed(6)})`
     );
     console.log(
-      `  Monthly (100/month): ₹${monthly100INR.toFixed(2)}  (US$${(costUSD * 100).toFixed(4)})`
+      `  Monthly (100/month): ₹${monthly100INR.toFixed(2)}  (US$${monthly100USD.toFixed(4)})`
     );
     console.log(
-      `  Pricing used       : input $${INPUT_COST_USD_PER_1M}/1 M tok,` +
-        ` output $${OUTPUT_COST_USD_PER_1M}/1 M tok,` +
-        ` USD→INR ${USD_TO_INR}`
+      `  Pricing used       : input $${pricing.inputCostPer1M}/1 M tok,` +
+        ` output $${pricing.outputCostPer1M}/1 M tok` +
+        (pricing.isFallback ? ` (fallback: ${DEFAULT_BENCH_MODEL})` : '') +
+        `,` +
+        ` USD→INR ${pricing.usdToInr}`
     );
   }
 
@@ -521,8 +625,12 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(`Fatal: ${(err as Error).message}`);
-  process.exit(1);
-});
+export { main };
+
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(`Fatal: ${(err as Error).message}`);
+    process.exit(1);
+  });
+}
 

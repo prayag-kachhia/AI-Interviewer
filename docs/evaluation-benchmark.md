@@ -34,12 +34,16 @@ Each fixture is scored with the rubric of the role named in its `*.expected.json
 
 ### Cost overrides
 
-Override pricing constants with environment variables if Google updates rates:
+Pricing is model-aware and defaults according to `GEMINI_EVAL_MODEL` (or `gemini-3.8-flash` if unset):
+- `gemini-3.8-flash` (default): \$0.75 input / \$3.75 output per 1 M tokens (introductory, through 2026-12-31)
+- `gemini-3.5-flash`: \$1.50 input / \$9.00 output per 1 M tokens
+
+Override pricing constants with environment variables if Google updates rates or for custom tiers:
 
 ```
-BENCH_INPUT_COST_USD_PER_1M=0.075   # default
-BENCH_OUTPUT_COST_USD_PER_1M=0.3    # default
-BENCH_USD_TO_INR=84.0               # default
+BENCH_INPUT_COST_USD_PER_1M=0.75    # overrides input cost per 1 M tokens
+BENCH_OUTPUT_COST_USD_PER_1M=3.75   # overrides output cost per 1 M tokens
+BENCH_USD_TO_INR=84.0               # default USD to INR conversion rate
 ```
 
 ---
