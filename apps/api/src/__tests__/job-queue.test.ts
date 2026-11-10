@@ -32,7 +32,7 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
   });
 
   afterAll(async () => {
-    await prisma.job.deleteMany({ where: { type: { startsWith: `test.${runId}` } } });
+    await prisma.job.deleteMany({ where: { OR: [{ type: { startsWith: `test.${runId}` } }, { sessionId }] } });
     await prisma.feedback.deleteMany({ where: { sessionId } });
     await prisma.session.deleteMany({ where: { id: sessionId } });
     await prisma.user.deleteMany({ where: { id: userId } });
@@ -95,6 +95,20 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
     expect(await queue.claimNextJob('worker-next', type)).toBeNull();
     const final = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
     expect(final.status).toBe('failed');
+  });
+
+  it('given a feedback job whose worker kept dying, its feedback is marked failed', async () => {
+    const job = await queue.enqueueJob({ type: 'session.ended', sessionId });
+    await prisma.job.update({
+      where: { id: job.id },
+      data: { status: 'processing', attempts: queue.MAX_ATTEMPTS, lockedAt: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+
+    await queue.claimNextJob('worker-next', `test.${runId}.nothing`);
+
+    expect((await prisma.job.findUniqueOrThrow({ where: { id: job.id } })).status).toBe('failed');
+    const feedback = await prisma.feedback.findUniqueOrThrow({ where: { sessionId } });
+    expect(feedback.status).toBe('failed');
   });
 
   it('given a handler that throws a permanent error, the job is marked failed with the error', async () => {

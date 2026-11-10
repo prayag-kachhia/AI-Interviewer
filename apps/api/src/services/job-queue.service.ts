@@ -30,16 +30,28 @@ export async function enqueueJob(params: EnqueueJobParams): Promise<Job> {
 
 export async function claimNextJob(workerId: string, jobType?: string): Promise<Job | null> {
   return prisma.$transaction(async (tx) => {
+    // Give up on jobs whose worker kept dying, and mark their feedback failed so
+    // the candidate sees "Try again" instead of a result that stays pending forever.
     await tx.$executeRaw`
-      UPDATE jobs
-      SET status = 'failed',
-          "lastError" = 'Worker stopped responding',
-          "lockedBy" = NULL,
-          "lockedAt" = NULL,
-          "updatedAt" = NOW()
-      WHERE status = 'processing'
-        AND "lockedAt" < NOW() - INTERVAL '5 minutes'
-        AND attempts >= ${MAX_ATTEMPTS}`;
+      WITH given_up AS (
+        UPDATE jobs
+        SET status = 'failed',
+            "lastError" = 'Worker stopped responding',
+            "lockedBy" = NULL,
+            "lockedAt" = NULL,
+            "updatedAt" = NOW()
+        WHERE status = 'processing'
+          AND "lockedAt" < NOW() - INTERVAL '5 minutes'
+          AND attempts >= ${MAX_ATTEMPTS}
+        RETURNING "sessionId", type
+      )
+      INSERT INTO feedback (id, "sessionId", status, error, "updatedAt")
+      SELECT gen_random_uuid()::text, "sessionId", 'failed', 'Worker stopped responding', NOW()
+      FROM given_up
+      WHERE type = 'session.ended' AND "sessionId" IS NOT NULL
+      ON CONFLICT ("sessionId") DO UPDATE
+      SET status = 'failed', error = EXCLUDED.error, "updatedAt" = NOW()
+      WHERE feedback.status <> 'ready'`;
 
     const type = jobType ?? null;
 
