@@ -16,6 +16,15 @@ export class InvalidRoleError extends Error {
   }
 }
 
+export const MAX_TURN_TEXT_LENGTH = 4000;
+
+export class TurnTextTooLongError extends Error {
+  constructor(message: string = `Turn text exceeds maximum allowed length of ${MAX_TURN_TEXT_LENGTH} characters`) {
+    super(message);
+    this.name = 'TurnTextTooLongError';
+  }
+}
+
 export class InvalidTimestampError extends Error {
   constructor(message: string = 'Turn timestamp is ahead of the session\'s elapsed time') {
     super(message);
@@ -136,7 +145,11 @@ export async function listTurns(sessionId: string, userId: string) {
 }
 
 /**
- * Store one transcript turn, computing timestampSec on the server.
+ * Store one transcript turn, computing timestampSec on the server and enforcing integrity rules (PK-6, NFR-10):
+ * - Rejects turns on non-LIVE or ended sessions (SessionEndedError -> 409).
+ * - Rejects text exceeding 4,000 characters (TurnTextTooLongError -> 400).
+ * - Logs warnings (without rejecting) on alternating speaker anomalies or non-monotonic timestamps.
+ * - Automatically retries on unique-index conflicts for (sessionId, turnIndex) under concurrent submissions.
  */
 export async function addTurn(
   sessionId: string,
@@ -144,6 +157,10 @@ export async function addTurn(
   speaker: 'AI' | 'CANDIDATE',
   text: string
 ) {
+  if (text.length > MAX_TURN_TEXT_LENGTH) {
+    throw new TurnTextTooLongError();
+  }
+
   const session = await getOwnedSession(sessionId, userId);
 
   if (session.status !== 'LIVE') {
@@ -151,17 +168,53 @@ export async function addTurn(
   }
 
   const elapsedSec = Math.max(0, (Date.now() - session.startedAt.getTime()) / 1000);
-  const turnCount = await prisma.turn.count({ where: { sessionId } });
 
-  return prisma.turn.create({
-    data: {
-      sessionId,
-      speaker,
-      text,
-      timestampSec: elapsedSec,
-      turnIndex: turnCount + 1,
-    },
+  // Soft integrity checks: log warnings without rejecting turns
+  // (Live interruptions and conversational overlap make consecutive turns or slight jitter legitimate)
+  const lastTurn = await prisma.turn.findFirst({
+    where: { sessionId },
+    orderBy: { turnIndex: 'desc' },
   });
+
+  if (lastTurn) {
+    if (lastTurn.speaker === speaker) {
+      console.warn(
+        `[transcript-integrity] Non-alternating speaker for session ${sessionId}: consecutive ${speaker} turns`
+      );
+    }
+    if (elapsedSec < lastTurn.timestampSec) {
+      console.warn(
+        `[transcript-integrity] Turn timestamp out of order for session ${sessionId}: new=${elapsedSec}s, last=${lastTurn.timestampSec}s`
+      );
+    }
+  }
+
+  const MAX_RETRIES = 3;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const turnCount = await prisma.turn.count({ where: { sessionId } });
+      return await prisma.turn.create({
+        data: {
+          sessionId,
+          speaker,
+          text,
+          timestampSec: elapsedSec,
+          turnIndex: turnCount + 1,
+        },
+      });
+    } catch (error: any) {
+      const isUniqueIndexConflict =
+        error?.code === 'P2002' ||
+        (Array.isArray(error?.meta?.target) && error.meta.target.includes('turnIndex'));
+
+      if (isUniqueIndexConflict && attempt < MAX_RETRIES - 1) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Failed to record turn after retrying on unique-index conflict');
 }
 
 /**
