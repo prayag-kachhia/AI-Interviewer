@@ -28,7 +28,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('dark', theme === 'dark'); // Tailwind's dark: variant
+    document.documentElement.setAttribute('data-theme', theme); // legacy.css, until P-12
     localStorage.setItem('theme', theme);
   }, [theme]);
 
