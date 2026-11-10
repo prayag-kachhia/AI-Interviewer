@@ -2,23 +2,22 @@
   "role": "backend-developer",
   "scores": [
     {
-      "category": "Communication",
+      "category": "API Design & Architecture",
       "min": 2,
       "max": 4,
-      "reason": "Answers are understandable; offset pagination and basic JWT described clearly but with gaps."
+      "reason": "Understands basic API conventions but misses nuances around versioning, error contracts, or security."
     },
     {
-      "category": "Technical depth",
+      "category": "Database Modeling & Performance",
       "min": 2,
       "max": 3,
-      "reason": "Offset pagination used without noting deep-page issues; logout timestamp approach mentioned but blocklist not known; unit tests over integration tests."
+      "reason": "Applies simple schema patterns correctly but lacks depth in indexing or performance tuning."
     },
     {
-      "category": "Structure",
+      "category": "System Reliability & Scalability",
       "min": 2,
       "max": 4,
-      "reason": "Some structure present but answers tend to stop at the first solution without discussing trade-offs or edge cases."
+      "reason": "Aware of reliability concepts at a high level but struggles to design concrete solutions under load."
     }
   ]
 }
-

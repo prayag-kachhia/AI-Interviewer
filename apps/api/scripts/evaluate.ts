@@ -11,9 +11,8 @@ import {
 
 // Load environment variables from apps/api/.env if not already loaded by the runtime
 if (!process.env.GEMINI_API_KEY) {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  dotenv.config({ path: path.resolve(__dirname, '../.env') });
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  dotenv.config({ path: path.resolve(currentDir, '../.env') });
 }
 
 const TurnSchema = z.object({
@@ -38,9 +37,13 @@ export function parseArgs(argv: string[]) {
       roleId = argv[++i];
     } else if (arg.startsWith('--role=')) {
       roleId = arg.slice('--role='.length);
-    } else if (!arg.startsWith('-')) {
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown flag "${arg}"`);
+    } else {
       if (!filePath) {
         filePath = arg;
+      } else {
+        throw new Error(`Unexpected positional argument: "${arg}"`);
       }
     }
   }
@@ -58,7 +61,8 @@ export function loadTranscript(filePath: string): TranscriptTurn[] {
   try {
     content = readFileSync(resolved, 'utf-8');
   } catch (err) {
-    throw new Error(`Failed to read file: ${(err as Error).message}`);
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to read file: ${message}`);
   }
 
   let parsed: unknown;
@@ -135,12 +139,13 @@ export async function runCLI(argv: string[] = process.argv.slice(2)) {
     }
   } catch (err) {
     // Acceptance criteria: Given a malformed file, then a clear error, not a stack trace.
-    console.error(`Error: ${(err as Error).message}`);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Error: ${message}`);
     process.exit(1);
   }
 }
 
 // Run automatically when invoked directly as CLI
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(__filename)) {
+if (import.meta.main) {
   runCLI();
 }

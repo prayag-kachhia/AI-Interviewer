@@ -2,23 +2,22 @@
   "role": "software-engineer",
   "scores": [
     {
-      "category": "Communication",
+      "category": "Problem Solving & Algorithms",
       "min": 2,
       "max": 4,
-      "reason": "Answers are understandable but lack precision; candidate identifies options without fully explaining them."
+      "reason": "Knows common patterns but misses optimisations and does not fully analyse complexity."
     },
     {
-      "category": "Technical depth",
-      "min": 2,
-      "max": 3,
-      "reason": "Basic knowledge of Redis and transactions shown; edge cases and mechanism details are missing or imprecise."
-    },
-    {
-      "category": "Structure",
+      "category": "Software Design & Architecture",
       "min": 2,
       "max": 4,
-      "reason": "Some structure present but answers often trail off without a clear conclusion or trade-off summary."
+      "reason": "Applies basic design concepts correctly but lacks depth in scalability or trade-off reasoning."
+    },
+    {
+      "category": "Technical Communication",
+      "min": 2,
+      "max": 4,
+      "reason": "Explanations are adequate but sometimes imprecise or lacking structure."
     }
   ]
 }
-

@@ -2,23 +2,22 @@
   "role": "software-engineer",
   "scores": [
     {
-      "category": "Communication",
+      "category": "Problem Solving & Algorithms",
       "min": 3,
       "max": 5,
-      "reason": "Clear explanations of message queues, dead-letter queues, and idempotency; easy to follow throughout."
+      "reason": "Correct use of exponential backoff with jitter and idempotency keys; solid algorithmic thinking applied to reliability problems."
     },
     {
-      "category": "Technical depth",
+      "category": "Software Design & Architecture",
       "min": 3,
       "max": 5,
-      "reason": "Correct use of exponential backoff with jitter, idempotency keys, and containerised integration tests; solid engineering practice."
+      "reason": "Good use of message queues, dead-letter queues, and containerised integration tests; sound architectural reasoning."
     },
     {
-      "category": "Structure",
+      "category": "Technical Communication",
       "min": 3,
       "max": 5,
-      "reason": "Responses are well-organised with clear motivation, implementation, and testing sections."
+      "reason": "Clear explanations with well-organised responses covering motivation, implementation, and testing."
     }
   ]
 }
-

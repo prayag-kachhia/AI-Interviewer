@@ -2,23 +2,22 @@
   "role": "software-engineer",
   "scores": [
     {
-      "category": "Communication",
-      "min": 1,
-      "max": 3,
-      "reason": "Candidate communicates honestly about knowledge gaps but answers are very short and lack specifics."
-    },
-    {
-      "category": "Technical depth",
+      "category": "Problem Solving & Algorithms",
       "min": 1,
       "max": 2,
-      "reason": "Proposes storing base64 images in a database text column and relies on file-extension-only security; fundamental gaps throughout."
+      "reason": "Struggles to identify correct approaches; solutions are incomplete or incorrect."
     },
     {
-      "category": "Structure",
+      "category": "Software Design & Architecture",
       "min": 1,
       "max": 3,
-      "reason": "Answers are brief and mostly reactive; no consistent context-approach-result framing."
+      "reason": "Minimal awareness of design principles; cannot articulate trade-offs or compose a coherent system."
+    },
+    {
+      "category": "Technical Communication",
+      "min": 1,
+      "max": 3,
+      "reason": "Responses are vague or disorganised; technical vocabulary is limited."
     }
   ]
 }
-

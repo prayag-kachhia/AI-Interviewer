@@ -2,23 +2,22 @@
   "role": "backend-developer",
   "scores": [
     {
-      "category": "Communication",
-      "min": 4,
-      "max": 5,
-      "reason": "Technical terms used precisely (cursor pagination, jti claim, SameSite, AppError); explanations are self-contained."
-    },
-    {
-      "category": "Technical depth",
+      "category": "API Design & Architecture",
       "min": 3,
       "max": 5,
-      "reason": "Cursor pagination rationale, JWT refresh rotation, AppError class pattern, and Supertest failure-path testing show solid backend depth."
+      "reason": "Demonstrates solid REST API design principles with appropriate use of HTTP semantics and authentication patterns."
     },
     {
-      "category": "Structure",
-      "min": 4,
+      "category": "Database Modeling & Performance",
+      "min": 3,
       "max": 5,
-      "reason": "Answers are organised: problem → design decision → trade-off → verification, consistently across all four questions."
+      "reason": "Shows good understanding of relational schema design, indexing strategies, and query optimisation."
+    },
+    {
+      "category": "System Reliability & Scalability",
+      "min": 3,
+      "max": 5,
+      "reason": "Applies caching, retry logic, and load distribution concepts with awareness of failure modes."
     }
   ]
 }
-

@@ -42,7 +42,7 @@ export interface GenerateResult {
 
 export interface EvaluatorOptions {
   // Replaces the Gemini call; tests use it so no test reaches the real API.
-  generate?: (prompt: string) => Promise<string | GenerateResult>;
+  generate?: (prompt: string) => Promise<GenerateResult>;
   timeoutMs?: number;
 }
 
@@ -180,9 +180,9 @@ export async function evaluateTranscript(
   const categories = getRubric(input.roleId).map((r) => r.category);
   const prompt = buildEvaluationPrompt(input);
   const generate = options.generate ?? ((p: string) => generateWithGemini(p, categories, timeoutMs));
-  const rawResult = await withTimeout(generate(prompt), timeoutMs);
-  const text = typeof rawResult === 'string' ? rawResult : rawResult.text;
-  const usageMetadata = typeof rawResult === 'string' ? undefined : rawResult.usageMetadata;
+  const result = await withTimeout(generate(prompt), timeoutMs);
+  const text = result.text;
+  const usageMetadata = result.usageMetadata;
 
   let json: unknown;
   try {
