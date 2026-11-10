@@ -78,6 +78,7 @@ model Turn {
   timestampSec Float
   createdAt    DateTime    @default(now())
 
+  @@unique([sessionId, turnIndex])
   @@index([sessionId])
   @@map("turns")
 }

@@ -30,6 +30,7 @@ vi.mock('../db', () => ({
     turn: {
       create: vi.fn(),
       findMany: vi.fn(),
+      findFirst: vi.fn(),
       count: vi.fn(),
     },
     job: {
@@ -70,6 +71,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       updatedAt: new Date(),
     });
     (prisma.resume.findFirst as any).mockResolvedValue(null);
+    (prisma.turn.findFirst as any).mockResolvedValue(null);
   });
 
   describe('POST /api/sessions & GET /api/sessions (LS2)', () => {

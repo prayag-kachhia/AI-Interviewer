@@ -11,7 +11,7 @@ vi.mock('../db', () => ({
   default: {
     session: { findFirst: vi.fn() },
     resume: { findUnique: vi.fn() },
-    turn: { create: vi.fn(), findMany: vi.fn(), count: vi.fn() },
+    turn: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
   },
 }));
 
@@ -32,6 +32,7 @@ describe('interviewer.service', () => {
     vi.clearAllMocks();
     (prisma.session.findFirst as any).mockResolvedValue(LIVE_SESSION);
     (prisma.turn.findMany as any).mockResolvedValue([]);
+    (prisma.turn.findFirst as any).mockResolvedValue(null);
     (prisma.turn.count as any).mockResolvedValue(0);
     (prisma.resume.findUnique as any).mockResolvedValue({
       id: 'resume-1',

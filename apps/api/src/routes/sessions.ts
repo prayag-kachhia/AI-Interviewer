@@ -11,6 +11,7 @@ import {
   InvalidRoleError,
   InvalidTimestampError,
   SessionEndedError,
+  TurnTextTooLongError,
 } from '../services/session.service';
 import { mintVoiceToken, VoiceProviderTimeoutError } from '../services/voice-provider.service';
 import { briefingFor } from '../services/briefing.service';
@@ -117,6 +118,10 @@ router.post('/:id/turns', authenticate, async (req, res) => {
     const turn = await addTurn(id, userId, speaker, text.trim());
     res.status(201).json({ success: true, data: turn });
   } catch (error) {
+    if (error instanceof TurnTextTooLongError) {
+      res.status(400).json({ success: false, message: error.message });
+      return;
+    }
     if (error instanceof NotFoundError) {
       res.status(404).json({ success: false, message: 'Resource not found' });
       return;
