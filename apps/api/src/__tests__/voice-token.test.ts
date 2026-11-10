@@ -15,8 +15,9 @@ vi.mock('@supabase/supabase-js', () => {
 vi.mock('../db', () => ({
   default: {
     user: { findUnique: vi.fn() },
-    session: { findFirst: vi.fn() },
+    session: { findFirst: vi.fn(), findMany: vi.fn() },
     resume: { findUnique: vi.fn() },
+    turn: { findMany: vi.fn() },
   },
 }));
 
@@ -54,6 +55,8 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
       error: null,
     });
     (prisma.user.findUnique as any).mockResolvedValue({ ...AUTH_USER, passwordHash: 'x' });
+    (prisma.session.findMany as any).mockResolvedValue([]);
+    (prisma.turn.findMany as any).mockResolvedValue([]);
   });
 
   it("given the candidate's own session, when a token is requested, then a short-lived token comes back with role briefing", async () => {
@@ -111,6 +114,36 @@ describe('LS3 — POST /api/sessions/:id/voice-token', () => {
     expect(mintVoiceToken).toHaveBeenCalledWith(
       expect.objectContaining({
         briefing: expect.stringContaining('Cloud Gateway'),
+      })
+    );
+  });
+
+  it("incorporates past questions from candidate's previous ended sessions into the voice token briefing (FR-16)", async () => {
+    (prisma.session.findFirst as any).mockResolvedValueOnce(OWN_LIVE_SESSION);
+    (prisma.session.findMany as any).mockResolvedValueOnce([
+      { id: 'past-sess-1' },
+      { id: 'past-sess-2' },
+    ]);
+    (prisma.turn.findMany as any).mockResolvedValueOnce([
+      { text: 'Explain how indexing improves database performance.' },
+      { text: 'What are database ACID properties?' },
+    ]);
+    vi.mocked(mintVoiceToken).mockResolvedValueOnce('auth_tokens/ephemeral-past-q');
+
+    const res = await request(app)
+      .post('/api/sessions/sess-1/voice-token')
+      .set('Authorization', 'Bearer valid-supabase-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, data: { token: 'auth_tokens/ephemeral-past-q' } });
+    expect(mintVoiceToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        briefing: expect.stringContaining('PREVIOUSLY ASKED QUESTIONS (DO NOT REPEAT):'),
+      })
+    );
+    expect(mintVoiceToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        briefing: expect.stringContaining('- Explain how indexing improves database performance.'),
       })
     );
   });
