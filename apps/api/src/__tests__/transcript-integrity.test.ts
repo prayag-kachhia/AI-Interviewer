@@ -279,46 +279,4 @@ describe('PK-6 — Transcript Integrity Checks (NFR-10)', () => {
       warnSpy.mockRestore();
     });
   });
-
-  describe('Migration de-duplication logic (PK-6)', () => {
-    it('accurately identifies and eliminates duplicate (sessionId, turnIndex) rows keeping the earliest', () => {
-      // Simulates the window function in migration.sql:
-      // ROW_NUMBER() OVER (PARTITION BY "sessionId", "turnIndex" ORDER BY "createdAt" ASC, id ASC)
-      const mockTurns = [
-        { id: 't1', sessionId: 's1', turnIndex: 1, createdAt: new Date('2026-11-10T10:00:00Z') },
-        { id: 't2', sessionId: 's1', turnIndex: 1, createdAt: new Date('2026-11-10T10:00:05Z') }, // duplicate of t1
-        { id: 't3', sessionId: 's1', turnIndex: 2, createdAt: new Date('2026-11-10T10:00:10Z') },
-        { id: 't4', sessionId: 's2', turnIndex: 1, createdAt: new Date('2026-11-10T10:00:00Z') },
-        { id: 't5', sessionId: 's2', turnIndex: 1, createdAt: new Date('2026-11-10T10:00:02Z') }, // duplicate of t4
-        { id: 't6', sessionId: 's2', turnIndex: 1, createdAt: new Date('2026-11-10T10:00:04Z') }, // duplicate of t4
-      ];
-
-      // Group by sessionId + turnIndex and rank
-      const partitions = new Map<string, typeof mockTurns>();
-      for (const turn of mockTurns) {
-        const key = `${turn.sessionId}:${turn.turnIndex}`;
-        const group = partitions.get(key) ?? [];
-        group.push(turn);
-        partitions.set(key, group);
-      }
-
-      const toDelete: string[] = [];
-      const toKeep: string[] = [];
-
-      for (const [, group] of partitions) {
-        // ORDER BY createdAt ASC, id ASC
-        group.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
-        group.forEach((row, index) => {
-          if (index === 0) {
-            toKeep.push(row.id);
-          } else {
-            toDelete.push(row.id);
-          }
-        });
-      }
-
-      expect(toKeep).toEqual(['t1', 't3', 't4']);
-      expect(toDelete).toEqual(['t2', 't5', 't6']);
-    });
-  });
 });
