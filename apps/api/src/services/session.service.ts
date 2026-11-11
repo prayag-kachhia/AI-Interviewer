@@ -1,6 +1,6 @@
 import prisma from '../db';
 import { NotFoundError } from '../errors';
-import { FeedbackStatus, ROLES } from '@interview/contracts';
+import { FeedbackStatus, ROLES, type CreateSessionInput } from '@interview/contracts';
 
 // The role list lives in @interview/contracts so the API and the web app share it.
 const VALID_ROLE_IDS = new Set(ROLES.map((r) => r.id));
@@ -40,10 +40,11 @@ export class SessionEndedError extends Error {
 }
 
 /**
- * Create a session for a signed-in candidate + a validated role.
+ * Create a session for a signed-in candidate with the setup they chose
+ * (role, and optionally focus, company, level and mode).
  */
-
-export async function createSession(userId: string, roleId: string) {
+export async function createSession(userId: string, input: CreateSessionInput) {
+  const { roleId } = input;
   if (!isValidRoleId(roleId)) {
     throw new InvalidRoleError(`Unknown role id: ${roleId}`);
   }
@@ -59,6 +60,10 @@ export async function createSession(userId: string, roleId: string) {
       userId,
       role: roleId,
       resumeId: latestResume?.id ?? null,
+      company: input.company ?? null,
+      level: input.level ?? null,
+      focus: input.focus ?? null,
+      mode: input.mode,
     },
   });
 }

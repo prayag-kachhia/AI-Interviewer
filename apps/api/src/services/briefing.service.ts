@@ -114,7 +114,7 @@ Tailor your questions, engineering culture expectations, and technical scenarios
     sections.push(
       `TARGET SENIORITY LEVEL:
 The position level is "${level.trim()}".
-Calibrate the depth, complexity, and architectural expectations of your questions to a ${level.trim()}-level engineer.`
+Calibrate the depth, complexity, and architectural expectations of your questions to an engineer at the ${level.trim()} level.`
     );
   }
 
@@ -206,12 +206,13 @@ You must strictly enforce the following boundaries at all times:
 }
 
 /**
- * Builds the interviewer briefing for a session: its role plus the summary of its linked resume
- * and previously asked questions for this candidate and role (FR-16).
- * Focus, company and level are passed through once the session stores them.
+ * Builds the interviewer briefing for a session: its role, the focus, company and level the
+ * candidate chose, the summary of its linked resume and previously asked questions for this
+ * candidate and role (FR-16).
  */
 export async function briefingFor(
-  session: Pick<Session, 'role' | 'resumeId' | 'userId'>
+  session: Pick<Session, 'role' | 'resumeId' | 'userId'> &
+    Partial<Pick<Session, 'focus' | 'company' | 'level'>>
 ): Promise<string> {
   let resumeSummary: string | undefined;
 
@@ -231,5 +232,12 @@ export async function briefingFor(
     ? await recentQuestions(session.userId, session.role)
     : [];
 
-  return buildBriefing({ roleId: session.role, resumeSummary, pastQuestions });
+  return buildBriefing({
+    roleId: session.role,
+    focus: session.focus ?? undefined,
+    company: session.company ?? undefined,
+    level: session.level ?? undefined,
+    resumeSummary,
+    pastQuestions,
+  });
 }
