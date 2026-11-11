@@ -1,7 +1,16 @@
-export class NotFoundError extends Error {
-  constructor(message: string = 'Resource not found') {
+export class AppError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
     super(message);
-    this.name = 'NotFoundError';
+    this.name = new.target.name;
+    this.status = status;
+  }
+}
+
+export class NotFoundError extends AppError {
+  constructor(message: string = 'Resource not found') {
+    super(404, message);
   }
 }
 
