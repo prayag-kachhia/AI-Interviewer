@@ -4,6 +4,7 @@ import {
   pcm16ToFloat,
   base64Encode,
   base64Decode,
+  downsampleBuffer,
   PlaybackQueue,
 } from "./audio";
 
@@ -53,6 +54,69 @@ describe("audio helpers (Issue #81)", () => {
       for (let i = 0; i < originalBytes.length; i++) {
         expect(decodedBytes[i]).toBe(originalBytes[i]);
       }
+    });
+  });
+
+  describe("downsampleBuffer", () => {
+    it("returns 16 kHz audio unchanged", () => {
+      const input = new Float32Array([0.1, -0.2, 0.3, -0.4]);
+      expect(downsampleBuffer(input, 16000, 16000)).toBe(input);
+    });
+
+    it("downsamples 48 kHz to 16 kHz by averaging 3-sample groups", () => {
+      const input = new Float32Array([0.3, 0.6, 0.9, -0.3, -0.6, -0.9]);
+      const output = downsampleBuffer(input, 48000, 16000);
+
+      expect(output.length).toBe(2);
+      expect(output[0]).toBeCloseTo(0.6, 5);
+      expect(output[1]).toBeCloseTo(-0.6, 5);
+    });
+
+    it("downsamples 44.1 kHz 40ms chunk (1764 samples) to 640 16 kHz samples", () => {
+      const input = new Float32Array(1764).fill(0.25);
+      const output = downsampleBuffer(input, 44100, 16000);
+
+      expect(output.length).toBe(640);
+      expect(output[0]).toBeCloseTo(0.25, 5);
+      expect(output[639]).toBeCloseTo(0.25, 5);
+    });
+
+    it("handles empty buffers and rates below target", () => {
+      const empty = new Float32Array(0);
+      expect(downsampleBuffer(empty, 48000, 16000).length).toBe(0);
+
+      const lowRate = new Float32Array([0.2, 0.4]);
+      expect(downsampleBuffer(lowRate, 8000, 16000)).toBe(lowRate);
+    });
+
+    it("buffers 48 kHz quanta in PcmCaptureProcessor and emits 16 kHz Int16 frames", async () => {
+      const posted: ArrayBuffer[] = [];
+      class StubProcessor {
+        port = { postMessage: (msg: ArrayBuffer) => posted.push(msg) };
+      }
+      type WorkletInstance = { process(inputs: Float32Array[][]): boolean };
+      let Registered: (new () => WorkletInstance) | undefined;
+
+      vi.stubGlobal("AudioWorkletProcessor", StubProcessor);
+      vi.stubGlobal("sampleRate", 48000);
+      vi.stubGlobal("registerProcessor", (_name: string, ctor: new () => WorkletInstance) => {
+        Registered = ctor;
+      });
+
+      vi.resetModules();
+      await import("./pcmCaptureWorklet");
+
+      const processor = new Registered!();
+      const quantum = new Float32Array(128).fill(0.5);
+      for (let i = 0; i < 15; i++) {
+        expect(processor.process([[quantum]])).toBe(true);
+      }
+
+      expect(posted).toHaveLength(1);
+      expect(posted[0].byteLength).toBe(640 * 2);
+      expect(pcm16ToFloat(posted[0])[0]).toBeCloseTo(0.5, 3);
+
+      vi.unstubAllGlobals();
     });
   });
 
