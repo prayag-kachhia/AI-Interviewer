@@ -92,3 +92,34 @@ export const Feedback = z.object({
   scores: z.array(FeedbackScore).optional(),
 });
 export type Feedback = z.infer<typeof Feedback>;
+
+// Topics for improvement plan and candidate insights (V-2, V-3, V-4).
+export const INSIGHT_TOPICS = [
+  "DBMS",
+  "OOP",
+  "OS",
+  "CN",
+  "DSA",
+  "SQL",
+  "System Design",
+] as const;
+
+export const InsightTopic = z.enum(INSIGHT_TOPICS);
+export type InsightTopic = z.infer<typeof InsightTopic>;
+
+export const TopicScore = z.object({
+  topic: InsightTopic,
+  score: z.number().int().min(1).max(5),
+  summary: z.string().optional(),
+});
+export type TopicScore = z.infer<typeof TopicScore>;
+
+export const ImprovementPlan = z.object({
+  id: z.string().optional(),
+  userId: z.string(),
+  topics: z.array(TopicScore),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+export type ImprovementPlan = z.infer<typeof ImprovementPlan>;
+
