@@ -20,6 +20,8 @@ Each fixture is a JSON array of 6–10 turns between an interviewer (`AI`) and a
 | `data-analyst-weak.json` | Data Analyst | 8 | Underprepared candidate answers | Vague SQL, no window functions, no data-quality checks. |
 | `backend-developer-good.json` | Backend Developer | 8 | Competent candidate answers | Cursor pagination, JWT refresh and revocation, trade-offs explained. |
 | `backend-developer-average.json` | Backend Developer | 8 | Mixed / intermediate answers | Workable but shallow designs (offset pagination, basic JWT) without trade-offs. |
+| `difficulty-basic.json` | Software Engineer | 8 | Top-tier basic answers | Hash table mechanics, array vs linked list, HTTP status codes, unit testing basics. |
+| `difficulty-advanced.json` | Software Engineer | 8 | Top-tier advanced answers | Distributed PN-Counter CRDTs, deadlock/data race triage, MVCC isolation anomalies, chaos engineering. |
 
 ---
 
@@ -74,6 +76,14 @@ The "representative" ranges below are rough hand estimates of the average score.
 - **`off-topic.json`**: the candidate talks about teamwork and the internet instead of answering a URL-shortener design question. Expected **1 – 2** in every category.
 - **`data-analyst-strong.json`** / **`data-analyst-weak.json`**: the same Data Analyst questions answered well (expected **4 – 5**) and poorly (expected **1 – 3**).
 - **`backend-developer-good.json`** / **`backend-developer-average.json`**: the same Backend Developer questions answered well (expected **3 – 5**) and adequately (expected **2 – 4**).
+
+### 7. Difficulty-Aware Expectations Fixtures (PN-3 / DR-05)
+- **`difficulty-basic.json`**:
+  - Foundational Software Engineer questions (hash table lookup & collision handling, array vs linked list memory and complexity, HTTP status codes 200/400/404/500, unit testing isolation).
+  - Demonstrates that a fully correct, complete basic answer earns full marks (**5 / 5** across all categories) without penalization for omitting unasked advanced optimizations or distributed-system depth.
+- **`difficulty-advanced.json`**:
+  - Advanced Software Engineer questions (globally consistent distributed counters via PN-Counter CRDTs, deadlock/data race triage and lock-free CAS primitives, transaction isolation anomalies & MVCC snapshot mechanics, automated chaos engineering pipeline).
+  - Evaluated against deeper expectations of distributed constraints, concurrency anomalies, and trade-offs. Expected: **4 – 5** across all categories.
 
 The exact range per category is in each fixture's `*.expected.json`.
 

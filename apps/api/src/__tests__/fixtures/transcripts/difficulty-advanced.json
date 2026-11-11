@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Software Engineer interview. How would you design a distributed, globally consistent counter system with high write throughput across multiple geographic regions?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "To achieve high write throughput across multiple regions without incurring synchronous cross-region consensus latency on every increment, I would use conflict-free replicated data types, specifically a Positive-Negative Counter (PN-Counter) CRDT. Each region runs a local cluster with regional Redis or Cassandra nodes where increments are recorded locally in O(1) time. These state mutations are asynchronously gossiped or streamed via Apache Kafka with idempotent replication offsets across regions. The global value is computed by aggregating the maximum state vector received from each regional node. When strict linearizable consistency is strictly mandatory for billing or inventory reservation, I partition the counter keyspace and use distributed consensus groups like Raft or Multi-Paxos per partition, accepting cross-region round-trip latencies for those strict subsets while using bounded staleness reads elsewhere."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you detect, diagnose, and resolve subtle data race conditions and deadlocks in a high-concurrency multi-threaded service under heavy load?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I detect data races and deadlocks using a combination of proactive runtime tooling, thread dump telemetry, and static analysis. In development and staging, I run concurrency test suites under ThreadSanitizer (TSan) and Java Flight Recorder with contention profiling. When deadlocks occur in production, I capture JVM thread dumps via jstack to inspect the locked monitor addresses and detect cyclic dependency chains in the wait-for graph. To resolve deadlocks, I enforce strict global lock acquisition ordering across all call sites, replace synchronized blocks with explicit locks that use tryLock with timeouts to fail fast and shed load, or restructure shared state to eliminate locks entirely using lock-free atomic primitives like Compare-And-Swap (CAS) and concurrent ring buffers like the LMAX Disruptor."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do database transaction isolation levels differ regarding concurrency anomalies, and how does MVCC implement them under high write contention?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "SQL standard isolation levels address specific concurrency anomalies: Read Committed prevents dirty reads using short-lived read locks or snapshot reads; Repeatable Read prevents non-repeatable reads by keeping snapshots throughout the transaction, though classic implementations may permit phantom reads; and Serializable prevents all anomalies including write skew. Multi-Version Concurrency Control (MVCC) achieves this by writing a new tuple version with creation and expiration transaction IDs (xmin/xmax in PostgreSQL) on update, rather than overwriting in place. Readers view a consistent snapshot corresponding to their transaction start without blocking writers, and writers do not block readers. Under high write contention, serialization failures occur when concurrent transactions attempt to update the same tuple version, which requires robust application-level retry mechanisms with exponential backoff and jitter."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you architect an automated chaos engineering and fault-injection testing pipeline to verify distributed system resilience against network partitions and cascading dependency failures?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I architect an automated chaos engineering pipeline integrated into continuous delivery using tools like Chaos Mesh or LitmusChaos in pre-production canary environments. The pipeline simulates real-world failure modes: network latency injection, 20% packet drops, DNS resolution failures, and simulated region partitions using iptables and traffic control (tc). We also simulate pod terminations and external provider 503 error bursts. The pipeline monitors telemetry in Prometheus and Grafana, validating that circuit breakers trip within configured error thresholds, requests degrade gracefully to read-only caches, and exponential backoff prevents cascading thundering herds. If error budgets or p99 latency SLOs are breached beyond predefined thresholds, the automated pipeline halts deployment and triggers an automatic rollback."
+  }
+]

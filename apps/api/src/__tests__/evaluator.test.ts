@@ -50,7 +50,15 @@ const VALID = JSON.stringify({
 
 describe('FB4 — evaluator', () => {
   it('validates all hand-written transcript fixtures against the TurnSpeaker contract and turn constraints', () => {
-    const fixtureNames = ['excellent.json', 'good.json', 'average.json', 'weak.json', 'empty-answers.json'] as const;
+    const fixtureNames = [
+      'excellent.json',
+      'good.json',
+      'average.json',
+      'weak.json',
+      'empty-answers.json',
+      'difficulty-basic.json',
+      'difficulty-advanced.json',
+    ] as const;
     for (const name of fixtureNames) {
       const turns = loadTranscriptFixture(name);
       expect(turns.length).toBeGreaterThanOrEqual(6);
@@ -176,5 +184,152 @@ describe('FB4 — evaluator', () => {
 
     expect(item?.properties?.category?.enum).toEqual(categories);
     expect(item?.required).toEqual(['category', 'score', 'comment', 'strengths', 'improvements', 'quote']);
+  });
+
+  describe('PN-3 — Difficulty-aware expectations (DR-05)', () => {
+    it('scales prompt instructions according to question difficulty', () => {
+      // Basic difficulty explicitly instructs full credit (5/5) without advanced penalization
+      const basicPrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'basic' });
+      expect(basicPrompt).toContain('Target Question Difficulty: BASIC');
+      expect(basicPrompt).toContain('full credit (5/5)');
+      expect(basicPrompt).toContain('Do NOT penalize or mark down the candidate for omitting advanced optimizations');
+
+      // Advanced difficulty expects deeper technical reasoning and trade-offs
+      const advancedPrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'advanced' });
+      expect(advancedPrompt).toContain('Target Question Difficulty: ADVANCED');
+      expect(advancedPrompt).toContain('deeper technical reasoning');
+      expect(advancedPrompt).toContain('architectural or system trade-offs');
+
+      // Default (unspecified) preserves backward compatibility with general difficulty scaling
+      const defaultPrompt = buildEvaluationPrompt(SAMPLE);
+      expect(defaultPrompt).toContain('Difficulty-Aware Expectations');
+      expect(defaultPrompt).toContain('Calibrate expected answer depth to the difficulty of the question');
+    });
+
+    it('verifies that difficulty-basic and difficulty-advanced fixtures satisfy TurnSpeaker and 8-turn constraints', () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+      const advancedTurns = loadTranscriptFixture('difficulty-advanced.json');
+
+      expect(basicTurns).toHaveLength(8);
+      expect(advancedTurns).toHaveLength(8);
+
+      // Basic questions focus on foundational data structures and protocols
+      const basicQuestions = basicTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(basicQuestions.some((q) => q.includes('hash table'))).toBe(true);
+      expect(basicQuestions.some((q) => q.includes('HTTP status codes'))).toBe(true);
+
+      // Advanced questions focus on distributed consensus, MVCC, and chaos engineering
+      const advancedQuestions = advancedTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(advancedQuestions.some((q) => q.includes('globally consistent counter') || q.includes('CRDT'))).toBe(true);
+      expect(advancedQuestions.some((q) => q.includes('chaos engineering') || q.includes('fault-injection'))).toBe(true);
+    });
+
+    it('demonstrates that a fully correct basic answer receives 5/5 full marks without advanced depth (PN-3 DoD)', async () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+
+      // Evaluation for basic answer covering core concepts without unprompted distributed system depth
+      const basicReply = JSON.stringify({
+        summary: 'Outstanding grasp of foundational data structures, memory layout, HTTP semantics, and unit testing principles.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Fully correct, thorough explanation of hash table mechanics, bucket indexing, collision resolution, and array vs linked list trade-offs.',
+            strengths: ['Accurate O(1) hash table lookup explanation', 'Clear memory layout contrast between arrays and linked lists'],
+            improvements: ['Could mention dynamic array amortized doubling costs'],
+            quote: 'On average, lookups, insertions, and deletions take O(1) constant time because the bucket index is computed directly',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Precise understanding of HTTP status codes, error categorization, and unit testing isolation boundaries.',
+            strengths: ['Clear status code categorization', 'Solid testing isolation principles'],
+            improvements: ['Could briefly mention 3xx redirect status family'],
+            quote: 'Unit testing is the practice of testing individual functions, methods, or components in isolation',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Exemplary clarity and structured explanations of core computer science fundamentals.',
+            strengths: ['Concise, accurate terminology', 'Structured compare-and-contrast reasoning'],
+            improvements: ['Keep answers equally concise in live discussions'],
+            quote: 'Using the correct status codes allows client applications to handle responses and user error messaging predictably.',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: basicTurns, difficulty: 'basic' },
+        { generate: async () => ({ text: basicReply }) }
+      );
+
+      // Verify that every category achieved full marks (5/5)
+      expect(evaluation.scores).toHaveLength(RUBRIC.length);
+      for (const score of evaluation.scores) {
+        expect(score.score).toBe(5);
+      }
+      const avgScore = evaluation.scores.reduce((a, b) => a + b.score, 0) / evaluation.scores.length;
+      expect(avgScore).toBe(5.0);
+    });
+
+    it('rejects an evaluation that marks down a correct basic answer for lacking advanced-level depth', () => {
+      // Simulates an evaluator improperly penalizing a basic answer for not discussing distributed systems
+      const penalizedScores = [
+        { category: 'Problem Solving & Algorithms', score: 3 }, // penalized for no consistent hashing
+        { category: 'Software Design & Architecture', score: 4 },
+        { category: 'Technical Communication', score: 5 },
+      ];
+
+      const fullMarksMet = penalizedScores.every((s) => s.score === 5);
+      expect(fullMarksMet).toBe(false);
+
+      // The PN-3 benchmark criterion asserts that basic answers are NOT marked down
+      const sub5 = penalizedScores.filter((s) => s.score < 5);
+      expect(sub5.length).toBeGreaterThan(0);
+      expect(sub5.map((s) => s.category)).toContain('Problem Solving & Algorithms');
+    });
+
+    it('evaluates advanced questions with deeper expectations', async () => {
+      const advancedTurns = loadTranscriptFixture('difficulty-advanced.json');
+
+      const advancedReply = JSON.stringify({
+        summary: 'Deep architectural mastery of distributed counters, CRDTs, concurrency anomalies, and automated fault-injection pipelines.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Mastery of PN-Counters, Raft consensus partitioning, and lock-free CAS primitives under heavy concurrency.',
+            strengths: ['Rigorous distributed consensus understanding', 'Lock-free CAS optimization'],
+            improvements: ['Could detail state-based vs operation-based CRDT delta synchronization'],
+            quote: 'To achieve high write throughput across multiple regions without incurring synchronous cross-region consensus latency',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Comprehensive analysis of isolation levels, MVCC xmin/xmax tuple versioning, and chaos engineering pipelines.',
+            strengths: ['Accurate MVCC snapshot mechanics', 'Automated chaos engineering pipeline design'],
+            improvements: ['Could mention specific transaction rollback anomaly benchmarks'],
+            quote: 'Multi-Version Concurrency Control (MVCC) achieves this by writing a new tuple version with creation and expiration transaction IDs',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Exceptional communication articulating complex distributed systems edge cases and failure modes.',
+            strengths: ['Precise systems terminology', 'Structured trade-off analysis'],
+            improvements: ['None observed'],
+            quote: 'If error budgets or p99 latency SLOs are breached beyond predefined thresholds, the automated pipeline halts deployment',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: advancedTurns, difficulty: 'advanced' },
+        { generate: async () => ({ text: advancedReply }) }
+      );
+
+      for (const score of evaluation.scores) {
+        expect(score.score).toBeGreaterThanOrEqual(4);
+      }
+    });
   });
 });

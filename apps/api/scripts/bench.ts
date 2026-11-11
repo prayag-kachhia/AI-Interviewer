@@ -158,6 +158,108 @@ export function calculateBenchmarkCost(
   };
 }
 
+export interface DifficultyAwarenessResult {
+  pass: boolean;
+  basicAvg?: number;
+  advancedAvg?: number;
+  basicScoresByCategory?: Record<string, number>;
+  error?: string;
+}
+
+/**
+ * Asserts that a fully correct basic answer earns full marks (5/5) without being marked down
+ * for lacking advanced-level depth (PN-3, DR-05).
+ */
+export function evaluateDifficultyAwareness(
+  fixtureResults: Array<{ name: string; runs: RunResult[] }>
+): DifficultyAwarenessResult {
+  const basicResult = fixtureResults.find((f) => f.name === 'difficulty-basic');
+  const advancedResult = fixtureResults.find((f) => f.name === 'difficulty-advanced');
+
+  if (!basicResult || !advancedResult) {
+    const missing = [
+      !basicResult ? 'difficulty-basic' : null,
+      !advancedResult ? 'difficulty-advanced' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `Missing required difficulty benchmark fixture(s): ${missing}`,
+    };
+  }
+
+  const getValidRuns = (res: { runs: RunResult[] }) => res.runs.filter((r) => !r.error);
+  const basicValid = getValidRuns(basicResult);
+  const advancedValid = getValidRuns(advancedResult);
+
+  if (basicValid.length === 0 || advancedValid.length === 0) {
+    const empty = [
+      basicValid.length === 0 ? 'difficulty-basic' : null,
+      advancedValid.length === 0 ? 'difficulty-advanced' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `No successful evaluated runs with scores for: ${empty}`,
+    };
+  }
+
+  // Calculate per-category averages for basic fixture
+  const basicCategories = [...new Set(basicValid.flatMap((r) => r.scores.map((s) => s.category)))];
+  const basicCategoryAverages: Record<string, number> = {};
+  for (const cat of basicCategories) {
+    const catScores = basicValid
+      .flatMap((r) => r.scores.filter((s) => s.category === cat).map((s) => s.score));
+    basicCategoryAverages[cat] =
+      catScores.length > 0 ? catScores.reduce((a, b) => a + b, 0) / catScores.length : 0;
+  }
+
+  const basicAllScores = basicValid.flatMap((r) => r.scores.map((s) => s.score));
+  const basicAvg = basicAllScores.reduce((a, b) => a + b, 0) / basicAllScores.length;
+
+  const advancedAllScores = advancedValid.flatMap((r) => r.scores.map((s) => s.score));
+  const advancedAvg = advancedAllScores.reduce((a, b) => a + b, 0) / advancedAllScores.length;
+
+  // Acceptance criteria (PN-3, DR-05):
+  // 1. Fully correct basic answer must achieve 5/5 in all categories (not marked down for lacking advanced depth).
+  // 2. Advanced answer must meet high advanced expectations (avg >= 4.00).
+  const basicHasFullMarks = Object.values(basicCategoryAverages).every((avg) => avg >= 5.0);
+  const advancedMeetsExpectations = advancedAvg >= 4.0;
+
+  if (!basicHasFullMarks) {
+    const sub5 = Object.entries(basicCategoryAverages)
+      .filter(([, avg]) => avg < 5.0)
+      .map(([cat, avg]) => `${cat} (${avg.toFixed(2)})`)
+      .join(', ');
+    return {
+      pass: false,
+      basicAvg,
+      advancedAvg,
+      basicScoresByCategory: basicCategoryAverages,
+      error: `Basic question did not achieve full marks (5/5) in: ${sub5}. Basic answers must not be penalized for lacking advanced depth.`,
+    };
+  }
+
+  if (!advancedMeetsExpectations) {
+    return {
+      pass: false,
+      basicAvg,
+      advancedAvg,
+      basicScoresByCategory: basicCategoryAverages,
+      error: `Advanced question average (${advancedAvg.toFixed(2)}) fell below expectations (>= 4.00).`,
+    };
+  }
+
+  return {
+    pass: true,
+    basicAvg,
+    advancedAvg,
+    basicScoresByCategory: basicCategoryAverages,
+  };
+}
+
 const defaultPricing = resolveBenchmarkPricing();
 const INPUT_COST_USD_PER_1M = defaultPricing.inputCostPer1M;
 const OUTPUT_COST_USD_PER_1M = defaultPricing.outputCostPer1M;
@@ -174,6 +276,7 @@ interface ExpectedScore {
 
 interface FixtureExpected {
   role: string;
+  difficulty?: string;
   scores: ExpectedScore[];
 }
 
@@ -419,7 +522,7 @@ async function main() {
         const result = await runWithRetry(
           () =>
             evaluateTranscript(
-              { roleId: role.id, turns },
+              { roleId: role.id, turns, difficulty: expected?.difficulty },
               generateFn ? { generate: generateFn, timeoutMs: BENCH_TIMEOUT_MS } : { timeoutMs: BENCH_TIMEOUT_MS }
             ),
           MAX_RETRIES,
@@ -601,6 +704,26 @@ async function main() {
     );
   }
 
+  // ── Difficulty-Aware Expectations (PN-3, DR-05) ───────────────────────────
+  console.log('\nDifficulty-Aware Expectations (PN-3 / DR-05):');
+  let difficultyAwarenessOk = false;
+  const diffEval = evaluateDifficultyAwareness(fixtureResults);
+
+  if (diffEval.error) {
+    console.log(`  ❌ FAIL — ${diffEval.error}`);
+  } else if (diffEval.basicAvg !== undefined && diffEval.advancedAvg !== undefined) {
+    difficultyAwarenessOk = diffEval.pass;
+    console.log(`  difficulty-basic    avg : ${diffEval.basicAvg.toFixed(2)} / 5.00  (requires full marks 5.00/5.00: ✅)`);
+    console.log(`  difficulty-advanced avg : ${diffEval.advancedAvg.toFixed(2)} / 5.00  (requires >= 4.00/5.00: ✅)`);
+    console.log(
+      `  Verdict                 : ${
+        difficultyAwarenessOk
+          ? '✅ PASS — Basic answer earns full marks without advanced-level depth'
+          : '❌ FAIL'
+      }`
+    );
+  }
+
   // ── Accuracy verdict ─────────────────────────────────────────────────────────
 
   console.log('\nAccuracy:');
@@ -610,13 +733,17 @@ async function main() {
   const accuracyOk = passCount >= threshold;
 
   console.log('');
-  if (!accuracyOk || !latencyOk) {
+  if (!accuracyOk || !latencyOk || !difficultyAwarenessOk) {
     if (!accuracyOk)
       console.error(
         `❌ ACCURACY: only ${passCount}/${totalWithExpected} pass (need ≥ ${threshold})`
       );
     if (!latencyOk)
       console.error(`❌ LATENCY:  p95 = ${p95} ms exceeds ${LATENCY_TARGET_MS} ms target`);
+    if (!difficultyAwarenessOk)
+      console.error(
+        `❌ DIFFICULTY AWARENESS: basic answer did not earn full marks or advanced expectations not met (PN-3, DR-05)`
+      );
     process.exit(1);
   } else {
     console.log(
