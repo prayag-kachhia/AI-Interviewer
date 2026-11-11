@@ -58,12 +58,16 @@ export type InterviewVoiceState =
 
 export type TurnData = Turn;
 
-export type SessionData = Session;
+export interface HistorySession extends Session {
+  overallScore?: number | null;
+}
+
+export type SessionData = HistorySession;
 
 export interface SessionsListResponse {
   success: boolean;
   message?: string;
-  data?: SessionData[];
+  data?: HistorySession[];
 }
 
 export interface RolesResponse {

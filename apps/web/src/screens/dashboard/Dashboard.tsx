@@ -1,8 +1,54 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
-import { UploadCloud, FileText, CheckCircle, ArrowRight, Loader2, AlertCircle, UserCircle2, BrainCircuit } from 'lucide-react';
-import { uploadResume, getLatestResume } from '../../lib/api';
+import {
+  UploadCloud,
+  FileText,
+  CheckCircle,
+  ArrowRight,
+  Loader2,
+  AlertCircle,
+  UserCircle2,
+  BrainCircuit,
+  Award,
+  Trophy,
+  TrendingUp,
+  Flame,
+  Lock,
+} from 'lucide-react';
+import { uploadResume, getLatestResume, getSessions } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import { deriveAchievements } from './achievements';
+import type { HistorySession } from '../../types';
+
+function getBadgeIcon(id: string) {
+  switch (id) {
+    case 'first-interview':
+      return <Award size={22} />;
+    case 'five-interviews':
+      return <Trophy size={22} />;
+    case 'improved-score':
+      return <TrendingUp size={22} />;
+    case 'consistency-streak':
+      return <Flame size={22} />;
+    default:
+      return <Award size={22} />;
+  }
+}
+
+function getBadgeIconClass(id: string): string {
+  switch (id) {
+    case 'first-interview':
+      return 'primary';
+    case 'five-interviews':
+      return 'warning';
+    case 'improved-score':
+      return 'success';
+    case 'consistency-streak':
+      return 'warning';
+    default:
+      return 'primary';
+  }
+}
 
 export const Dashboard: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -11,6 +57,9 @@ export const Dashboard: React.FC = () => {
   const [status, setStatus] = useState('');
   const [hasProfile, setHasProfile] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [sessions, setSessions] = useState<HistorySession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -27,6 +76,30 @@ export const Dashboard: React.FC = () => {
       // Ignore 404s, it just means they don't have a profile yet
     });
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getSessions()
+      .then((res) => {
+        if (!cancelled) {
+          setSessions(res.data ?? []);
+          setSessionsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSessionsError('Unable to load achievements at this time.');
+          setSessionsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const achievements = useMemo(() => deriveAchievements(sessions), [sessions]);
 
   const handleFiles = (files: FileList) => {
     const selectedFile = files[0];
@@ -78,9 +151,9 @@ export const Dashboard: React.FC = () => {
     try {
       // Simulate slight delay for UI polish if processing is too fast
       setTimeout(() => setStatus('Analyzing resume with AI...'), 1500);
-      
+
       const response = await uploadResume(file);
-      
+
       if (response.success) {
         setStatus('Analysis complete!');
         setHasProfile(true);
@@ -125,27 +198,27 @@ export const Dashboard: React.FC = () => {
             {status}
           </div>
         )}
-        
+
         <style>{`
           @keyframes spin { 100% { transform: rotate(360deg); } }
         `}</style>
 
-        <div 
-          className={`upload-area ${file ? 'active' : ''} ${isDragging ? 'drag-over' : ''}`} 
+        <div
+          className={`upload-area ${file ? 'active' : ''} ${isDragging ? 'drag-over' : ''}`}
           onClick={() => !loading && fileInputRef.current?.click()}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileChange} 
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
             accept="application/pdf"
-            style={{ display: 'none' }} 
+            style={{ display: 'none' }}
             disabled={loading}
           />
-          
+
           {file ? (
             <div>
               <FileText className="upload-icon" />
@@ -162,9 +235,9 @@ export const Dashboard: React.FC = () => {
         </div>
 
         <div style={{ textAlign: 'right' }}>
-          <button 
-            className="btn btn-primary" 
-            onClick={handleUpload} 
+          <button
+            className="btn btn-primary"
+            onClick={handleUpload}
             disabled={!file || loading}
           >
             {loading ? (
@@ -196,6 +269,184 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      <div className="card" style={{ maxWidth: '750px', margin: '2rem auto 0' }} data-testid="achievements-section">
+        <div className="card-header" style={{ marginBottom: '1.25rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '0.75rem',
+            }}
+          >
+            <div>
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                <Award size={22} style={{ color: 'var(--primary-color)' }} />
+                Achievements
+              </h2>
+              <p style={{ margin: '0.25rem 0 0', color: 'var(--text-muted)' }}>
+                Milestones and streaks earned from your mock interviews.
+              </p>
+            </div>
+            {!sessionsLoading && !sessionsError && (
+              <span
+                data-testid="achievements-unlocked-count"
+                style={{
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  color: 'var(--primary-color)',
+                  backgroundColor: 'var(--primary-light, rgba(99, 102, 241, 0.12))',
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '9999px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                }}
+              >
+                {achievements.filter((a) => a.unlocked).length} of {achievements.length} Unlocked
+              </span>
+            )}
+          </div>
+        </div>
+
+        {sessionsLoading && (
+          <div role="status" className="alert alert-info" style={{ justifyContent: 'center' }}>
+            <Loader2 size={20} className="animate-spin" />
+            <span>Loading achievements…</span>
+          </div>
+        )}
+
+        {sessionsError && (
+          <div className="alert alert-error" role="alert">
+            <AlertCircle size={20} />
+            <span>{sessionsError}</span>
+          </div>
+        )}
+
+        {!sessionsLoading && !sessionsError && (
+          <div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                gap: '1rem',
+              }}
+            >
+              {achievements.map((badge) => (
+                <div
+                  key={badge.id}
+                  data-testid={`achievement-badge-${badge.id}`}
+                  data-unlocked={badge.unlocked}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '1rem',
+                    padding: '1.25rem',
+                    borderRadius: 'var(--radius-lg, 0.75rem)',
+                    background: 'var(--surface-color)',
+                    border: badge.unlocked
+                      ? '1px solid var(--border-color)'
+                      : '1px dashed var(--border-color)',
+                    opacity: badge.unlocked ? 1 : 0.65,
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div
+                    className={`stat-icon ${badge.unlocked ? getBadgeIconClass(badge.id) : 'disabled'}`}
+                    style={{ width: '44px', height: '44px' }}
+                  >
+                    {getBadgeIcon(badge.id)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.5rem',
+                        marginBottom: '0.25rem',
+                      }}
+                    >
+                      <h4
+                        style={{
+                          margin: 0,
+                          fontSize: '0.95rem',
+                          fontWeight: 600,
+                          color: badge.unlocked ? 'var(--text-main)' : 'var(--text-muted)',
+                        }}
+                      >
+                        {badge.title}
+                      </h4>
+                      {badge.unlocked ? (
+                        <span
+                          data-testid="badge-status-unlocked"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: 'var(--success-color, #10b981)',
+                            backgroundColor: 'var(--success-bg, #d1fae5)',
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '9999px',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <CheckCircle size={11} />
+                          Unlocked
+                        </span>
+                      ) : (
+                        <span
+                          data-testid="badge-status-locked"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 500,
+                            color: 'var(--text-muted, #71717a)',
+                            backgroundColor: 'var(--border-color, #e2e8f0)',
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '9999px',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <Lock size={11} />
+                          Locked
+                        </span>
+                      )}
+                    </div>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: '0.825rem',
+                        color: 'var(--text-muted)',
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      {badge.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {sessions.filter((s) => s.status === 'ENDED').length === 0 && (
+              <p
+                style={{
+                  margin: '1.25rem 0 0',
+                  textAlign: 'center',
+                  fontSize: '0.875rem',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                Complete your first mock interview to start unlocking badges!
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="dashboard-grid" style={{ maxWidth: '750px', margin: '2.5rem auto' }}>
         <div className="stat-card">
           <div className={`stat-icon ${hasProfile ? 'success' : 'warning'}`}>
@@ -221,7 +472,7 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
         ) : (
-           <div className="stat-card">
+          <div className="stat-card">
             <div className="stat-icon disabled">
               <UserCircle2 size={24} />
             </div>
