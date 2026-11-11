@@ -5,8 +5,8 @@ import { z } from 'zod';
 import { FeedbackScore, ROLES, type TurnSpeaker } from '@interview/contracts';
 import { getRubric, DIFFICULTY_AWARE_PRINCIPLE } from './rubrics';
 
-// Leaves room inside the 15-second feedback budget for polling and the database.
-export const EVALUATION_TIMEOUT_MS = 12_000;
+// Allows more time for Gemini evaluation when transient API latency is high.
+export const EVALUATION_TIMEOUT_MS = 30_000;
 // A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
 // Google swaps the model behind the alias.
 const DEFAULT_MODEL = 'gemini-3.8-flash';
