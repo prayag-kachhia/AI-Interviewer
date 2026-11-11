@@ -3,7 +3,7 @@
 import { GoogleGenAI, Type, type Schema } from '@google/genai';
 import { z } from 'zod';
 import { FeedbackScore, ROLES, type TurnSpeaker } from '@interview/contracts';
-import { getRubric } from './rubrics';
+import { getRubric, TECHNOLOGY_INDEPENDENCE_PRINCIPLE } from './rubrics';
 
 // Leaves room inside the 15-second feedback budget for polling and the database.
 export const EVALUATION_TIMEOUT_MS = 12_000;
@@ -62,6 +62,7 @@ Evaluation Instructions:
 1. Technical & Role-Specific Evaluation:
    - Score the candidate strictly on the criteria listed for each category above.
    - Differentiate strong, concrete answers with specific depth and trade-offs from surface-level or vague explanations.
+   - Technology-independent evaluation: ${TECHNOLOGY_INDEPENDENCE_PRINCIPLE}
 
 2. Behavioural Evaluation (STAR Methodology):
    - For questions and answers that are behavioural (e.g. discussing past experiences, conflicts, challenges, leadership, or teamwork), assess the answer structure using the STAR framework:

@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to the Software Engineer interview. How would you design and implement an algorithm to find the top K most frequent elements from a large stream of items?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would first build a frequency map using a hash map or collections.Counter, which takes O(N) time where N is the number of elements. Then, to retrieve the top K frequent elements efficiently without sorting all unique elements in O(U log U), I would maintain a min-heap of size K using the heapq module. As I iterate through the frequency map, I push (frequency, item) tuples into the min-heap. When the heap size exceeds K, I pop the minimum element using heapq.heappop. This ensures the heap always retains the K highest frequency elements. The overall time complexity is O(N + U log K) where U is the number of unique elements, and the auxiliary space is O(U) for the frequency table plus O(K) for the min-heap. For edge cases like K being equal to or larger than the number of unique items, we can directly return all unique keys."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you build an asynchronous worker service that consumes tasks from a queue and executes them with rate limiting and retry handling?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would use an asynchronous pipeline built with asyncio and an asyncio.Queue, or connect to a message broker like RabbitMQ using aio-pika. Multiple async worker coroutines run concurrently in an asyncio event loop, pulling task payloads from the queue. To enforce rate limits, I implement a token bucket rate limiter using asyncio.Semaphore or a shared Redis token bucket script so workers do not exceed provider quotas. When a task encounters a transient error like a network timeout or HTTP 429, the worker catches the exception and schedules a retry with exponential backoff and randomized jitter to prevent thundering herd problems. After reaching a maximum retry count of five attempts, the task is forwarded to a dead-letter queue for inspection and alerting."
+  },
+  {
+    "speaker": "AI",
+    "text": "How does the runtime's memory management and garbage collection model impact your design when handling high throughput?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "CPython manages memory primarily through reference counting, supplemented by a cyclic generational garbage collector with three generations to detect and clean reference cycles. Under high throughput, frequent allocation of short-lived objects causes overhead and can trigger costly GC sweeps across generation 2. To optimize memory, I reuse objects where practical, use __slots__ in data classes to eliminate per-instance dictionary overhead, and avoid circular references between parent and child objects so reference counts drop to zero immediately upon going out of scope. In performance-critical batch processing, I also tune gc.set_threshold or temporarily disable cyclic GC during tight ingestion loops to prevent pause latency."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you approach automated testing for these services to guarantee correctness and prevent regressions?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I use pytest as the primary test framework. For unit testing, I write parameterized tests using @pytest.mark.parametrize to validate algorithms against normal inputs, boundary cases, and empty datasets. For dependencies like databases or external HTTP APIs, I use pytest-mock and respx to mock external calls and simulate error codes like 429 and 500. For integration testing, I use Testcontainers to spin up ephemeral PostgreSQL and RabbitMQ instances in Docker, verifying end-to-end task flow from ingestion to database persistence. I also run flake8 and mypy in our CI pipeline to enforce strict type checking and catch static errors before runtime."
+  }
+]

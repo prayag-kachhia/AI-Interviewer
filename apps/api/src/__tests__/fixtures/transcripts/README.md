@@ -20,6 +20,8 @@ Each fixture is a JSON array of 6–10 turns between an interviewer (`AI`) and a
 | `data-analyst-weak.json` | Data Analyst | 8 | Underprepared candidate answers | Vague SQL, no window functions, no data-quality checks. |
 | `backend-developer-good.json` | Backend Developer | 8 | Competent candidate answers | Cursor pagination, JWT refresh and revocation, trade-offs explained. |
 | `backend-developer-average.json` | Backend Developer | 8 | Mixed / intermediate answers | Workable but shallow designs (offset pagination, basic JWT) without trade-offs. |
+| `tech-stack-python.json` | Software Engineer | 8 | Top-tier candidate answers | Python stack: min-heap (heapq), asyncio queues, cyclic generational GC, pytest. |
+| `tech-stack-java.json` | Software Engineer | 8 | Top-tier candidate answers | Java stack: PriorityQueue, BlockingQueue/ThreadPool, JVM GC (G1/ZGC), JUnit 5. |
 
 ---
 
@@ -74,6 +76,14 @@ The "representative" ranges below are rough hand estimates of the average score.
 - **`off-topic.json`**: the candidate talks about teamwork and the internet instead of answering a URL-shortener design question. Expected **1 – 2** in every category.
 - **`data-analyst-strong.json`** / **`data-analyst-weak.json`**: the same Data Analyst questions answered well (expected **4 – 5**) and poorly (expected **1 – 3**).
 - **`backend-developer-good.json`** / **`backend-developer-average.json`**: the same Backend Developer questions answered well (expected **3 – 5**) and adequately (expected **2 – 4**).
+
+### 7. Technology-Independent Scoring Fixtures (PN-8 / DR-05)
+- **`tech-stack-python.json`** vs. **`tech-stack-java.json`**:
+  - The exact same four Software Engineer technical interview questions (algorithmic top-K elements, asynchronous worker queue design, runtime memory management & GC, automated testing strategy).
+  - One candidate responds using Python (with `heapq`, `asyncio.Queue`, reference counting & generational GC tuning, `pytest`).
+  - The other candidate responds using Java (with `PriorityQueue`, `BlockingQueue` & `ThreadPoolExecutor`, JVM generational GC & G1/ZGC, `JUnit 5`).
+  - Both candidates exhibit equivalent technical correctness, algorithmic depth ($O(N + U \log K)$), system architecture principles, and communication clarity.
+  - Acceptance criterion (DR-05): both variants score within 1.0 point of each other across all categories. Expected: **4 – 5** in every category for both fixtures.
 
 The exact range per category is in each fixture's `*.expected.json`.
 

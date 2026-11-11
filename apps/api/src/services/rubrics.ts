@@ -1,4 +1,4 @@
-// The evaluation rubric for each interview role (FR-20, DR-03, DR-04). Changing one needs the lead's approval.
+// The evaluation rubric for each interview role (FR-20, DR-03, DR-04, DR-05). Changing one needs the lead's approval.
 
 export interface RubricCategory {
   readonly category: string;
@@ -6,6 +6,14 @@ export interface RubricCategory {
 }
 
 export type Rubric = readonly RubricCategory[];
+
+/**
+ * Core principle for technology-independent scoring (PN-8, DR-05).
+ * Any valid language, framework, library, or architectural approach earns full credit
+ * when the underlying concept, correctness, and reasoning satisfy the criteria.
+ */
+export const TECHNOLOGY_INDEPENDENCE_PRINCIPLE =
+  'Any valid technology, programming language, framework, library, or technical approach earns full credit when the underlying concept, correctness, and reasoning satisfy the criteria; evaluate the quality and depth of the solution rather than the specific choice of technology.';
 
 export class UnknownRoleError extends Error {
   constructor(roleId: string) {
