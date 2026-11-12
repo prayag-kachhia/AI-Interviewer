@@ -239,6 +239,68 @@ export function evaluateTechnologyIndependence(
   };
 }
 
+export interface ScoreSeparationResult {
+  pass: boolean;
+  technicalAvg?: number;
+  communicationScore?: number;
+  error?: string;
+}
+
+/**
+ * Evaluates that pauses and fillers affect communication only, never the technical score (S-5, FR-21, NFR-19).
+ * Verifies that the filler-heavy fixture maintains a high technical average (>= 3.5 / 5.0)
+ * while communication reflects the verbal disfluency.
+ */
+export function evaluateScoreSeparation(
+  fixtureResults: Array<{ name: string; runs: RunResult[] }>
+): ScoreSeparationResult {
+  const fillerResult = fixtureResults.find((f) => f.name === 'filler-heavy-correct');
+  if (!fillerResult) {
+    return {
+      pass: false,
+      error: 'Missing required fixture: filler-heavy-correct',
+    };
+  }
+
+  const validRuns = fillerResult.runs.filter((r) => !r.error);
+  if (validRuns.length === 0) {
+    return {
+      pass: false,
+      error: 'No successful evaluated runs with scores for: filler-heavy-correct',
+    };
+  }
+
+  const techScores = validRuns.flatMap((r) =>
+    r.scores
+      .filter((s) => s.category !== 'Technical Communication')
+      .map((s) => s.score)
+  );
+  const commScores = validRuns.flatMap((r) =>
+    r.scores
+      .filter((s) => s.category === 'Technical Communication')
+      .map((s) => s.score)
+  );
+
+  if (techScores.length === 0 || commScores.length === 0) {
+    return {
+      pass: false,
+      error: 'Missing technical or communication categories for: filler-heavy-correct',
+    };
+  }
+
+  const technicalAvg = techScores.reduce((a, b) => a + b, 0) / techScores.length;
+  const communicationScore = commScores.reduce((a, b) => a + b, 0) / commScores.length;
+
+  // Technical depth must remain high (>= 3.5 / 5.00) despite heavy verbal fillers
+  const pass = technicalAvg >= 3.5;
+
+  return {
+    pass,
+    technicalAvg,
+    communicationScore,
+  };
+}
+
 const defaultPricing = resolveBenchmarkPricing();
 const INPUT_COST_USD_PER_1M = defaultPricing.inputCostPer1M;
 const OUTPUT_COST_USD_PER_1M = defaultPricing.outputCostPer1M;
@@ -700,6 +762,24 @@ async function main() {
     );
   }
 
+  // ── Score Separation (S-5, FR-21, NFR-19) ──────────────────────────────────
+  console.log('\nScore Separation (S-5 / FR-21):');
+  let scoreSeparationOk = false;
+  const sepEval = evaluateScoreSeparation(fixtureResults);
+
+  if (sepEval.error) {
+    console.log(`  ❌ FAIL — ${sepEval.error}`);
+  } else if (sepEval.technicalAvg !== undefined && sepEval.communicationScore !== undefined) {
+    scoreSeparationOk = sepEval.pass;
+    console.log(
+      `  filler-heavy technical avg : ${sepEval.technicalAvg.toFixed(2)} / 5.00 (target: >= 3.50)  ${
+        sepEval.technicalAvg >= 3.5 ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(`  filler-heavy comm score    : ${sepEval.communicationScore.toFixed(2)} / 5.00`);
+    console.log(`  Score separation           : ${scoreSeparationOk ? '✅ PASS' : '❌ FAIL'}`);
+  }
+
   // ── Accuracy verdict ─────────────────────────────────────────────────────────
 
   console.log('\nAccuracy:');
@@ -709,7 +789,7 @@ async function main() {
   const accuracyOk = passCount >= threshold;
 
   console.log('');
-  if (!accuracyOk || !latencyOk || !techIndependenceOk) {
+  if (!accuracyOk || !latencyOk || !techIndependenceOk || !scoreSeparationOk) {
     if (!accuracyOk)
       console.error(
         `❌ ACCURACY: only ${passCount}/${totalWithExpected} pass (need ≥ ${threshold})`
@@ -718,6 +798,8 @@ async function main() {
       console.error(`❌ LATENCY:  p95 = ${p95} ms exceeds ${LATENCY_TARGET_MS} ms target`);
     if (!techIndependenceOk)
       console.error(`❌ TECHNOLOGY INDEPENDENCE: score difference exceeds 1.0 point limit (PN-8, DR-05)`);
+    if (!scoreSeparationOk)
+      console.error(`❌ SCORE SEPARATION: filler-heavy answers did not maintain high technical scores (S-5, FR-21)`);
     process.exit(1);
   } else {
     console.log(

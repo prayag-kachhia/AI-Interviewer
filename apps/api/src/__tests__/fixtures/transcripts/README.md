@@ -22,6 +22,8 @@ Each fixture is a JSON array of 6–10 turns between an interviewer (`AI`) and a
 | `backend-developer-average.json` | Backend Developer | 8 | Mixed / intermediate answers | Workable but shallow designs (offset pagination, basic JWT) without trade-offs. |
 | `tech-stack-python.json` | Software Engineer | 8 | Top-tier candidate answers | Python stack: min-heap (heapq), asyncio queues, cyclic generational GC, pytest. |
 | `tech-stack-java.json` | Software Engineer | 8 | Top-tier candidate answers | Java stack: PriorityQueue, BlockingQueue/ThreadPool, JVM GC (G1/ZGC), JUnit 5. |
+| `filler-heavy-correct.json` | Software Engineer | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): pauses and fillers affect Communication only, keeping high technical scores. |
+| `filler-heavy-data-analyst.json` | Data Analyst | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): SQL window functions and validation logic retain high scores despite disfluent delivery. |
 
 ---
 
@@ -84,6 +86,16 @@ The "representative" ranges below are rough hand estimates of the average score.
   - The other candidate responds using Java (with `PriorityQueue`, `BlockingQueue` & `ThreadPoolExecutor`, JVM generational GC & G1/ZGC, `JUnit 5`).
   - Both candidates exhibit equivalent technical correctness, algorithmic depth ($O(N + U \log K)$), system architecture principles, and communication clarity.
   - Acceptance criterion (DR-05): both variants score within 1.0 point of each other across all categories. Expected: **4 – 5** in every category for both fixtures.
+
+### 8. Score Separation Fixtures (S-5 / FR-21 / NFR-19)
+- **`filler-heavy-correct.json`**:
+  - Role: Software Engineer.
+  - Characteristics: Validates that pauses, speech fillers ("um", "uh", "like", "you know"), repetition, and verbal hesitation affect Communication only, never technical scores. The candidate describes an asynchronous notification service with message queues, exponential backoff with jitter, dead-letter queues, PostgreSQL idempotency keys, and Testcontainers integration tests with heavy disfluencies.
+  - Expected ranges: Problem Solving & Algorithms (3–5), Software Design & Architecture (3–5), Technical Communication (1–3).
+- **`filler-heavy-data-analyst.json`**:
+  - Role: Data Analyst.
+  - Characteristics: The candidate details SQL rolling 7-day average using CTE and `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW`, deduplication via `ROW_NUMBER()` and `LAG`, structured metric decomposition, and layered pipeline validation, spoken with frequent hesitation and fillers.
+  - Expected ranges: SQL & Analytical Reasoning (4–5), Data Interpretation & Business Insights (2–4), Statistical Understanding & Data Quality (4–5).
 
 The exact range per category is in each fixture's `*.expected.json`.
 
