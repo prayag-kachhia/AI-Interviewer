@@ -130,6 +130,7 @@ model ImprovementPlan {
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   topics    Json     @default("[]")
+  plan      Json     @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 
