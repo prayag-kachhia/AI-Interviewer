@@ -4,7 +4,7 @@ import prisma from '../db';
 import { AppError } from '../errors';
 import { evaluateTranscript, type EvaluatorOptions } from './evaluator.service';
 import { getOwnedSession } from './session.service';
-import { isTransientError, MAX_ATTEMPTS } from './job-queue.service';
+import { isTransientError, MAX_ATTEMPTS, enqueueJob } from './job-queue.service';
 
 export type FeedbackStatus = 'pending' | 'ready' | 'failed';
 
@@ -82,6 +82,11 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
       status: 'ready',
       summary: evaluation.summary,
       scores: evaluation.scores,
+    });
+    await enqueueJob({
+      type: 'insights.refresh',
+      sessionId: session.id,
+      payload: { userId: session.userId },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
