@@ -8,6 +8,7 @@ export interface RubricCategory {
 export type Rubric = readonly RubricCategory[];
 
 /**
+/**
  * Core principle for difficulty-aware expectations (PN-3, DR-05).
  * Calibrate expected answer depth to the difficulty of the question: a basic question receives
  * full credit (5/5) when the candidate understands the core concept and provides a correct,
@@ -18,6 +19,13 @@ export type Rubric = readonly RubricCategory[];
 export const DIFFICULTY_AWARE_PRINCIPLE =
   'Calibrate expected answer depth to the difficulty of the question. A correct, thorough answer to a basic question must earn full credit without penalization for omitting unprompted advanced optimizations or architectural complexity. Advanced questions expect correspondingly deeper reasoning, trade-offs, and edge cases.';
 
+/**
+ * Core principle for technology-independent scoring (PN-8, DR-05).
+ * Any valid language, framework, library, or architectural approach earns full credit
+ * when the underlying concept, correctness, and reasoning satisfy the criteria.
+ */
+export const TECHNOLOGY_INDEPENDENCE_PRINCIPLE =
+  'Any valid technology, programming language, framework, library, or technical approach earns full credit when the underlying concept, correctness, and reasoning satisfy the criteria; evaluate the quality and depth of the solution rather than the specific choice of technology.';
 
 export class UnknownRoleError extends Error {
   constructor(roleId: string) {

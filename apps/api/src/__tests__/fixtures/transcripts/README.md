@@ -20,6 +20,8 @@ Each fixture is a JSON array of 6–10 turns between an interviewer (`AI`) and a
 | `data-analyst-weak.json` | Data Analyst | 8 | Underprepared candidate answers | Vague SQL, no window functions, no data-quality checks. |
 | `backend-developer-good.json` | Backend Developer | 8 | Competent candidate answers | Cursor pagination, JWT refresh and revocation, trade-offs explained. |
 | `backend-developer-average.json` | Backend Developer | 8 | Mixed / intermediate answers | Workable but shallow designs (offset pagination, basic JWT) without trade-offs. |
+| `tech-stack-python.json` | Software Engineer | 8 | Top-tier candidate answers | Python stack: min-heap (heapq), asyncio queues, cyclic generational GC, pytest. |
+| `tech-stack-java.json` | Software Engineer | 8 | Top-tier candidate answers | Java stack: PriorityQueue, BlockingQueue/ThreadPool, JVM GC (G1/ZGC), JUnit 5. |
 | `difficulty-basic.json` | Software Engineer | 8 | Top-tier basic answers | Hash table mechanics, array vs linked list, HTTP status codes, unit testing basics. |
 | `difficulty-advanced.json` | Software Engineer | 8 | Top-tier advanced answers | Distributed PN-Counter CRDTs, deadlock/data race triage, MVCC isolation anomalies, chaos engineering. |
 
@@ -77,7 +79,15 @@ The "representative" ranges below are rough hand estimates of the average score.
 - **`data-analyst-strong.json`** / **`data-analyst-weak.json`**: the same Data Analyst questions answered well (expected **4 – 5**) and poorly (expected **1 – 3**).
 - **`backend-developer-good.json`** / **`backend-developer-average.json`**: the same Backend Developer questions answered well (expected **3 – 5**) and adequately (expected **2 – 4**).
 
-### 7. Difficulty-Aware Expectations Fixtures (PN-3 / DR-05)
+### 7. Technology-Independent Scoring Fixtures (PN-8 / DR-05)
+- **`tech-stack-python.json`** vs. **`tech-stack-java.json`**:
+  - The exact same four Software Engineer technical interview questions (algorithmic top-K elements, asynchronous worker queue design, runtime memory management & GC, automated testing strategy).
+  - One candidate responds using Python (with `heapq`, `asyncio.Queue`, reference counting & generational GC tuning, `pytest`).
+  - The other candidate responds using Java (with `PriorityQueue`, `BlockingQueue` & `ThreadPoolExecutor`, JVM generational GC & G1/ZGC, `JUnit 5`).
+  - Both candidates exhibit equivalent technical correctness, algorithmic depth ($O(N + U \log K)$), system architecture principles, and communication clarity.
+  - Acceptance criterion (DR-05): both variants score within 1.0 point of each other across all categories. Expected: **4 – 5** in every category for both fixtures.
+
+### 8. Difficulty-Aware Expectations Fixtures (PN-3 / DR-05)
 - **`difficulty-basic.json`**:
   - Foundational Software Engineer questions (hash table lookup & collision handling, array vs linked list memory and complexity, HTTP status codes 200/400/404/500, unit testing isolation).
   - Demonstrates that a fully correct, complete basic answer earns full marks (**5 / 5** across all categories) without penalization for omitting unasked advanced optimizations or distributed-system depth.

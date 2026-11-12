@@ -158,20 +158,108 @@ export function calculateBenchmarkCost(
   };
 }
 
+/**
+ * Asserts that two technology stack variants score within acceptable parity (PN-8, DR-05).
+ * Definition of Done: both stacks score within 1.0 point of each other.
+ */
+export function checkTechnologyParity(
+  scoreA: number,
+  scoreB: number,
+  maxAllowedDiff = 1.0
+): { diff: number; pass: boolean } {
+  const diff = Math.abs(scoreA - scoreB);
+  const roundedDiff = Math.round(diff * 100) / 100;
+  return {
+    diff: roundedDiff,
+    pass: roundedDiff <= maxAllowedDiff,
+  };
+}
+
+export interface TechnologyIndependenceResult {
+  pass: boolean;
+  pyAvg?: number;
+  javaAvg?: number;
+  diff?: number;
+  error?: string;
+}
+
+/**
+ * Evaluates parity between tech-stack-python and tech-stack-java fixtures (PN-8, DR-05).
+ * Defaults to failing unless both fixtures exist and have successful runs with valid scores.
+ */
+export function evaluateTechnologyIndependence(
+  fixtureResults: Array<{ name: string; runs: RunResult[] }>
+): TechnologyIndependenceResult {
+  const pythonResult = fixtureResults.find((f) => f.name === 'tech-stack-python');
+  const javaResult = fixtureResults.find((f) => f.name === 'tech-stack-java');
+
+  if (!pythonResult || !javaResult) {
+    const missing = [
+      !pythonResult ? 'tech-stack-python' : null,
+      !javaResult ? 'tech-stack-java' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `Missing required technology stack fixture(s): ${missing}`,
+    };
+  }
+
+  const getValidScores = (runs: RunResult[]) =>
+    runs
+      .filter((r) => !r.error)
+      .flatMap((r) => r.scores.map((s) => s.score));
+
+  const pyScores = getValidScores(pythonResult.runs);
+  const javaScores = getValidScores(javaResult.runs);
+
+  if (pyScores.length === 0 || javaScores.length === 0) {
+    const emptyRuns = [
+      pyScores.length === 0 ? 'tech-stack-python' : null,
+      javaScores.length === 0 ? 'tech-stack-java' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `No successful evaluated runs with scores for: ${emptyRuns}`,
+    };
+  }
+
+  const pyAvg = pyScores.reduce((a, b) => a + b, 0) / pyScores.length;
+  const javaAvg = javaScores.reduce((a, b) => a + b, 0) / javaScores.length;
+  const parity = checkTechnologyParity(pyAvg, javaAvg, 1.0);
+
+  return {
+    pass: parity.pass,
+    pyAvg,
+    javaAvg,
+    diff: parity.diff,
+  };
+}
+
 export interface DifficultyAwarenessResult {
   pass: boolean;
   basicAvg?: number;
   advancedAvg?: number;
   basicScoresByCategory?: Record<string, number>;
+  advancedScoresByCategory?: Record<string, number>;
   error?: string;
 }
 
+const REQUIRED_DIFFICULTY_RUBRIC_CATEGORIES = [
+  'Problem Solving & Algorithms',
+  'Software Design & Architecture',
+  'Technical Communication',
+];
+
 /**
  * Asserts that a fully correct basic answer earns full marks (5/5) without being marked down
- * for lacking advanced-level depth (PN-3, DR-05).
+ * for lacking advanced-level depth, and verifies that all expected rubric categories are present (PN-3, DR-05).
  */
 export function evaluateDifficultyAwareness(
-  fixtureResults: Array<{ name: string; runs: RunResult[] }>
+  fixtureResults: Array<{ name: string; runs: RunResult[]; expected?: FixtureExpected }>
 ): DifficultyAwarenessResult {
   const basicResult = fixtureResults.find((f) => f.name === 'difficulty-basic');
   const advancedResult = fixtureResults.find((f) => f.name === 'difficulty-advanced');
@@ -206,13 +294,53 @@ export function evaluateDifficultyAwareness(
     };
   }
 
-  // Calculate per-category averages for basic fixture
-  const basicCategories = [...new Set(basicValid.flatMap((r) => r.scores.map((s) => s.category)))];
+  // Determine required categories from fixture expected config or fallback to required SE categories
+  const expectedBasicCategories =
+    basicResult.expected?.scores && basicResult.expected.scores.length > 0
+      ? basicResult.expected.scores.map((s) => s.category)
+      : REQUIRED_DIFFICULTY_RUBRIC_CATEGORIES;
+
+  const expectedAdvancedCategories =
+    advancedResult.expected?.scores && advancedResult.expected.scores.length > 0
+      ? advancedResult.expected.scores.map((s) => s.category)
+      : REQUIRED_DIFFICULTY_RUBRIC_CATEGORIES;
+
+  // Validate that all expected categories are present in evaluated runs
+  const missingBasicCategories = expectedBasicCategories.filter((cat) =>
+    basicValid.every((r) => !r.scores.some((s) => s.category === cat))
+  );
+  if (missingBasicCategories.length > 0) {
+    return {
+      pass: false,
+      error: `Basic fixture missing required rubric category/categories: ${missingBasicCategories.join(', ')}`,
+    };
+  }
+
+  const missingAdvancedCategories = expectedAdvancedCategories.filter((cat) =>
+    advancedValid.every((r) => !r.scores.some((s) => s.category === cat))
+  );
+  if (missingAdvancedCategories.length > 0) {
+    return {
+      pass: false,
+      error: `Advanced fixture missing required rubric category/categories: ${missingAdvancedCategories.join(', ')}`,
+    };
+  }
+
+  // Calculate per-category averages for basic fixture across expected categories
   const basicCategoryAverages: Record<string, number> = {};
-  for (const cat of basicCategories) {
+  for (const cat of expectedBasicCategories) {
     const catScores = basicValid
       .flatMap((r) => r.scores.filter((s) => s.category === cat).map((s) => s.score));
     basicCategoryAverages[cat] =
+      catScores.length > 0 ? catScores.reduce((a, b) => a + b, 0) / catScores.length : 0;
+  }
+
+  // Calculate per-category averages for advanced fixture across expected categories
+  const advancedCategoryAverages: Record<string, number> = {};
+  for (const cat of expectedAdvancedCategories) {
+    const catScores = advancedValid
+      .flatMap((r) => r.scores.filter((s) => s.category === cat).map((s) => s.score));
+    advancedCategoryAverages[cat] =
       catScores.length > 0 ? catScores.reduce((a, b) => a + b, 0) / catScores.length : 0;
   }
 
@@ -238,6 +366,7 @@ export function evaluateDifficultyAwareness(
       basicAvg,
       advancedAvg,
       basicScoresByCategory: basicCategoryAverages,
+      advancedScoresByCategory: advancedCategoryAverages,
       error: `Basic question did not achieve full marks (5/5) in: ${sub5}. Basic answers must not be penalized for lacking advanced depth.`,
     };
   }
@@ -248,6 +377,7 @@ export function evaluateDifficultyAwareness(
       basicAvg,
       advancedAvg,
       basicScoresByCategory: basicCategoryAverages,
+      advancedScoresByCategory: advancedCategoryAverages,
       error: `Advanced question average (${advancedAvg.toFixed(2)}) fell below expectations (>= 4.00).`,
     };
   }
@@ -257,6 +387,7 @@ export function evaluateDifficultyAwareness(
     basicAvg,
     advancedAvg,
     basicScoresByCategory: basicCategoryAverages,
+    advancedScoresByCategory: advancedCategoryAverages,
   };
 }
 
@@ -704,6 +835,24 @@ async function main() {
     );
   }
 
+  // ── Technology Independence (PN-8, DR-05) ──────────────────────────────────
+  console.log('\nTechnology Independence (PN-8 / DR-05):');
+  let techIndependenceOk = false;
+  const techEval = evaluateTechnologyIndependence(fixtureResults);
+
+  if (techEval.error) {
+    console.log(`  ❌ FAIL — ${techEval.error}`);
+  } else if (techEval.pyAvg !== undefined && techEval.javaAvg !== undefined && techEval.diff !== undefined) {
+    techIndependenceOk = techEval.pass;
+    console.log(`  tech-stack-python avg : ${techEval.pyAvg.toFixed(2)} / 5.00`);
+    console.log(`  tech-stack-java   avg : ${techEval.javaAvg.toFixed(2)} / 5.00`);
+    console.log(
+      `  Difference            : ${techEval.diff.toFixed(2)} pts (target: <= 1.00 pt)  ${
+        techIndependenceOk ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+  }
+
   // ── Difficulty-Aware Expectations (PN-3, DR-05) ───────────────────────────
   console.log('\nDifficulty-Aware Expectations (PN-3 / DR-05):');
   let difficultyAwarenessOk = false;
@@ -713,13 +862,28 @@ async function main() {
     console.log(`  ❌ FAIL — ${diffEval.error}`);
   } else if (diffEval.basicAvg !== undefined && diffEval.advancedAvg !== undefined) {
     difficultyAwarenessOk = diffEval.pass;
-    console.log(`  difficulty-basic    avg : ${diffEval.basicAvg.toFixed(2)} / 5.00  (requires full marks 5.00/5.00: ✅)`);
-    console.log(`  difficulty-advanced avg : ${diffEval.advancedAvg.toFixed(2)} / 5.00  (requires >= 4.00/5.00: ✅)`);
+    const basicOk =
+      diffEval.basicAvg >= 5.0 &&
+      (diffEval.basicScoresByCategory
+        ? Object.values(diffEval.basicScoresByCategory).every((avg) => avg >= 5.0)
+        : false);
+    const advancedOk = diffEval.advancedAvg >= 4.0;
+
+    console.log(
+      `  difficulty-basic    avg : ${diffEval.basicAvg.toFixed(2)} / 5.00  (requires full marks 5.00/5.00)  ${
+        basicOk ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(
+      `  difficulty-advanced avg : ${diffEval.advancedAvg.toFixed(2)} / 5.00  (requires >= 4.00/5.00)          ${
+        advancedOk ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
     console.log(
       `  Verdict                 : ${
         difficultyAwarenessOk
           ? '✅ PASS — Basic answer earns full marks without advanced-level depth'
-          : '❌ FAIL'
+          : '❌ FAIL — ' + (diffEval.error ?? 'Difficulty awareness criteria not met')
       }`
     );
   }
@@ -733,13 +897,15 @@ async function main() {
   const accuracyOk = passCount >= threshold;
 
   console.log('');
-  if (!accuracyOk || !latencyOk || !difficultyAwarenessOk) {
+  if (!accuracyOk || !latencyOk || !techIndependenceOk || !difficultyAwarenessOk) {
     if (!accuracyOk)
       console.error(
         `❌ ACCURACY: only ${passCount}/${totalWithExpected} pass (need ≥ ${threshold})`
       );
     if (!latencyOk)
       console.error(`❌ LATENCY:  p95 = ${p95} ms exceeds ${LATENCY_TARGET_MS} ms target`);
+    if (!techIndependenceOk)
+      console.error(`❌ TECHNOLOGY INDEPENDENCE: score difference exceeds 1.0 point limit (PN-8, DR-05)`);
     if (!difficultyAwarenessOk)
       console.error(
         `❌ DIFFICULTY AWARENESS: basic answer did not earn full marks or advanced expectations not met (PN-3, DR-05)`

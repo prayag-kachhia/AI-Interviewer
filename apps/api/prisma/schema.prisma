@@ -18,6 +18,7 @@ model User {
   updatedAt      DateTime  @updatedAt
   resumes        Resume[]
   sessions       Session[]
+  improvementPlan ImprovementPlan?
 
   @@map("users")
 }
@@ -121,3 +122,17 @@ model Feedback {
 
   @@map("feedback")
 }
+
+// Stores candidate topic weaknesses and strengths (V-2, V-4).
+// Updated whenever feedback becomes ready via insights.refresh.
+model ImprovementPlan {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topics    Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("improvement_plans")
+}
+

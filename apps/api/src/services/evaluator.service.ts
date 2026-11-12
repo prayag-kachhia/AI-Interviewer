@@ -3,7 +3,11 @@
 import { GoogleGenAI, Type, type Schema } from '@google/genai';
 import { z } from 'zod';
 import { FeedbackScore, ROLES, type TurnSpeaker } from '@interview/contracts';
-import { getRubric, DIFFICULTY_AWARE_PRINCIPLE } from './rubrics';
+import {
+  getRubric,
+  DIFFICULTY_AWARE_PRINCIPLE,
+  TECHNOLOGY_INDEPENDENCE_PRINCIPLE,
+} from './rubrics';
 
 // Allows more time for Gemini evaluation when transient API latency is high.
 export const EVALUATION_TIMEOUT_MS = 30_000;
@@ -80,6 +84,7 @@ Evaluation Instructions:
 1. Technical & Role-Specific Evaluation:
    - Score the candidate strictly on the criteria listed for each category above.
    - Differentiate strong, concrete answers with specific depth and trade-offs from surface-level or vague explanations.
+   - Technology-independent evaluation: ${TECHNOLOGY_INDEPENDENCE_PRINCIPLE}
    ${difficultyInstruction}
 
 2. Behavioural Evaluation (STAR Methodology):
