@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "How do you architect an idempotent payment checkout endpoint that guarantees a customer is never double-charged, even in the presence of client retries, network timeouts, and duplicate webhooks?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I implement an idempotency key protocol inspired by Stripe's architecture. The client generates a unique UUID idempotency key sent via the 'Idempotency-Key' HTTP header. On receiving the request, the API initiates a database transaction that attempts an atomic insertion into an idempotency_keys table with columns: (key, user_id, request_hash, status, response_body). If a duplicate key arrives while the original request is currently in 'processing' status, the server returns a 409 Conflict or polls until completion. If the key already has a 'completed' status, the server immediately returns the cached response_body and headers without re-invoking payment gateways. To prevent race conditions across distributed pods, we protect the state transition using row-level locking (SELECT ... FOR UPDATE) or a short distributed lock in Redis. If a network timeout occurs between our backend and the payment gateway, our background worker uses the payment gateway's idempotency key and queries their charge-retrieval API before deciding whether to capture, void, or reissue."
+  },
+  {
+    "speaker": "AI",
+    "text": "Can you contrast PostgreSQL transaction isolation levels—Read Committed, Repeatable Read, and Serializable—and describe the write skew anomaly that occurs under Snapshot Isolation?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "In PostgreSQL, Read Committed is the default: each individual SQL statement in a transaction sees a snapshot of data committed before that statement began, which allows non-repeatable reads and phantom reads if concurrent transactions commit in between. Repeatable Read uses Snapshot Isolation: the transaction takes a single snapshot at its very first query and sees only data committed prior to that moment, eliminating dirty reads, non-repeatable reads, and phantom reads. However, Snapshot Isolation is still vulnerable to write skew. Write skew occurs when two concurrent transactions read overlapping data sets, verify a shared business constraint, and then make disjoint updates that individually seem valid but collectively violate the constraint. For example, two doctors on call simultaneously query the roster (which requires >= 1 doctor on call). Both see 2 doctors active, so Doctor A marks themselves unavailable and Doctor B marks themselves unavailable in concurrent transactions. Because they updated different rows, row-level conflict detection does not trigger, but the table ends up with 0 doctors on call. Serializable isolation prevents this by implementing Serializable Snapshot Isolation (SSI), detecting rw-antidependency cycles in the dependency graph and aborting one transaction with a serialization failure (40001) that the application must retry."
+  },
+  {
+    "speaker": "AI",
+    "text": "When your service depends on multiple external third-party microservices over HTTP, how do you combine rate limiting, circuit breakers, and bulkheads to prevent cascading failures?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I layer resilience patterns to isolate failure domains. First, I use client-side rate limiters (e.g. token bucket per downstream host) to ensure our outbound traffic does not exceed the agreed partner quotas. Second, I implement Circuit Breakers (such as with Resilience4j or Polly). The circuit breaker monitors downstream call failure rates and slow-call percentages within a rolling time window. If the error rate exceeds 50% or latency exceeds timeout thresholds, the circuit trips to OPEN state: subsequent calls immediately fail fast with an informative fallback without consuming thread resources or hammering the degraded provider. After a reset timeout, it enters HALF-OPEN, allowing a trial percentage of probe requests through. Third, I implement Bulkheading: I separate thread pools or semaphore quotas for each external integration. If Partner Service A begins timing out and hanging threads for 10 seconds, only Service A's dedicated pool of 20 threads is saturated. Our core user requests and calls to Partner Service B continue operating normally on distinct thread pools, completely preventing a slow downstream dependency from exhausting the entire application server's thread capacity."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you execute zero-downtime database schema migrations on a heavily loaded PostgreSQL table with 100 million rows, specifically when adding a non-null column with a default value or renaming a column?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Under heavy production load, executing naive DDL like ALTER TABLE orders ADD COLUMN status VARCHAR NOT NULL DEFAULT 'pending' or renaming columns takes an ACCESS EXCLUSIVE lock on the table. While PostgreSQL 11+ optimizes adding default values with constant expressions metadata-only, any long-running query ahead of the DDL will cause the ALTER TABLE to queue behind it, subsequently queuing and blocking all subsequent SELECTs and writes, causing cascading connection pool exhaustion and downtime. To achieve zero downtime: first, I always set lock_timeout = '2s' before running DDL so the migration aborts gracefully rather than queue-blocking traffic if the lock cannot be acquired immediately. To add a non-null column with backfill: 1) Add the column as NULLABLE without a default. 2) Deploy application code that writes to the new column for all new records. 3) Backfill historical rows in small, throttled batches (e.g. 5,000 rows at a time with brief pauses to avoid replication lag and I/O spikes). 4) Add a NOT VALID check constraint (which requires only a brief lock), validate it asynchronously using VALIDATE CONSTRAINT without table locks, and set the default. To rename a column, I use the expand-contract pattern: add the new column, dual-write to both in application code, backfill historical data, read from the new column, and finally drop the old column in a later release."
+  }
+]

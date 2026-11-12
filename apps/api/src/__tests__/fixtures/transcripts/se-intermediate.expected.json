@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "difficulty": "intermediate",
+  "scores": [
+    {
+      "category": "Problem Solving & Algorithms",
+      "min": 4,
+      "max": 5,
+      "reason": "Exemplary trade-off analysis comparing brute-force O(N^2), sorted two-pointer O(N log N), and hash map O(N) solutions, plus Doubly Linked List + Map LRU design."
+    },
+    {
+      "category": "Software Design & Architecture",
+      "min": 4,
+      "max": 5,
+      "reason": "Practical concurrency architecture contrasting optimistic vs pessimistic locking and structured multi-layer test pyramid design."
+    },
+    {
+      "category": "Technical Communication",
+      "min": 4,
+      "max": 5,
+      "reason": "Precise, well-reasoned explanations connecting abstract algorithms to production concurrency and CI build velocity."
+    }
+  ]
+}

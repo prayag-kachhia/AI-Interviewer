@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Given an unsorted array of integers and a target integer, how would you design an algorithm to find the indices of two numbers that sum up to the target? What are the time and space complexity trade-offs between different approaches?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "The brute-force solution checks every pair using nested loops, which takes O(N^2) time and O(1) space, but this is too slow for large inputs. A second option is to sort the array and use two pointers moving inward from both ends, which takes O(N log N) time and O(1) auxiliary space, but preserving original indices requires storing index-value pairs. The optimal approach uses a hash map for a one-pass lookup: as we iterate through the array, for each element we calculate the complement, target minus current value. We check if the complement already exists in our map; if so, we immediately return the stored index and the current index. If not, we insert the current value and index into the map. This achieves O(N) linear time at the cost of O(N) auxiliary space."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you design a thread-safe, in-memory LRU (Least Recently Used) cache with a fixed capacity?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "An LRU cache requires O(1) time complexity for both get and put operations. To achieve this, I combine a hash map with a doubly linked list. The hash map maps keys to nodes in the linked list, providing O(1) key lookups. The doubly linked list maintains access order: the most recently accessed node is placed at the head, and the least recently used node rests at the tail. When get(key) is called, we locate the node via the map and move it to the head of the list. When put(key, value) is called, if the key exists we update its value and move it to the head. If it is new and the cache exceeds capacity, we evict the tail node from both the linked list and the map, then insert the new node at the head. To make it thread-safe in a concurrent environment, we protect operations with a read-write lock, or synchronize access around node relocations."
+  },
+  {
+    "speaker": "AI",
+    "text": "In a service where two concurrent worker jobs might update the same user balance or profile at the same time, how do you prevent race conditions and lost updates?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "There are two main strategies: pessimistic locking and optimistic locking. With pessimistic locking, the first worker queries the database using a SELECT ... FOR UPDATE statement, which holds an exclusive row lock until the transaction commits or aborts. Any concurrent worker attempting to read or write that row is blocked, preventing race conditions, but this risks contention and lock timeouts under high traffic. With optimistic locking, we add an integer version or updatedAt timestamp column to the record. When a worker reads the balance, it records the current version number. During the update, the SQL query specifies WHERE id = ? AND version = current_version, and increments the version to current_version + 1. If another worker updated the row in the meantime, the WHERE clause matches zero rows, indicating a conflict. The application catches this and retries the read-modify-write cycle with exponential backoff."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you structure an automated testing strategy for a backend service so that tests remain both thorough and fast to run in CI?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I follow the testing pyramid. The base consists of fast, isolated unit tests that test business logic, pure algorithms, and data transformations without network or database I/O, using mock objects or stubs for external interfaces. Because they run in memory, hundreds of unit tests complete in seconds. The middle layer consists of integration tests that verify database queries, repository boundaries, and external API client contracts using lightweight ephemeral containers like Testcontainers. Finally, the top layer has a targeted set of end-to-end smoke tests that exercise critical user journeys like user signup or payment processing against a staged environment. In CI, we run linting and unit tests on every commit, and run the heavier integration and E2E suites before merging to main."
+  }
+]

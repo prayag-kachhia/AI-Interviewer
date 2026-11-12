@@ -4,6 +4,7 @@ import {
   calculateBenchmarkCost,
   checkTechnologyParity,
   evaluateTechnologyIndependence,
+  validateFixtureAgainstExpected,
   KNOWN_MODEL_PRICING,
   DEFAULT_BENCH_MODEL,
 } from '../../scripts/bench';
@@ -197,6 +198,171 @@ describe('Benchmark Pricing & Cost Calculation', () => {
       expect(res.pyAvg).toBe(5);
       expect(res.javaAvg).toBe(5);
       expect(res.diff).toBe(0);
+    });
+  });
+
+  describe('Benchmark Fixture Validation Logic (PN-4)', () => {
+    it('passes when all category averages fall within expected min-max ranges', () => {
+      const runs = [
+        {
+          scores: [
+            { category: 'SQL & Analytical Reasoning', score: 5 },
+            { category: 'Data Interpretation & Business Insights', score: 4 },
+            { category: 'Statistical Understanding & Data Quality', score: 5 },
+          ],
+        },
+        {
+          scores: [
+            { category: 'SQL & Analytical Reasoning', score: 4 },
+            { category: 'Data Interpretation & Business Insights', score: 4 },
+            { category: 'Statistical Understanding & Data Quality', score: 4 },
+          ],
+        },
+      ];
+      const expected = {
+        scores: [
+          { category: 'SQL & Analytical Reasoning', min: 4, max: 5 },
+          { category: 'Data Interpretation & Business Insights', min: 4, max: 5 },
+          { category: 'Statistical Understanding & Data Quality', min: 4, max: 5 },
+        ],
+      };
+
+      const result = validateFixtureAgainstExpected(runs, expected);
+      expect(result.pass).toBe(true);
+      expect(result.failReasons).toHaveLength(0);
+    });
+
+    it('fails when a category score average is below the expected minimum', () => {
+      const runs = [
+        {
+          scores: [
+            { category: 'SQL & Analytical Reasoning', score: 3 },
+            { category: 'Data Interpretation & Business Insights', score: 4 },
+          ],
+        },
+      ];
+      const expected = {
+        scores: [
+          { category: 'SQL & Analytical Reasoning', min: 4, max: 5 },
+          { category: 'Data Interpretation & Business Insights', min: 4, max: 5 },
+        ],
+      };
+
+      const result = validateFixtureAgainstExpected(runs, expected);
+      expect(result.pass).toBe(false);
+      expect(result.failReasons[0]).toContain('outside [4–5]');
+    });
+
+    it('fails when a category score average is above the expected maximum', () => {
+      const runs = [
+        {
+          scores: [
+            { category: 'SQL & Analytical Reasoning', score: 4 },
+            { category: 'Data Interpretation & Business Insights', score: 3 },
+          ],
+        },
+      ];
+      const expected = {
+        scores: [
+          { category: 'SQL & Analytical Reasoning', min: 1, max: 2 },
+          { category: 'Data Interpretation & Business Insights', min: 1, max: 2 },
+        ],
+      };
+
+      const result = validateFixtureAgainstExpected(runs, expected);
+      expect(result.pass).toBe(false);
+      expect(result.failReasons[0]).toContain('outside [1–2]');
+    });
+
+    it('fails when an expected category is completely missing from all evaluated runs', () => {
+      const runs = [
+        {
+          scores: [
+            { category: 'SQL & Analytical Reasoning', score: 4 },
+          ],
+        },
+      ];
+      const expected = {
+        scores: [
+          { category: 'SQL & Analytical Reasoning', min: 4, max: 5 },
+          { category: 'Data Interpretation & Business Insights', min: 4, max: 5 },
+        ],
+      };
+
+      const result = validateFixtureAgainstExpected(runs, expected);
+      expect(result.pass).toBe(false);
+      expect(result.failReasons[0]).toContain('missing from all runs');
+    });
+
+    it('fails when an expected category is missing from only one of multiple successful runs', () => {
+      const runs = [
+        {
+          scores: [
+            { category: 'SQL & Analytical Reasoning', score: 5 },
+            { category: 'Data Interpretation & Business Insights', score: 5 },
+          ],
+        },
+        {
+          scores: [
+            { category: 'SQL & Analytical Reasoning', score: 4 },
+            // Data Interpretation & Business Insights is missing from run 2
+          ],
+        },
+      ];
+      const expected = {
+        scores: [
+          { category: 'SQL & Analytical Reasoning', min: 4, max: 5 },
+          { category: 'Data Interpretation & Business Insights', min: 4, max: 5 },
+        ],
+      };
+
+      const result = validateFixtureAgainstExpected(runs, expected);
+      expect(result.pass).toBe(false);
+      expect(
+        result.failReasons.some((r) =>
+          r.includes('missing from 1 of 2 successful run(s)')
+        )
+      ).toBe(true);
+    });
+
+    it('fails when all runs error out', () => {
+      const runs = [
+        { scores: [], error: '503 Service Unavailable' },
+        { scores: [], error: 'Timeout after 30000ms' },
+      ];
+      const expected = {
+        scores: [{ category: 'SQL & Analytical Reasoning', min: 4, max: 5 }],
+      };
+
+      const result = validateFixtureAgainstExpected(runs, expected);
+      expect(result.pass).toBe(false);
+      expect(result.failReasons).toContain('All runs errored');
+    });
+
+    it('excludes errored runs from score validation when at least one run succeeds', () => {
+      const runs = [
+        {
+          scores: [
+            { category: 'SQL & Analytical Reasoning', score: 5 },
+            { category: 'Data Interpretation & Business Insights', score: 5 },
+          ],
+          error: undefined,
+        },
+        {
+          scores: [],
+          error: '503 Service Unavailable',
+        },
+      ];
+      const expected = {
+        scores: [
+          { category: 'SQL & Analytical Reasoning', min: 4, max: 5 },
+          { category: 'Data Interpretation & Business Insights', min: 4, max: 5 },
+        ],
+      };
+
+      const result = validateFixtureAgainstExpected(runs, expected);
+      expect(result.pass).toBe(true);
+      expect(result.failReasons).toHaveLength(0);
     });
   });
 });

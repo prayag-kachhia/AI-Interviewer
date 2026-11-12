@@ -20,6 +20,11 @@ bun scripts/bench.ts --broken-prompt
 
 # Score a single transcript with a role's rubric
 bun scripts/evaluate.ts src/__tests__/fixtures/transcripts/good.json --role software-engineer
+
+# Cross-role validation: test specific role & difficulty fixtures
+bun scripts/evaluate.ts src/__tests__/fixtures/transcripts/se-intermediate.json --role software-engineer
+bun scripts/evaluate.ts src/__tests__/fixtures/transcripts/da-advanced.json --role data-analyst
+bun scripts/evaluate.ts src/__tests__/fixtures/transcripts/backend-basic.json --role backend-developer
 ```
 
 Each fixture is scored with the rubric of the role named in its `*.expected.json` file
@@ -50,7 +55,11 @@ BENCH_USD_TO_INR=84.0               # default USD to INR conversion rate
 
 ## Fixtures
 
-| Fixture | Role | Quality | Has expected ranges |
+The benchmark test suite consists of **21 fixtures** spanning all supported roles, difficulty levels, quality tiers, and edge cases:
+
+### General & Legacy Fixtures
+
+| Fixture | Role | Quality / Type | Has expected ranges |
 |---|---|---|---|
 | `excellent` | Software Engineer | Top-tier | ✅ |
 | `good` | Software Engineer | Competent | ✅ |
@@ -62,15 +71,38 @@ BENCH_USD_TO_INR=84.0               # default USD to INR conversion rate
 | `backend-developer-good` | Backend Developer | Competent | ✅ |
 | `backend-developer-average` | Backend Developer | Mixed | ✅ |
 | `off-topic` | Software Engineer | Edge case (off-topic) | ✅ |
+| `tech-stack-ruby` | Software Engineer | Ruby/Rails (PN-8 Tech-Independence) | ✅ |
+| `tech-stack-go` | Software Engineer | Go/Goroutines (PN-8 Tech-Independence) | ✅ |
 
-Each `*.expected.json` file stores the fixture's role and, per rubric category, the acceptable score range `[min, max]` with a one-line reason. The benchmark averages scores across all runs and fails a fixture if a category's average is outside its range or the category is missing.
+### Cross-Role Validation Test Set (PN-4, 3 × 3 Matrix)
 
-The expected files use per-role rubric categories from `rubrics.ts`:
+| Fixture | Role | Difficulty | Expected Scores | Justification & Focus Areas |
+|---|---|---|:---:|---|
+| `se-basic` | Software Engineer | Basic | [4, 5] across all categories | Foundational algorithms (binary search, recursion call stacks), modularity/Single Responsibility, and systematic debugging methods. |
+| `se-intermediate` | Software Engineer | Intermediate | [4, 5] across all categories | Practical concurrency & race condition handling, multi-tier caching architectures (TTL/invalidation), and comprehensive unit/integration test strategies. |
+| `se-advanced` | Software Engineer | Advanced | [4, 5] across all categories | Deep architectural design: distributed consensus (Raft/Paxos), storage engine internals (LSM-trees vs B-trees), and zero-downtime database migration strategies. |
+| `da-basic` | Data Analyst | Basic | [4, 5] across all categories | SQL joins, aggregations, exploratory data analysis (EDA), translating analytics to stakeholders, and distribution metrics (mean vs median, outliers). |
+| `da-intermediate` | Data Analyst | Intermediate | [4, 5] across all categories | Advanced SQL window functions, cohort retention & churn analysis, and A/B test design with statistical significance (p-values, type I/II errors). |
+| `da-advanced` | Data Analyst | Advanced | [4, 5] across all categories | High-scale query & skew optimization, causal inference (Diff-in-Diff / synthetic controls), and addressing missing-data mechanisms (MCAR, MAR, MNAR). |
+| `backend-basic` | Backend Developer | Basic | [4, 5] across all categories | RESTful API design & HTTP semantics, relational schema normalization (1NF–3NF) & B-tree indexes, and backend error handling & retry idempotency. |
+| `backend-intermediate` | Backend Developer | Intermediate | [4, 5] across all categories | REST vs gRPC trade-offs & protobuf serialization, query optimization (N+1, composite indexes), and resilience patterns (circuit breakers, fallbacks). |
+| `backend-advanced` | Backend Developer | Advanced | [4, 5] across all categories | Event-driven event sourcing & transactional outbox, distributed consistency (2PC vs Saga), and high-throughput rate limiting (token bucket on Redis clusters). |
+
+Each `*.expected.json` file stores the fixture's role, optional difficulty tier, and acceptable score ranges `[min, max]` per rubric category with justifying rationale. The benchmark averages scores across all runs and fails a fixture if:
+1. Any expected category is missing from the evaluator's output.
+2. The evaluated category score falls outside `[min, max]`.
+3. An unhandled exception or API failure occurs during evaluation.
+
+The expected files strictly enforce role-specific rubric categories from `rubrics.ts`:
 - **Software Engineer**: Problem Solving & Algorithms · Software Design & Architecture · Technical Communication
 - **Data Analyst**: SQL & Analytical Reasoning · Data Interpretation & Business Insights · Statistical Understanding & Data Quality
 - **Backend Developer**: API Design & Architecture · Database Modeling & Performance · System Reliability & Scalability
 
-**Acceptance criterion:** ≥ 8 of 10 fixtures pass _and_ p95 wall time < 15 000 ms.
+**Benchmark Acceptance Criteria:**
+- ≥ 80% of all fixtures pass (≥ 17 of 21 fixtures).
+- p95 wall-clock execution time < 15 000 ms (production evaluator timeout target).
+- All expected rubric categories must be validated.
+
 
 ---
 

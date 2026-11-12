@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { TurnSpeaker } from '@interview/contracts';
@@ -58,6 +58,15 @@ describe('FB4 — evaluator', () => {
       'empty-answers.json',
       'tech-stack-python.json',
       'tech-stack-java.json',
+      'se-basic.json',
+      'se-intermediate.json',
+      'se-advanced.json',
+      'da-basic.json',
+      'da-intermediate.json',
+      'da-advanced.json',
+      'backend-basic.json',
+      'backend-intermediate.json',
+      'backend-advanced.json',
     ] as const;
     for (const name of fixtureNames) {
       const turns = loadTranscriptFixture(name);
@@ -310,6 +319,108 @@ describe('FB4 — evaluator', () => {
       const diff = Math.abs(scoreStackA - scoreStackB);
       expect(diff).toBeGreaterThan(1);
       expect(diff <= 1.0).toBe(false);
+    });
+  });
+
+  describe('PN-4 — Cross-role validation test set (#171)', () => {
+    const PN4_FIXTURE_CONFIGS = [
+      { name: 'se-basic', role: 'software-engineer', difficulty: 'basic' },
+      { name: 'se-intermediate', role: 'software-engineer', difficulty: 'intermediate' },
+      { name: 'se-advanced', role: 'software-engineer', difficulty: 'advanced' },
+      { name: 'da-basic', role: 'data-analyst', difficulty: 'basic' },
+      { name: 'da-intermediate', role: 'data-analyst', difficulty: 'intermediate' },
+      { name: 'da-advanced', role: 'data-analyst', difficulty: 'advanced' },
+      { name: 'backend-basic', role: 'backend-developer', difficulty: 'basic' },
+      { name: 'backend-intermediate', role: 'backend-developer', difficulty: 'intermediate' },
+      { name: 'backend-advanced', role: 'backend-developer', difficulty: 'advanced' },
+    ] as const;
+
+    it('verifies all 9 new PN-4 transcript fixtures load, have valid turn counts and non-empty text', () => {
+      expect(PN4_FIXTURE_CONFIGS).toHaveLength(9);
+
+      for (const config of PN4_FIXTURE_CONFIGS) {
+        const turns = loadTranscriptFixture(`${config.name}.json`);
+        expect(turns).toHaveLength(8);
+
+        const aiTurns = turns.filter((t) => t.speaker === 'AI');
+        const candidateTurns = turns.filter((t) => t.speaker === 'CANDIDATE');
+        expect(aiTurns).toHaveLength(4);
+        expect(candidateTurns).toHaveLength(4);
+
+        for (const turn of turns) {
+          expect(turn.text.trim().length).toBeGreaterThan(10);
+        }
+      }
+    });
+
+    it('verifies all 9 fixtures have corresponding .expected.json with valid ranges and reasons', () => {
+      const rolesRepresented = new Set<string>();
+      const difficultiesRepresented = new Set<string>();
+
+      for (const config of PN4_FIXTURE_CONFIGS) {
+        const fileUrl = new URL(
+          `./fixtures/transcripts/${config.name}.expected.json`,
+          import.meta.url
+        );
+        expect(existsSync(fileUrl)).toBe(true);
+
+        const content = JSON.parse(readFileSync(fileUrl, 'utf-8'));
+        expect(content.role).toBe(config.role);
+        expect(content.difficulty).toBe(config.difficulty);
+        rolesRepresented.add(content.role);
+        difficultiesRepresented.add(content.difficulty);
+
+        const rubricCategories = getRubric(config.role).map((r) => r.category);
+        expect(content.scores).toHaveLength(3);
+
+        const expectedCategories = content.scores.map((s: any) => s.category);
+        expect(expectedCategories.sort()).toEqual([...rubricCategories].sort());
+
+        for (const s of content.scores) {
+          expect(s.min).toBeGreaterThanOrEqual(1);
+          expect(s.max).toBeLessThanOrEqual(5);
+          expect(s.min).toBeLessThanOrEqual(s.max);
+          expect(typeof s.reason).toBe('string');
+          expect(s.reason.trim().length).toBeGreaterThan(15);
+        }
+      }
+
+      // Check full matrix coverage: 3 roles x 3 difficulty levels
+      expect(rolesRepresented).toEqual(
+        new Set(['software-engineer', 'data-analyst', 'backend-developer'])
+      );
+      expect(difficultiesRepresented).toEqual(
+        new Set(['basic', 'intermediate', 'advanced'])
+      );
+    });
+
+    it('verifies unique fixture names across all fixtures', () => {
+      const names = PN4_FIXTURE_CONFIGS.map((c) => c.name);
+      const uniqueNames = new Set(names);
+      expect(uniqueNames.size).toBe(9);
+    });
+
+    it('evaluates mock transcripts for all three roles and confirms role-specific rubric criteria in prompt', async () => {
+      for (const roleId of ['software-engineer', 'data-analyst', 'backend-developer']) {
+        const rubric = getRubric(roleId);
+        const prompt = buildEvaluationPrompt({ roleId, turns: SAMPLE.turns });
+
+        for (const cat of rubric) {
+          expect(prompt).toContain(cat.category);
+        }
+      }
+    });
+
+    it('correctly detects when an evaluated score falls outside the expected range', () => {
+      const expectedRange = { category: 'SQL & Analytical Reasoning', min: 4, max: 5 };
+      const passingScore = 4.3;
+      const failingLow = 3.2;
+      const failingHigh = 5.5;
+
+      const isPass = (score: number) => score >= expectedRange.min && score <= expectedRange.max;
+      expect(isPass(passingScore)).toBe(true);
+      expect(isPass(failingLow)).toBe(false);
+      expect(isPass(failingHigh)).toBe(false);
     });
   });
 });

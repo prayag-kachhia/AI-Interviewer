@@ -246,24 +246,89 @@ const USD_TO_INR = defaultPricing.usdToInr;
 
 // ── types ────────────────────────────────────────────────────────────────────
 
-interface ExpectedScore {
+export interface ExpectedScore {
   category: string;
   min: number;
   max: number;
   reason: string;
 }
 
-interface FixtureExpected {
+export interface FixtureExpected {
   role: string;
+  difficulty?: string;
   scores: ExpectedScore[];
 }
 
-interface RunResult {
+export interface RunResult {
   wallMs: number;
   promptTokens: number;
   outputTokens: number;
   scores: { category: string; score: number }[];
   error?: string;
+}
+
+export interface FixtureValidationResult {
+  pass: boolean;
+  failReasons: string[];
+}
+
+/**
+ * Validates runs for a fixture against its expected score ranges.
+ * - Every successful run must contain every category in expected.scores.
+ * - If any successful run is missing an expected category, the fixture fails.
+ * - Errored runs (run.error defined) are excluded from score validation.
+ * - If all runs error, the fixture fails with "All runs errored".
+ */
+export function validateFixtureAgainstExpected(
+  runs: Array<{ scores: Array<{ category: string; score: number }>; error?: string }>,
+  expected: { scores: Array<{ category: string; min: number; max: number; reason?: string }> }
+): FixtureValidationResult {
+  const failReasons: string[] = [];
+  let pass = true;
+  const validRuns = runs.filter((r) => !r.error);
+
+  if (validRuns.length === 0) {
+    return { pass: false, failReasons: ['All runs errored'] };
+  }
+
+  for (const exp of expected.scores) {
+    const presentScores: number[] = [];
+    let missingCount = 0;
+
+    for (let i = 0; i < validRuns.length; i++) {
+      const run = validRuns[i];
+      const match = run.scores.find((s) => s.category === exp.category);
+      if (match !== undefined) {
+        presentScores.push(match.score);
+      } else {
+        missingCount++;
+      }
+    }
+
+    if (presentScores.length === 0) {
+      failReasons.push(`Category "${exp.category}" missing from all runs`);
+      pass = false;
+      continue;
+    }
+
+    if (missingCount > 0) {
+      failReasons.push(
+        `Category "${exp.category}" missing from ${missingCount} of ${validRuns.length} successful run(s)`
+      );
+      pass = false;
+      continue;
+    }
+
+    const avg = presentScores.reduce((a, b) => a + b, 0) / presentScores.length;
+    if (avg < exp.min || avg > exp.max) {
+      failReasons.push(
+        `${exp.category}: avg=${avg.toFixed(2)} outside [${exp.min}–${exp.max}]`
+      );
+      pass = false;
+    }
+  }
+
+  return { pass, failReasons };
 }
 
 interface FixtureResult {
@@ -417,8 +482,17 @@ async function main() {
     if (existsSync(expectedPath)) {
       try {
         expected = JSON.parse(readFileSync(expectedPath, 'utf-8')) as FixtureExpected;
-      } catch {
-        console.warn(`  WARN: Cannot parse ${name}.expected.json — skipping range check.`);
+      } catch (err) {
+        console.error(`  ERROR: Cannot parse ${name}.expected.json: ${(err as Error).message}`);
+        fixtureResults.push({
+          name,
+          role: 'unknown',
+          runs: [],
+          expected: undefined,
+          pass: false,
+          failReasons: [`Cannot parse ${name}.expected.json: ${(err as Error).message}`],
+        });
+        continue;
       }
     }
 
@@ -427,7 +501,15 @@ async function main() {
     try {
       turns = loadTranscript(fixturePath);
     } catch (err) {
-      console.log(`\n▶ ${name} — SKIP (load error: ${(err as Error).message})`);
+      console.error(`\n▶ ${name} — FAIL (load error: ${(err as Error).message})`);
+      fixtureResults.push({
+        name,
+        role: expected?.role ?? 'unknown',
+        runs: [],
+        expected,
+        pass: false,
+        failReasons: [`Load error: ${(err as Error).message}`],
+      });
       continue;
     }
 
@@ -527,36 +609,13 @@ async function main() {
     }
 
     // Pass/fail: average score per category must be within expected range
-    const failReasons: string[] = [];
+    let failReasons: string[] = [];
     let pass: boolean | undefined = undefined;
 
     if (expected) {
-      pass = true;
-      const validRuns = runs.filter((r) => !r.error);
-      if (validRuns.length === 0) {
-        failReasons.push('All runs errored');
-        pass = false;
-      } else {
-        for (const exp of expected.scores) {
-          const scores = validRuns
-            .map((r) => r.scores.find((s) => s.category === exp.category)?.score)
-            .filter((v): v is number => v !== undefined);
-
-          if (scores.length === 0) {
-            failReasons.push(`Category "${exp.category}" missing from all runs`);
-            pass = false;
-            continue;
-          }
-
-          const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-          if (avg < exp.min || avg > exp.max) {
-            failReasons.push(
-              `${exp.category}: avg=${avg.toFixed(2)} outside [${exp.min}–${exp.max}]`
-            );
-            pass = false;
-          }
-        }
-      }
+      const validation = validateFixtureAgainstExpected(runs, expected);
+      pass = validation.pass;
+      failReasons = validation.failReasons;
     }
 
     fixtureResults.push({ name, role: role.label, runs, expected, pass, failReasons });

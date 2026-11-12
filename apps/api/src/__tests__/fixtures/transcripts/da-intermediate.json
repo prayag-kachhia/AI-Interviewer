@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "How would you write a SQL query using window functions to calculate both Month-over-Month (MoM) revenue growth percentage and a 7-day rolling average of daily revenue?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "For Month-over-Month growth, I aggregate revenue by month into a Common Table Expression (CTE), then use the LAG() window function: LAG(monthly_revenue, 1) OVER (ORDER BY order_month) gets the prior month's revenue. The percentage growth is calculated as (monthly_revenue - prior_revenue) / prior_revenue * 100.0, wrapping the denominator with NULLIF(prior_revenue, 0) to prevent division-by-zero errors. For the 7-day rolling average, I aggregate daily revenue in a CTE and apply AVG(daily_revenue) OVER (ORDER BY order_date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW). Specifying 'ROWS BETWEEN 6 PRECEDING AND CURRENT ROW' is critical: it explicitly defines an exact 7-calendar-day window frame without unbounded lookahead."
+  },
+  {
+    "speaker": "AI",
+    "text": "You notice that weekly checkout conversion rate dropped by 18% compared to the prior four-week average. How do you systematically investigate and determine whether this is a product bug, seasonal shift, or marketing quality issue?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I decompose the conversion drop across three dimensions: funnel stage, traffic mix, and technical segments. First, I check funnel step conversion rates: did the drop happen between cart and checkout, between checkout and payment submission, or at payment confirmation? A sudden cliff at payment submission suggests a third-party gateway API outage or frontend script crash. Second, I segment by client environment: browser type, app version, and OS. If the drop is concentrated entirely on iOS app version 3.2, it is almost certainly a client release bug. Third, if technical health is normal across all stages, I inspect traffic acquisition channels: did marketing launch an aggressive top-of-funnel campaign bringing low-intent display ad traffic? If total visitors increased by 40% but absolute purchasers remained steady, the conversion rate mechanically plummets even though gross revenue did not decline. Finally, I check Year-over-Year (YoY) trends to rule out regular seasonal dips like post-holiday spending lulls."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you construct a monthly cohort retention analysis table in SQL, and what key patterns do you look for in the retention curves?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I build a cohort model in three steps using SQL CTEs. In the first CTE, I determine each user's acquisition cohort by finding their MIN(order_date) truncated to the month. In the second CTE, I gather all subsequent active months for each user, and calculate the cohort index as the difference in months: DATEDIFF(month, cohort_month, active_month) or date arithmetic. In the third CTE, I group by cohort_month and cohort_index, counting distinct active user IDs, and divide by the initial cohort size (cohort_index = 0) to produce retention percentages. In the resulting retention heatmap, I look for two key signals: horizontally, whether curves flatten out to an asymptote (indicating product-market fit where a core percentage of users retain indefinitely), and vertically, whether newer cohorts retain better than older cohorts at month 1 and month 3, which indicates that onboarding improvements and product iterations are successfully compound-improving retention."
+  },
+  {
+    "speaker": "AI",
+    "text": "What automated data quality checks and validation invariants would you establish on an analytical data warehouse ingestion pipeline to prevent flawed data from reaching executive dashboards?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I implement multi-tiered data assertions using tools like dbt tests or Great Expectations across four pillars: schema, integrity, volume, and business invariants. At the schema level, I verify column types and assert NOT NULL and UNIQUE constraints on surrogate and natural primary keys. At the relational integrity level, I test foreign key relationships to prevent orphaned child records (e.g. orders without valid customer IDs). At the volume level, I compare row counts and table byte sizes against historical rolling 14-day averages, alerting on drops greater than 20% or 3x spikes which often signal upstream ETL extraction failures or runaway duplicate unions. For business invariants, I assert domain bounds: order_amount must be >= 0, discount_amount <= order_amount, and event_timestamp <= CURRENT_TIMESTAMP() to catch future-dated anomalies. In dbt, critical failures halt the pipeline before writing to production reporting tables."
+  }
+]
