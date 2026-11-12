@@ -18,17 +18,17 @@ export const SOFTWARE_ENGINEER_RUBRIC: Rubric = [
   {
     category: 'Problem Solving & Algorithms',
     criteria:
-      'Approaches complex technical problems methodically; selects suitable data structures; considers time and space complexity and edge cases.',
+      'Decomposes complex technical and system-level problems into tractable sub-problems; selects suitable algorithms, data structures, or service patterns; reasons about time and space complexity, throughput, and edge cases.',
   },
   {
     category: 'Software Design & Architecture',
     criteria:
-      'Structures code and components modularly; applies separation of concerns and appropriate patterns; balances maintainability with pragmatism.',
+      'Designs scalable systems and service components with clear separation of concerns; applies appropriate architectural patterns (e.g. queuing, caching, decoupling); articulates trade-offs between consistency, availability, and maintainability.',
   },
   {
     category: 'Technical Communication',
     criteria:
-      'Explains technical decisions, trade-offs, and implementation details clearly and concisely; walks through logic logically.',
+      'Explains technical decisions, trade-offs, and implementation details clearly and concisely; walks through reasoning in a structured, easy-to-follow way.',
   },
 ] as const;
 
@@ -36,17 +36,17 @@ export const DATA_ANALYST_RUBRIC: Rubric = [
   {
     category: 'SQL & Analytical Reasoning',
     criteria:
-      'Formulates structured data extraction logic; leverages joins, aggregations, window functions, and filtering accurately.',
+      'Formulates structured data extraction logic; leverages joins, aggregations, window functions, and filtering accurately; selects the right SQL construct for the problem.',
   },
   {
     category: 'Data Interpretation & Business Insights',
     criteria:
-      'Extracts actionable conclusions from quantitative findings; translates metrics into business impact and stakeholder recommendations.',
+      'Extracts actionable conclusions from quantitative findings; decomposes metric changes into root causes; translates data insights into business impact and stakeholder recommendations.',
   },
   {
     category: 'Statistical Understanding & Data Quality',
     criteria:
-      'Demonstrates understanding of distributions, sampling, anomalies, and edge cases; proactively validates data integrity.',
+      'Identifies data quality issues including duplicates, nulls, schema mismatches, and volume anomalies; validates pipeline outputs against expected invariants; demonstrates awareness of edge cases that affect analytical accuracy.',
   },
 ] as const;
 
@@ -54,17 +54,17 @@ export const BACKEND_DEVELOPER_RUBRIC: Rubric = [
   {
     category: 'API Design & Architecture',
     criteria:
-      'Designs clean, idiomatic service endpoints and interfaces; handles error codes, payloads, and backward compatibility robustly.',
+      'Designs clean, idiomatic REST service endpoints; handles HTTP semantics, error codes, authentication, and backward compatibility robustly; documents contracts clearly.',
   },
   {
     category: 'Database Modeling & Performance',
     criteria:
-      'Models relational or document schemas effectively; understands indexing strategies, query performance, and transactional consistency.',
+      'Models relational schemas effectively; understands indexing strategies and query performance; designs idempotent and transactionally safe data access patterns that handle concurrent or repeated requests correctly.',
   },
   {
     category: 'System Reliability & Scalability',
     criteria:
-      'Reasons about concurrency, asynchronous workflows, idempotency, caching, failure recovery, and resilience under load.',
+      'Reasons about concurrency, asynchronous workflows, caching, failure recovery, and resilience under load; applies retry strategies, circuit breaking, and idempotency to prevent data corruption or cascading failures.',
   },
 ] as const;
 
