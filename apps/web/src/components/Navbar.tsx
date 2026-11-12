@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router';
 import { UserCircle2, BrainCircuit, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { Button } from '@/components/ui/button';
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
@@ -42,18 +43,18 @@ export const Navbar: React.FC = () => {
           <Link to="/history" className={`navbar-link ${isActive('/history') ? 'active' : ''}`}>History</Link>
           <Link to="/profile" className={`navbar-link ${isActive('/profile') ? 'active' : ''}`}>Profile</Link>
           
-          <button onClick={toggleTheme} className="btn-icon" aria-label="Toggle theme">
-            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
+            {theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          </Button>
           
           <div className="navbar-user-section">
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)', fontWeight: 500 }}>
               <UserCircle2 size={20} color="var(--text-muted)" />
               {user.email}
             </div>
-            <button onClick={handleLogout} className="btn btn-outline" style={{ padding: '0.4rem 1rem', fontSize: '0.875rem' }}>
-              Logout
-            </button>
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              Sign out
+            </Button>
           </div>
         </div>
       </div>

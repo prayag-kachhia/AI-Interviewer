@@ -16,55 +16,71 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * Design tokens: zinc neutrals, indigo accent, emerald / rose / amber for status.
- * Screens use them as classes (bg-background, text-muted-foreground, border-border, ...),
- * never as raw hex values.
+ * The slice of preflight the components/ui primitives need (they all carry data-slot), so a
+ * Button doesn't keep the browser's grey background and outset border. P-12 replaces this
+ * with the full reset.
+ */
+@layer base {
+  [data-slot] {
+    border: 0 solid var(--border);
+    background-color: transparent;
+    color: inherit;
+    font: inherit;
+  }
+}
+
+/*
+ * Design tokens, adapted from the Stitch "Chronometer Deck" design: warm charcoal and gold in
+ * dark, the same family as bronze on paper in light. Orange (not amber) for warnings so it
+ * never reads as the gold primary. Screens use them as classes (bg-background,
+ * text-muted-foreground, border-border, ...), never as raw hex values.
  */
 :root {
-  --background: #fafafa;
-  --foreground: #09090b;
+  --background: #f7f7f5;
+  --foreground: #161618;
   --card: #ffffff;
-  --card-foreground: #09090b;
+  --card-foreground: #161618;
   --popover: #ffffff;
-  --popover-foreground: #09090b;
-  --primary: #4f46e5;
+  --popover-foreground: #161618;
+  --primary: #805600;
   --primary-foreground: #ffffff;
-  --ring: #6366f1;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #18181b;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #f4f4f5;
-  --accent-foreground: #18181b;
+  --ring: #805600;
+  --secondary: #efeee9;
+  --secondary-foreground: #161618;
+  --muted: #efeee9;
+  --muted-foreground: #5f5b52;
+  --accent: #efeee9;
+  --accent-foreground: #161618;
   --destructive: #e11d48;
   --success: #059669;
-  --warning: #d97706;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --radius: 0.75rem;
+  --warning: #ea580c;
+  --border: #e2dfd6;
+  --input: #d6d2c7;
+  --radius: 0.5rem;
 }
 
 .dark {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #18181b;
-  --card-foreground: #fafafa;
-  --popover: #18181b;
-  --popover-foreground: #fafafa;
-  /* #4f46e5 in both themes: white text on it passes WCAG AA (6.3:1); #6366f1 is just under. */
-  --primary: #4f46e5;
-  --ring: #818cf8;
-  --secondary: #27272a;
-  --secondary-foreground: #fafafa;
-  --muted: #27272a;
-  --muted-foreground: #a1a1aa;
-  --accent: #27272a;
-  --accent-foreground: #fafafa;
+  --background: #131315;
+  --foreground: #e5e1e4;
+  --card: #1c1b1e;
+  --card-foreground: #e5e1e4;
+  --popover: #1c1b1e;
+  --popover-foreground: #e5e1e4;
+  /* Gold is light, so text on it is dark. */
+  --primary: #f2ca50;
+  --primary-foreground: #2b2200;
+  --ring: #f2ca50;
+  --secondary: #2a2a2c;
+  --secondary-foreground: #e5e1e4;
+  --muted: #2a2a2c;
+  --muted-foreground: #a39e93;
+  --accent: #2a2a2c;
+  --accent-foreground: #e5e1e4;
   --destructive: #f43f5e;
   --success: #34d399;
-  --warning: #fbbf24;
-  --border: #27272a;
-  --input: #27272a;
+  --warning: #fb923c;
+  --border: #36322b;
+  --input: #36322b;
 }
 
 /*
@@ -74,6 +90,10 @@
  */
 @theme inline {
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* Headings. */
+  --font-display: 'Space Grotesk', 'Inter', ui-sans-serif, sans-serif;
+  /* Timers and scores only, where fixed-width digits stop the numbers jittering. */
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
