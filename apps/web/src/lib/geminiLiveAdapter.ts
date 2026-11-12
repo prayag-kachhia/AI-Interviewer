@@ -1,5 +1,6 @@
 import { getVoiceToken } from './api';
-import { base64Decode, base64Encode, floatTo16BitPCM, PlaybackQueue } from './audio';
+import { base64Decode, base64Encode, PCM_CAPTURE_PROCESSOR, PlaybackQueue } from './audio';
+import pcmCaptureWorkletUrl from './pcmCaptureWorklet.ts?worker&url';
 import type { VoiceAdapterCallbacks, VoiceSessionAdapter } from './voiceAdapter';
 
 const LIVE_URL =
@@ -39,7 +40,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
   private audioInCtx: AudioContext | null = null;
   private audioOutCtx: AudioContext | null = null;
   private micStream: MediaStream | null = null;
-  private processor: ScriptProcessorNode | null = null;
+  private workletNode: AudioWorkletNode | null = null;
   private analyser: AnalyserNode | null = null;
   private playbackQueue: PlaybackQueue | null = null;
   private animationFrameId: number | null = null;
@@ -151,7 +152,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     if (response.setupComplete) {
       this.reconnectAttempts = 0;
       this.callbacks?.onStateChange('LISTENING');
-      this.startMicStreaming(micStream, ws);
+      void this.startMicStreaming(micStream, ws);
       return;
     }
 
@@ -196,30 +197,42 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
   }
 
-  private startMicStreaming(micStream: MediaStream, ws: WebSocket): void {
-    const audioInCtx = new AudioContext({ sampleRate: 16000 });
+  private async startMicStreaming(micStream: MediaStream, ws: WebSocket): Promise<void> {
+    const audioInCtx = new AudioContext();
     this.audioInCtx = audioInCtx;
+
+    try {
+      await audioInCtx.audioWorklet.addModule(pcmCaptureWorkletUrl);
+    } catch (err) {
+      if (this.audioInCtx === audioInCtx && this.ws === ws && !this.isDeliberateClose) {
+        this.fail(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+
+    if (this.audioInCtx !== audioInCtx || this.ws !== ws || this.isDeliberateClose) {
+      return;
+    }
 
     const sourceNode = audioInCtx.createMediaStreamSource(micStream);
     const analyser = audioInCtx.createAnalyser();
     analyser.fftSize = 256;
     this.analyser = analyser;
 
-    const processor = audioInCtx.createScriptProcessor(4096, 1, 1);
-    this.processor = processor;
-    processor.onaudioprocess = (e) => {
+    const workletNode = new AudioWorkletNode(audioInCtx, PCM_CAPTURE_PROCESSOR);
+    this.workletNode = workletNode;
+    workletNode.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
       if (this.isMuted || ws.readyState !== WebSocket.OPEN) return;
-      const pcm = floatTo16BitPCM(e.inputBuffer.getChannelData(0));
       ws.send(
         JSON.stringify({
-          realtimeInput: { audio: { data: base64Encode(pcm), mimeType: 'audio/pcm;rate=16000' } },
+          realtimeInput: { audio: { data: base64Encode(e.data), mimeType: 'audio/pcm;rate=16000' } },
         })
       );
     };
 
     sourceNode.connect(analyser);
-    analyser.connect(processor);
-    processor.connect(audioInCtx.destination);
+    analyser.connect(workletNode);
+    workletNode.connect(audioInCtx.destination);
 
     const levels = new Uint8Array(analyser.frequencyBinCount);
     const updateLevel = () => {
@@ -319,8 +332,11 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
     this.playbackQueue?.stop();
     this.playbackQueue = null;
-    this.processor?.disconnect();
-    this.processor = null;
+    if (this.workletNode) {
+      this.workletNode.port.onmessage = null;
+      this.workletNode.disconnect();
+      this.workletNode = null;
+    }
     this.analyser?.disconnect();
     this.analyser = null;
     this.micStream?.getTracks().forEach((track) => track.stop());

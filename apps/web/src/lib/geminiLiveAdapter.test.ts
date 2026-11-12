@@ -60,12 +60,23 @@ class MockWebSocket {
   }
 }
 
-type AudioProcessHandler = (event: { inputBuffer: { getChannelData: () => Float32Array } }) => void;
+class MockAudioWorkletNode {
+  static instances: MockAudioWorkletNode[] = [];
 
-class MockScriptProcessor {
   connect = vi.fn();
   disconnect = vi.fn();
-  onaudioprocess: AudioProcessHandler | null = null;
+  port = {
+    onmessage: null as ((event: { data: ArrayBuffer }) => void) | null,
+  };
+
+  context: MockAudioContext;
+  name: string;
+
+  constructor(context: MockAudioContext, name: string) {
+    this.context = context;
+    this.name = name;
+    MockAudioWorkletNode.instances.push(this);
+  }
 }
 
 class MockAudioContext {
@@ -73,7 +84,9 @@ class MockAudioContext {
 
   state = 'running';
   destination = {};
-  processor = new MockScriptProcessor();
+  audioWorklet = {
+    addModule: vi.fn().mockResolvedValue(undefined),
+  };
   resume = vi.fn();
   close = vi.fn().mockResolvedValue(undefined);
   createMediaStreamSource = vi.fn(() => ({ connect: vi.fn() }));
@@ -83,7 +96,6 @@ class MockAudioContext {
     connect: vi.fn(),
     disconnect: vi.fn(),
   }));
-  createScriptProcessor = vi.fn(() => this.processor);
 
   constructor() {
     MockAudioContext.instances.push(this);
@@ -105,6 +117,7 @@ async function connectReady(sessionId = 'session-1') {
   const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
   ws.simulateOpen();
   ws.simulateMessage({ setupComplete: {} });
+  await Promise.resolve();
   return { adapter, callbacks, ws };
 }
 
@@ -114,8 +127,10 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
     sessionStorage.clear();
     MockWebSocket.instances = [];
     MockAudioContext.instances = [];
+    MockAudioWorkletNode.instances = [];
     vi.stubGlobal('WebSocket', MockWebSocket);
     vi.stubGlobal('AudioContext', MockAudioContext);
+    vi.stubGlobal('AudioWorkletNode', MockAudioWorkletNode);
     Object.defineProperty(navigator, 'mediaDevices', {
       value: { getUserMedia },
       configurable: true,
@@ -202,30 +217,85 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
     ]);
   });
 
-  it('sends mic audio while unmuted and nothing while muted', async () => {
+  it('sends mic audio from AudioWorklet while unmuted and nothing while muted', async () => {
     const { adapter, callbacks, ws } = await connectReady();
-    const { onaudioprocess } = MockAudioContext.instances[1].processor;
-    const audioEvent = { inputBuffer: { getChannelData: () => new Float32Array([0, 0.5]) } };
+    const workletNode = MockAudioWorkletNode.instances[0];
+    expect(MockAudioContext.instances[1].audioWorklet.addModule).toHaveBeenCalledTimes(1);
+    expect(workletNode?.name).toBe('pcm-capture-processor');
+
+    const frame = new Int16Array([0, 16384]).buffer;
     ws.sentMessages = [];
 
-    onaudioprocess?.(audioEvent);
+    workletNode.port.onmessage?.({ data: frame });
     expect(ws.sent()[0].realtimeInput.audio.mimeType).toBe('audio/pcm;rate=16000');
 
     adapter.setMuted(true);
     ws.sentMessages = [];
-    onaudioprocess?.(audioEvent);
+    workletNode.port.onmessage?.({ data: frame });
     expect(ws.sentMessages).toHaveLength(0);
     expect(callbacks.onAudioLevel).toHaveBeenLastCalledWith(0);
   });
 
+  it('aborts mic setup safely if disconnected while AudioWorklet module is loading', async () => {
+    let resolveModule: () => void = () => {};
+    const addModuleSpy = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveModule = resolve;
+        })
+    );
+    vi.stubGlobal(
+      'AudioContext',
+      class extends MockAudioContext {
+        override audioWorklet = { addModule: addModuleSpy };
+      }
+    );
+
+    const adapter = new GeminiLiveVoiceAdapter();
+    await adapter.connect('session-abort', makeCallbacks());
+    const ws = MockWebSocket.instances[0];
+    ws.simulateOpen();
+
+    ws.simulateMessage({ setupComplete: {} });
+    expect(addModuleSpy).toHaveBeenCalledTimes(1);
+
+    adapter.disconnect();
+    resolveModule();
+    await Promise.resolve();
+
+    expect(MockAudioWorkletNode.instances).toHaveLength(0);
+  });
+
+  it('emits ERROR when loading the AudioWorklet module fails', async () => {
+    const adapter = new GeminiLiveVoiceAdapter();
+    const callbacks = makeCallbacks();
+    await adapter.connect('session-worklet-fail', callbacks);
+    const ws = MockWebSocket.instances[0];
+    ws.simulateOpen();
+
+    vi.stubGlobal(
+      'AudioContext',
+      class extends MockAudioContext {
+        override audioWorklet = { addModule: vi.fn().mockRejectedValue(new Error('Worklet load failed')) };
+      }
+    );
+
+    ws.simulateMessage({ setupComplete: {} });
+    await vi.waitFor(() => expect(callbacks.onError).toHaveBeenCalledWith('Worklet load failed'));
+    expect(callbacks.onStateChange).toHaveBeenLastCalledWith('ERROR');
+  });
+
   it('releases the mic, playback and stored handle on disconnect', async () => {
     const { adapter, callbacks, ws } = await connectReady();
+    const workletNode = MockAudioWorkletNode.instances[0];
     ws.simulateMessage({ sessionResumptionUpdate: { newHandle: 'handle-123', resumable: true } });
     expect(sessionStorage.getItem('gemini_resumption_session-1')).toBe('handle-123');
 
     adapter.disconnect();
 
     expect(callbacks.onStateChange).toHaveBeenLastCalledWith('IDLE');
+    expect(workletNode.disconnect).toHaveBeenCalled();
+    expect(workletNode.port.onmessage).toBeNull();
     expect(micTrack.stop).toHaveBeenCalled();
     expect(mockPlaybackQueue.stop).toHaveBeenCalled();
     expect(ws.readyState).toBe(3);
