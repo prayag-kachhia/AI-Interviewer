@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Software Engineer interview. Can you explain the difference between recursion and iteration, and when you would prefer one over the other?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Recursion is a programming technique where a function solves a problem by calling itself with smaller sub-problems until it hits a base case. Iteration uses looping constructs like for or while loops to repeat a block of code until a condition is met. The main trade-off is memory and readability: each recursive call allocates a new stack frame on the call stack, which can lead to a stack overflow error if the recursion depth is too large. Iteration executes within the same frame using local loop variables and O(1) auxiliary stack space. I prefer recursion for problems with naturally hierarchical or tree-like structures like tree traversals or divide-and-conquer algorithms, and iteration for linear sequences or performance-critical loops where call-stack overhead must be avoided."
+  },
+  {
+    "speaker": "AI",
+    "text": "How does the binary search algorithm work, what are its prerequisites, and what is its time complexity?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Binary search is an efficient search algorithm that finds the position of a target value within a sorted array. The key prerequisite is that the elements must already be in sorted order and support random access by index. It works by repeatedly dividing the search interval in half: you compare the target value to the element at the midpoint index. If the target equals the middle element, you return its index. If the target is smaller, you narrow the search interval to the left half; if greater, to the right half. You repeat this until the element is found or the interval is empty. Because the search space is halved on each step, its time complexity is logarithmic, O(log N), and it uses O(1) auxiliary space when implemented iteratively."
+  },
+  {
+    "speaker": "AI",
+    "text": "What do the DRY (Don't Repeat Yourself) principle and the Single Responsibility Principle (SRP) mean in everyday software development?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "DRY means that every piece of business logic or knowledge should have a single, unambiguous representation in a codebase. Instead of copying and pasting the same validation logic or utility code across multiple places, you extract it into a reusable function, module, or class. This prevents maintenance bugs where you update one copy but forget the others. Single Responsibility Principle, the 'S' in SOLID, states that a class or module should have only one reason to change, meaning it should perform one focused job. For example, a UserService should handle user profile business logic, while an EmailClient should handle formatting and sending SMTP emails. Combining both keeps code modular, testable, and maintainable."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you approach debugging a function that unexpectedly returns undefined or crashes for certain inputs?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "First, I reproduce the issue reliably by writing a minimal failing unit test using the specific input that triggered the bug. Next, I inspect the stack trace to identify the exact line and function where the failure occurred. I check for defensive coding issues like missing null or undefined checks, out-of-bounds array access, or missing return statements in conditional branches. I either use an interactive debugger to step through execution and inspect variable states at each line, or add targeted logging. Once I find the root cause, I fix the logic, run the failing test to verify it now passes, and run the entire test suite to ensure no regressions were introduced."
+  }
+]

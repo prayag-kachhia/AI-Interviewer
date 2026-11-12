@@ -20,6 +20,11 @@ bun scripts/bench.ts --broken-prompt
 
 # Score a single transcript with a role's rubric
 bun scripts/evaluate.ts src/__tests__/fixtures/transcripts/good.json --role software-engineer
+
+# Cross-role validation: test specific role & difficulty fixtures
+bun scripts/evaluate.ts src/__tests__/fixtures/transcripts/se-intermediate.json --role software-engineer
+bun scripts/evaluate.ts src/__tests__/fixtures/transcripts/da-advanced.json --role data-analyst
+bun scripts/evaluate.ts src/__tests__/fixtures/transcripts/backend-basic.json --role backend-developer
 ```
 
 Each fixture is scored with the rubric of the role named in its `*.expected.json` file
@@ -50,7 +55,11 @@ BENCH_USD_TO_INR=84.0               # default USD to INR conversion rate
 
 ## Fixtures
 
-| Fixture | Role | Quality | Has expected ranges |
+The benchmark discovers **27 transcript fixtures**: 26 scored fixtures with expected-score files and one unscored edge case (empty-answers). The 80% pass-rate threshold is calculated over the 26 scored fixtures.
+
+### General & Legacy Fixtures
+
+| Fixture | Role | Quality / Type | Has expected ranges |
 |---|---|---|---|
 | `excellent` | Software Engineer | Top-tier | ✅ |
 | `good` | Software Engineer | Competent | ✅ |
@@ -62,6 +71,8 @@ BENCH_USD_TO_INR=84.0               # default USD to INR conversion rate
 | `backend-developer-good` | Backend Developer | Competent | ✅ |
 | `backend-developer-average` | Backend Developer | Mixed | ✅ |
 | `off-topic` | Software Engineer | Edge case (off-topic) | ✅ |
+| `difficulty-basic` | Software Engineer | Strong basic answers | Yes (PN-3 difficulty awareness) |
+| `difficulty-advanced` | Software Engineer | Strong advanced answers | Yes (PN-3 difficulty awareness) |
 | `tech-stack-python` | Software Engineer | Top-tier (Python stack) | ✅ (DR-05 parity) |
 | `tech-stack-java` | Software Engineer | Top-tier (Java stack) | ✅ (DR-05 parity) |
 | `filler-heavy-correct` | Software Engineer | Competent, heavy speech fillers | ✅ (FR-21 separation) |
@@ -69,18 +80,35 @@ BENCH_USD_TO_INR=84.0               # default USD to INR conversion rate
 | `concise-correct` | Software Engineer | Competent, concise & accurate | ✅ (NFR-19 conciseness) |
 | `long-vague` | Software Engineer | Underprepared, long & vague | ✅ (NFR-19 conciseness) |
 
-Each `*.expected.json` file stores the fixture's role and, per rubric category, the acceptable score range `[min, max]` with a one-line reason. The benchmark averages scores across all runs and fails a fixture if a category's average is outside its range or the category is missing.
+### Cross-Role Validation Test Set (PN-4, 3 × 3 Matrix)
 
-The expected files use per-role rubric categories from `rubrics.ts`:
+| Fixture | Role | Difficulty | Expected Scores | Justification & Focus Areas |
+|---|---|---|:---:|---|
+| `se-basic` | Software Engineer | Basic | [4, 5] across all categories | Foundational algorithms (binary search, recursion call stacks), modularity/Single Responsibility, and systematic debugging methods. |
+| `se-intermediate` | Software Engineer | Intermediate | [4, 5] across all categories | Practical concurrency & race condition handling, multi-tier caching architectures (TTL/invalidation), and comprehensive unit/integration test strategies. |
+| `se-advanced` | Software Engineer | Advanced | [4, 5] across all categories | Deep architectural design: distributed consensus (Raft/Paxos), storage engine internals (LSM-trees vs B-trees), and zero-downtime database migration strategies. |
+| `da-basic` | Data Analyst | Basic | [4, 5] across all categories | SQL joins, aggregations, exploratory data analysis (EDA), translating analytics to stakeholders, and distribution metrics (mean vs median, outliers). |
+| `da-intermediate` | Data Analyst | Intermediate | [4, 5] across all categories | Advanced SQL window functions, cohort retention & churn analysis, and A/B test design with statistical significance (p-values, type I/II errors). |
+| `da-advanced` | Data Analyst | Advanced | [4, 5] across all categories | High-scale query & skew optimization, causal inference (Diff-in-Diff / synthetic controls), and addressing missing-data mechanisms (MCAR, MAR, MNAR). |
+| `backend-basic` | Backend Developer | Basic | [4, 5] across all categories | RESTful API design & HTTP semantics, relational schema normalization (1NF–3NF) & B-tree indexes, and backend error handling & retry idempotency. |
+| `backend-intermediate` | Backend Developer | Intermediate | [4, 5] across all categories | REST vs gRPC trade-offs & protobuf serialization, query optimization (N+1, composite indexes), and resilience patterns (circuit breakers, fallbacks). |
+| `backend-advanced` | Backend Developer | Advanced | [4, 5] across all categories | Event-driven event sourcing & transactional outbox, distributed consistency (2PC vs Saga), and high-throughput rate limiting (token bucket on Redis clusters). |
+
+Each `*.expected.json` file stores the fixture's role, optional difficulty tier, and acceptable score ranges `[min, max]` per rubric category with justifying rationale. The benchmark averages scores across all runs and fails a fixture if:
+1. Any expected category is missing from the evaluator's output.
+2. The evaluated category score falls outside `[min, max]`.
+3. An unhandled exception or API failure occurs during evaluation.
+
+The expected files strictly enforce role-specific rubric categories from `rubrics.ts`:
 - **Software Engineer**: Problem Solving & Algorithms · Software Design & Architecture · Technical Communication
 - **Data Analyst**: SQL & Analytical Reasoning · Data Interpretation & Business Insights · Statistical Understanding & Data Quality
 - **Backend Developer**: API Design & Architecture · Database Modeling & Performance · System Reliability & Scalability
 
-**Acceptance criteria:**
-- Accuracy & Latency: ≥ 8 of 10 fixtures pass _and_ p95 wall time < 15 000 ms.
-- Concise vs. Vague Answers (S-6 / NFR-19): `concise-correct` must score at least as well as `long-vague` overall (`conciseAvg >= longVagueAvg`) and in technical depth (`conciseTechnicalAvg >= longVagueTechnicalAvg`), with `conciseTechnicalAvg >= 3.50 / 5.00`.
-
----
+**Benchmark Acceptance Criteria:**
+- Accuracy: at least 80% of the 26 scored fixtures must pass (at least 21 of 26).
+- Latency: p95 wall-clock execution time < 15 000 ms.
+- Validation: all expected rubric categories must be present and within their configured score ranges.
+- Concise vs. Vague Answers (S-6 / NFR-19): `concise-correct` must score at least as well as `long-vague` overall and in technical depth, with `conciseTechnicalAvg >= 3.50 / 5.00`.
 
 ## Results — 2026-11-10
 

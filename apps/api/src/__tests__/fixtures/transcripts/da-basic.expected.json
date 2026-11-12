@@ -1,0 +1,24 @@
+{
+  "role": "data-analyst",
+  "difficulty": "basic",
+  "scores": [
+    {
+      "category": "SQL & Analytical Reasoning",
+      "min": 4,
+      "max": 5,
+      "reason": "Precise formulation of SQL join mechanics, WHERE vs HAVING clause execution order, and aggregation filtering."
+    },
+    {
+      "category": "Data Interpretation & Business Insights",
+      "min": 4,
+      "max": 5,
+      "reason": "Excellent stakeholder translation explaining mean vs median in skewed e-commerce distributions to marketing teams."
+    },
+    {
+      "category": "Statistical Understanding & Data Quality",
+      "min": 4,
+      "max": 5,
+      "reason": "Robust data cleaning approach detailing duplicate identification via HAVING/ROW_NUMBER and context-driven NULL imputation."
+    }
+  ]
+}

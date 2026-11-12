@@ -1,0 +1,24 @@
+{
+  "role": "backend-developer",
+  "difficulty": "advanced",
+  "scores": [
+    {
+      "category": "API Design & Architecture",
+      "min": 4,
+      "max": 5,
+      "reason": "Exemplary idempotent payment endpoint protocol with request hashing, atomic state machine transitions, and timeout recovery."
+    },
+    {
+      "category": "Database Modeling & Performance",
+      "min": 4,
+      "max": 5,
+      "reason": "Deep relational concurrency mastery detailing write skew under Snapshot Isolation, SSI anti-dependency cycles, and zero-downtime expand-contract migrations with lock_timeout."
+    },
+    {
+      "category": "System Reliability & Scalability",
+      "min": 4,
+      "max": 5,
+      "reason": "Production-hardened resilience architecture combining client rate limiters, circuit breakers (OPEN/HALF-OPEN), and bulkhead thread pool isolation."
+    }
+  ]
+}
