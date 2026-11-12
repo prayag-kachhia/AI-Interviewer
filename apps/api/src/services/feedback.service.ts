@@ -1,16 +1,16 @@
 import type { Feedback, Job, Prisma } from '../generated/prisma/client';
 import { Feedback as FeedbackContract } from '@interview/contracts';
 import prisma from '../db';
+import { AppError } from '../errors';
 import { evaluateTranscript, type EvaluatorOptions } from './evaluator.service';
 import { getOwnedSession } from './session.service';
 import { isTransientError, MAX_ATTEMPTS } from './job-queue.service';
 
 export type FeedbackStatus = 'pending' | 'ready' | 'failed';
 
-export class FeedbackRetryConflictError extends Error {
+export class FeedbackRetryConflictError extends AppError {
   constructor(message: string = 'Only failed feedback evaluations can be retried') {
-    super(message);
-    this.name = 'FeedbackRetryConflictError';
+    super(409, message);
   }
 }
 
