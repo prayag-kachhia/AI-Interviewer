@@ -85,11 +85,21 @@ export const FeedbackScore = z.object({
 });
 export type FeedbackScore = z.infer<typeof FeedbackScore>;
 
+// Per-answer feedback for each candidate response (PN-9, FR-21, FR-26).
+export const PerAnswerFeedback = z.object({
+  question: z.string().min(1),
+  summary: z.string().min(1),
+  strengths: z.array(z.string()),
+  improvements: z.array(z.string()),
+});
+export type PerAnswerFeedback = z.infer<typeof PerAnswerFeedback>;
+
 export const Feedback = z.object({
   sessionId: z.string(),
   status: FeedbackStatus,
   summary: z.string().optional(),
   scores: z.array(FeedbackScore).optional(),
+  perAnswer: z.array(PerAnswerFeedback).optional(),
 });
 export type Feedback = z.infer<typeof Feedback>;
 

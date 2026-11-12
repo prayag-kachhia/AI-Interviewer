@@ -86,9 +86,14 @@ export function buildInsightsPrompt(sessions: SessionWithFeedbackAndTurns[]): st
       if (s.feedback.summary) {
         context += `Feedback Summary: ${s.feedback.summary}\n`;
       }
-      if (Array.isArray(s.feedback.scores) && s.feedback.scores.length > 0) {
+      const scoreItems = Array.isArray(s.feedback.scores)
+        ? s.feedback.scores
+        : s.feedback.scores && typeof s.feedback.scores === 'object' && Array.isArray((s.feedback.scores as { scores?: unknown }).scores)
+          ? (s.feedback.scores as { scores: any[] }).scores
+          : [];
+      if (scoreItems.length > 0) {
         context += `Category Scores:\n`;
-        for (const score of s.feedback.scores as any[]) {
+        for (const score of scoreItems as any[]) {
           context += `- ${score.category}: Score ${score.score}/5. ${score.comment ?? ''}\n`;
           if (Array.isArray(score.strengths) && score.strengths.length > 0) {
             context += `  Strengths: ${score.strengths.join('; ')}\n`;

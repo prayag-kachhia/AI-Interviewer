@@ -441,6 +441,19 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(computeOverallScore(scores2)).toBe(3.7);
     });
 
+    it('computeOverallScore: computes average when scores are wrapped in an object with perAnswer (PN-9, #174)', () => {
+      const wrapped = {
+        scores: [
+          { category: 'Problem Solving', score: 5 },
+          { category: 'Architecture', score: 4 },
+        ],
+        perAnswer: [
+          { question: 'Q1', summary: 'A1', strengths: [], improvements: [] },
+        ],
+      };
+      expect(computeOverallScore(wrapped)).toBe(4.5);
+    });
+
     it('computeOverallScore: ignores Infinity, -Infinity, and NaN', () => {
       const allNonFinite = [
         { category: 'A', score: Infinity },

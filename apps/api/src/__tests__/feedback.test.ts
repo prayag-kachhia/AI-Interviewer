@@ -84,18 +84,31 @@ beforeEach(() => {
 describe('FB3 — session.ended job handler', () => {
   it('given a session.ended job, then the evaluator writes ready feedback for that session', async () => {
     (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({ ...SESSION, turns: TURNS });
-    vi.mocked(evaluateTranscript).mockResolvedValueOnce({ summary: 'Solid.', scores: SCORES });
+    const PER_ANSWER = [
+      {
+        question: 'What is database normalization?',
+        summary: 'Explained normalization and reducing data redundancy.',
+        strengths: ['Accurately explained normalization'],
+        improvements: ['Discuss trade-offs involving joins'],
+      },
+    ];
+
+    vi.mocked(evaluateTranscript).mockResolvedValueOnce({
+      summary: 'Solid.',
+      scores: SCORES,
+      perAnswer: PER_ANSWER,
+    });
 
     await handleSessionEnded(JOB);
 
     expect(evaluateTranscript).toHaveBeenCalledWith(
       { roleId: 'backend-developer', turns: TURNS },
-      {}
+      { requirePerAnswer: true }
     );
     expect(prisma.feedback.upsert).toHaveBeenCalledWith({
       where: { sessionId: 'sess-1' },
-      create: { sessionId: 'sess-1', status: 'ready', summary: 'Solid.', scores: SCORES, error: null },
-      update: { status: 'ready', summary: 'Solid.', scores: SCORES, error: null },
+      create: { sessionId: 'sess-1', status: 'ready', summary: 'Solid.', scores: { scores: SCORES, perAnswer: PER_ANSWER, }, error: null },
+      update: { status: 'ready', summary: 'Solid.', scores: { scores: SCORES, perAnswer: PER_ANSWER, }, error: null },
     });
     expect(prisma.job.create).toHaveBeenCalledWith({
       data: {
@@ -335,6 +348,82 @@ describe('FB3 — GET /api/sessions/:id/feedback', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual({ sessionId: 'sess-1', status: 'ready', summary: 'Solid.', scores: SCORES });
+  });
+
+  it('given feedback has perAnswer data, then perAnswer is returned in the API response (PN-9, #174)', async () => {
+    const PER_ANSWER = [
+      {
+        question: 'What is database normalization?',
+        summary: 'Explained 1NF, 2NF, 3NF reducing data redundancy.',
+        strengths: ['Accurate normalization definitions'],
+        improvements: ['Mention performance overhead of multi-table joins'],
+      },
+    ];
+
+    (prisma.session.findFirst as any).mockResolvedValueOnce(SESSION);
+    (prisma.feedback.findUnique as any).mockResolvedValueOnce({
+      id: 'f1',
+      sessionId: 'sess-1',
+      status: 'ready',
+      summary: 'Solid.',
+      scores: {
+        scores: SCORES,
+        perAnswer: PER_ANSWER,
+      },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const res = await get('sess-1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.sessionId).toBe('sess-1');
+    expect(res.body.data.status).toBe('ready');
+    expect(res.body.data.scores).toEqual(SCORES);
+    expect(res.body.data.perAnswer).toEqual(PER_ANSWER);
+  });
+
+  it('handleSessionEnded saves perAnswer when returned by evaluator (PN-9, #174)', async () => {
+    const PER_ANSWER = [
+      {
+        question: 'Describe REST idempotency.',
+        summary: 'Defined idempotent HTTP methods correctly.',
+        strengths: ['Accurate HTTP semantics'],
+        improvements: ['Include example of idempotent retry logic'],
+      },
+    ];
+
+    (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({ ...SESSION, turns: TURNS });
+    vi.mocked(evaluateTranscript).mockResolvedValueOnce({
+      summary: 'Solid.',
+      scores: SCORES,
+      perAnswer: PER_ANSWER,
+    });
+
+    await handleSessionEnded(JOB);
+
+    expect(prisma.feedback.upsert).toHaveBeenCalledWith({
+      where: { sessionId: 'sess-1' },
+      create: {
+        sessionId: 'sess-1',
+        status: 'ready',
+        summary: 'Solid.',
+        scores: {
+          scores: SCORES,
+          perAnswer: PER_ANSWER,
+        },
+        error: null,
+      },
+      update: {
+        status: 'ready',
+        summary: 'Solid.',
+        scores: {
+          scores: SCORES,
+          perAnswer: PER_ANSWER,
+        },
+        error: null,
+      },
+    });
   });
 
   it("given another candidate's session, then 404 (FR-27)", async () => {

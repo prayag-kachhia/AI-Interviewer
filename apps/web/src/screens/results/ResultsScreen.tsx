@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { deleteSession, retryFeedback } from "../../lib/api";
 import { useFeedback, useTurns } from "./useFeedback";
+import { PerAnswerFeedbackSection } from "./PerAnswerFeedbackSection";
 import type { TurnSpeaker } from "@interview/contracts";
 
 export function formatSpeaker(speaker: TurnSpeaker | string): string {
@@ -162,6 +163,8 @@ export function ResultsScreen() {
           </ol>
         )}
       </details>
+
+      <PerAnswerFeedbackSection perAnswer={feedback?.perAnswer} />
 
       {deleteError && <p role="alert">{deleteError}</p>}
       <button type="button" className="btn btn-outline" onClick={handleDelete} disabled={deleting}>

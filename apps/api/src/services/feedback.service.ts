@@ -18,7 +18,8 @@ export interface SaveFeedbackParams {
   sessionId: string;
   status: FeedbackStatus;
   summary?: string;
-  scores?: Prisma.InputJsonArray;
+  scores?: Prisma.InputJsonValue;
+  perAnswer?: Prisma.InputJsonValue;
   error?: string;
 }
 
@@ -27,10 +28,20 @@ export interface SaveFeedbackParams {
  * so a retried job overwrites its earlier result instead of adding a second one.
  */
 export async function saveFeedback(params: SaveFeedbackParams): Promise<Feedback> {
+  let storedScores: Prisma.InputJsonValue;
+  if (params.perAnswer !== undefined) {
+    storedScores = {
+      scores: params.scores ?? [],
+      perAnswer: params.perAnswer,
+    };
+  } else {
+    storedScores = params.scores ?? [];
+  }
+
   const data = {
     status: params.status,
     summary: params.summary ?? null,
-    scores: params.scores ?? [],
+    scores: storedScores,
     error: params.error ?? null,
   };
   return prisma.feedback.upsert({
@@ -51,11 +62,25 @@ export async function getFeedbackForSession(sessionId: string, userId: string): 
   if (!row) {
     return { sessionId, status: 'pending' };
   }
+
+  let scoresData: unknown = undefined;
+  let perAnswerData: unknown = undefined;
+  if (row.status === 'ready' && row.scores) {
+    if (Array.isArray(row.scores)) {
+      scoresData = row.scores;
+    } else if (typeof row.scores === 'object' && row.scores !== null) {
+      const parsed = row.scores as { scores?: unknown; perAnswer?: unknown };
+      scoresData = parsed.scores;
+      perAnswerData = parsed.perAnswer;
+    }
+  }
+
   return FeedbackContract.parse({
     sessionId,
     status: row.status,
     summary: row.summary ?? undefined,
-    scores: row.status === 'ready' ? row.scores : undefined,
+    scores: scoresData,
+    perAnswer: perAnswerData,
   });
 }
 
@@ -76,12 +101,16 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
     include: { turns: { orderBy: { turnIndex: 'asc' } } },
   });
   try {
-    const evaluation = await evaluateTranscript({ roleId: session.role, turns: session.turns }, options);
+    const evaluation = await evaluateTranscript(
+      { roleId: session.role, turns: session.turns },
+      { ...options, requirePerAnswer: true }
+    );
     await saveFeedback({
       sessionId: session.id,
       status: 'ready',
       summary: evaluation.summary,
       scores: evaluation.scores,
+      perAnswer: evaluation.perAnswer,
     });
     await enqueueJob({
       type: 'insights.refresh',
