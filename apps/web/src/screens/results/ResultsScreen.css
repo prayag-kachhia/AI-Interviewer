@@ -1,0 +1,33 @@
+/* ResultsScreen.css: sequential reveal for rubric category scores */
+
+@keyframes scoreReveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.category-card-reveal {
+  animation: scoreReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.category-card-reveal[data-reveal-index="0"] { animation-delay: 60ms; }
+.category-card-reveal[data-reveal-index="1"] { animation-delay: 120ms; }
+.category-card-reveal[data-reveal-index="2"] { animation-delay: 180ms; }
+.category-card-reveal[data-reveal-index="3"] { animation-delay: 240ms; }
+.category-card-reveal[data-reveal-index="4"] { animation-delay: 300ms; }
+.category-card-reveal[data-reveal-index="5"] { animation-delay: 360ms; }
+.category-card-reveal[data-reveal-index="6"] { animation-delay: 420ms; }
+.category-card-reveal[data-reveal-index="7"] { animation-delay: 480ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .category-card-reveal {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
