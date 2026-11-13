@@ -8,7 +8,6 @@ export interface RubricCategory {
 export type Rubric = readonly RubricCategory[];
 
 /**
-/**
  * Core principle for difficulty-aware expectations (PN-3, DR-05).
  * Calibrate expected answer depth to the difficulty of the question: a basic question receives
  * full credit (5/5) when the candidate understands the core concept and provides a correct,
