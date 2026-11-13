@@ -5,7 +5,9 @@ import prisma from '../db';
 import {
   isValidResourceId,
   getResourcesByTopic,
+  getResourceById,
   normalizeTopic,
+  type LearningResource,
 } from '../data/resources';
 
 export const INSIGHT_TOPICS = [
@@ -487,5 +489,50 @@ export async function getImprovementPlan(userId: string): Promise<ImprovementPla
   return prisma.improvementPlan.findUnique({
     where: { userId },
   });
+}
+
+/**
+ * Retrieves the current ImprovementPlan for a candidate, enriched with detailed learning resources.
+ */
+export async function getEnrichedImprovementPlan(userId: string) {
+  const plan = await getImprovementPlan(userId);
+  if (!plan) {
+    return null;
+  }
+
+  const rawPlan = (Array.isArray(plan.plan) ? plan.plan : []) as unknown as TopicPlan[];
+  const rawTopics = (Array.isArray(plan.topics) ? plan.topics : []) as unknown as TopicScore[];
+
+  const enrichedPlan = rawPlan.map((tp) => ({
+    ...tp,
+    actions: (tp.actions || []).map((act) => ({
+      ...act,
+      resource: getResourceById(act.resourceId),
+    })),
+  }));
+
+  const resourceMap = new Map<string, LearningResource>();
+  for (const tp of rawPlan) {
+    for (const act of tp.actions || []) {
+      const res = getResourceById(act.resourceId);
+      if (res) {
+        resourceMap.set(res.id, res);
+      }
+    }
+    const topicRes = getResourcesByTopic(tp.topic);
+    for (const r of topicRes) {
+      resourceMap.set(r.id, r);
+    }
+  }
+
+  return {
+    id: plan.id,
+    userId: plan.userId,
+    topics: rawTopics,
+    plan: enrichedPlan,
+    resources: Array.from(resourceMap.values()),
+    createdAt: plan.createdAt.toISOString(),
+    updatedAt: plan.updatedAt.toISOString(),
+  };
 }
 
