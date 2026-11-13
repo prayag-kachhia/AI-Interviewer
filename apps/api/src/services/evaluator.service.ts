@@ -3,7 +3,7 @@
 import { GoogleGenAI, Type, type Schema } from '@google/genai';
 import { z } from 'zod';
 import { FeedbackScore, ROLES, type TurnSpeaker } from '@interview/contracts';
-import { getRubric, TECHNOLOGY_INDEPENDENCE_PRINCIPLE } from './rubrics';
+import { getRubric, TECHNOLOGY_INDEPENDENCE_PRINCIPLE, SCORE_SEPARATION_PRINCIPLE } from './rubrics';
 
 // Leaves room inside the 15-second feedback budget for polling and the database.
 export const EVALUATION_TIMEOUT_MS = 12_000;
@@ -63,6 +63,9 @@ Evaluation Instructions:
    - Score the candidate strictly on the criteria listed for each category above.
    - Differentiate strong, concrete answers with specific depth and trade-offs from surface-level or vague explanations.
    - Technology-independent evaluation: ${TECHNOLOGY_INDEPENDENCE_PRINCIPLE}
+   - Score separation (technical depth vs. communication): ${SCORE_SEPARATION_PRINCIPLE}
+   - Technical categories (e.g. Problem Solving & Algorithms, Software Design & Architecture, SQL & Analytical Reasoning, Data Interpretation & Business Insights, Statistical Understanding & Data Quality, API Design & Architecture, Database Modeling & Performance, System Reliability & Scalability) must be evaluated based on the substance, correctness, analytical depth, and architectural/algorithmic validity of the candidate's solution, ignoring speech disfluencies.
+   - Pauses, fillers, and hesitation must be evaluated solely under communication categories (e.g., Technical Communication). If a role rubric does not contain a dedicated communication category (such as Data Analyst or Backend Developer), pauses, verbal fillers, and speech disfluencies must NEVER reduce any category score; all categories must be judged strictly on content and correctness.
 
 2. Behavioural Evaluation (STAR Methodology):
    - For questions and answers that are behavioural (e.g. discussing past experiences, conflicts, challenges, leadership, or teamwork), assess the answer structure using the STAR framework:
@@ -77,7 +80,7 @@ Evaluation Instructions:
    - For every category, provide:
      * category: the rubric category name exactly as written above.
      * score: integer from 1 (poor) to 5 (excellent).
-     * comment: one or two concise sentences summarizing the evaluation.
+     * comment: one or two concise sentences explaining why this score was given, citing specific technical or communication justification.
      * strengths: array of 1-2 specific things the candidate did well.
      * improvements: array of 1-2 actionable recommendations for improvement.
      * quote: an exact, verbatim excerpt from the candidate's transcript answers providing direct evidence for this category. Never use interviewer statements. Never fabricate or paraphrase quotes.
@@ -89,7 +92,7 @@ Return ONLY JSON of this shape:
     {
       "category": "<rubric category, exactly as written above>",
       "score": <1-5>,
-      "comment": "<one or two sentences>",
+      "comment": "<one or two sentences explaining why this score was given>",
       "strengths": ["<strength 1>", "<strength 2>"],
       "improvements": ["<improvement 1>"],
       "quote": "<exact verbatim quote from candidate transcript text>"

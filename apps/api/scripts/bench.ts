@@ -239,6 +239,110 @@ export function evaluateTechnologyIndependence(
   };
 }
 
+export interface ScoreSeparationResult {
+  pass: boolean;
+  technicalAvg?: number;
+  communicationScore?: number;
+  dataAnalystAvg?: number;
+  dataInterpretationScore?: number;
+  error?: string;
+}
+
+/**
+ * Evaluates that pauses and fillers affect communication only, never the technical score (S-5, FR-21, NFR-19).
+ * Verifies that:
+ * 1. For SWE (filler-heavy-correct), technical categories maintain a high average (>= 3.5 / 5.0)
+ *    while communication reflects the verbal disfluency.
+ * 2. For Data Analyst (filler-heavy-data-analyst), all categories—specifically including
+ *    Data Interpretation & Business Insights—are recognized as technical/analytical and maintain
+ *    high scores (>= 3.5 / 5.0) unaffected by verbal disfluencies.
+ */
+export function evaluateScoreSeparation(
+  fixtureResults: Array<{ name: string; runs: RunResult[] }>
+): ScoreSeparationResult {
+  const sweResult = fixtureResults.find((f) => f.name === 'filler-heavy-correct');
+  const daResult = fixtureResults.find((f) => f.name === 'filler-heavy-data-analyst');
+
+  if (!sweResult || !daResult) {
+    const missing = [
+      !sweResult ? 'filler-heavy-correct' : null,
+      !daResult ? 'filler-heavy-data-analyst' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `Missing required score separation fixture(s): ${missing}`,
+    };
+  }
+
+  const validSweRuns = sweResult.runs.filter((r) => !r.error);
+  const validDaRuns = daResult.runs.filter((r) => !r.error);
+
+  if (validSweRuns.length === 0 || validDaRuns.length === 0) {
+    const emptyRuns = [
+      validSweRuns.length === 0 ? 'filler-heavy-correct' : null,
+      validDaRuns.length === 0 ? 'filler-heavy-data-analyst' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `No successful evaluated runs with scores for: ${emptyRuns}`,
+    };
+  }
+
+  const techScores = validSweRuns.flatMap((r) =>
+    r.scores
+      .filter((s) => s.category !== 'Technical Communication')
+      .map((s) => s.score)
+  );
+  const commScores = validSweRuns.flatMap((r) =>
+    r.scores
+      .filter((s) => s.category === 'Technical Communication')
+      .map((s) => s.score)
+  );
+
+  if (techScores.length === 0 || commScores.length === 0) {
+    return {
+      pass: false,
+      error: 'Missing technical or communication categories for: filler-heavy-correct',
+    };
+  }
+
+  const daScores = validDaRuns.flatMap((r) => r.scores.map((s) => s.score));
+  const daInterpretationScores = validDaRuns.flatMap((r) =>
+    r.scores
+      .filter((s) => s.category === 'Data Interpretation & Business Insights')
+      .map((s) => s.score)
+  );
+
+  if (daScores.length === 0 || daInterpretationScores.length === 0) {
+    return {
+      pass: false,
+      error: 'Missing technical categories for: filler-heavy-data-analyst',
+    };
+  }
+
+  const technicalAvg = techScores.reduce((a, b) => a + b, 0) / techScores.length;
+  const communicationScore = commScores.reduce((a, b) => a + b, 0) / commScores.length;
+  const dataAnalystAvg = daScores.reduce((a, b) => a + b, 0) / daScores.length;
+  const dataInterpretationScore =
+    daInterpretationScores.reduce((a, b) => a + b, 0) / daInterpretationScores.length;
+
+  // Technical depth must remain high (>= 3.5 / 5.00) in both roles despite heavy verbal fillers.
+  // Data Interpretation & Business Insights is explicitly evaluated as a technical category (>= 3.5 / 5.00).
+  const pass = technicalAvg >= 3.5 && dataAnalystAvg >= 3.5 && dataInterpretationScore >= 3.5;
+
+  return {
+    pass,
+    technicalAvg,
+    communicationScore,
+    dataAnalystAvg,
+    dataInterpretationScore,
+  };
+}
+
 const defaultPricing = resolveBenchmarkPricing();
 const INPUT_COST_USD_PER_1M = defaultPricing.inputCostPer1M;
 const OUTPUT_COST_USD_PER_1M = defaultPricing.outputCostPer1M;
@@ -700,6 +804,38 @@ async function main() {
     );
   }
 
+  // ── Score Separation (S-5, FR-21, NFR-19) ──────────────────────────────────
+  console.log('\nScore Separation (S-5 / FR-21):');
+  let scoreSeparationOk = false;
+  const sepEval = evaluateScoreSeparation(fixtureResults);
+
+  if (sepEval.error) {
+    console.log(`  ❌ FAIL — ${sepEval.error}`);
+  } else if (sepEval.technicalAvg !== undefined && sepEval.communicationScore !== undefined) {
+    scoreSeparationOk = sepEval.pass;
+    console.log(
+      `  SWE filler-heavy technical avg   : ${sepEval.technicalAvg.toFixed(2)} / 5.00 (target: >= 3.50)  ${
+        sepEval.technicalAvg >= 3.5 ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(`  SWE filler-heavy comm score      : ${sepEval.communicationScore.toFixed(2)} / 5.00`);
+    if (sepEval.dataAnalystAvg !== undefined) {
+      console.log(
+        `  DA filler-heavy technical avg    : ${sepEval.dataAnalystAvg.toFixed(2)} / 5.00 (target: >= 3.50)  ${
+          sepEval.dataAnalystAvg >= 3.5 ? '✅ PASS' : '❌ FAIL'
+        }`
+      );
+    }
+    if (sepEval.dataInterpretationScore !== undefined) {
+      console.log(
+        `  DA Data Interpretation score     : ${sepEval.dataInterpretationScore.toFixed(2)} / 5.00 (target: >= 3.50)  ${
+          sepEval.dataInterpretationScore >= 3.5 ? '✅ PASS' : '❌ FAIL'
+        }`
+      );
+    }
+    console.log(`  Score separation                 : ${scoreSeparationOk ? '✅ PASS' : '❌ FAIL'}`);
+  }
+
   // ── Accuracy verdict ─────────────────────────────────────────────────────────
 
   console.log('\nAccuracy:');
@@ -709,7 +845,7 @@ async function main() {
   const accuracyOk = passCount >= threshold;
 
   console.log('');
-  if (!accuracyOk || !latencyOk || !techIndependenceOk) {
+  if (!accuracyOk || !latencyOk || !techIndependenceOk || !scoreSeparationOk) {
     if (!accuracyOk)
       console.error(
         `❌ ACCURACY: only ${passCount}/${totalWithExpected} pass (need ≥ ${threshold})`
@@ -718,6 +854,8 @@ async function main() {
       console.error(`❌ LATENCY:  p95 = ${p95} ms exceeds ${LATENCY_TARGET_MS} ms target`);
     if (!techIndependenceOk)
       console.error(`❌ TECHNOLOGY INDEPENDENCE: score difference exceeds 1.0 point limit (PN-8, DR-05)`);
+    if (!scoreSeparationOk)
+      console.error(`❌ SCORE SEPARATION: filler-heavy answers did not maintain high technical scores (S-5, FR-21)`);
     process.exit(1);
   } else {
     console.log(

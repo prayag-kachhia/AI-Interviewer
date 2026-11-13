@@ -1,0 +1,35 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Data Analyst interview. Let's start with SQL. How would you calculate a 7-day rolling average of daily active users from an events table?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Um, well, like... to get a rolling average, uh, I'd use, like, a CTE first to aggregate the daily active users, you know? And then, um, like, apply a window function on top. So, uh, basically: WITH daily AS (SELECT DATE(event_time) AS day, COUNT(DISTINCT user_id) AS dau FROM events GROUP BY 1) SELECT day, dau, AVG(dau) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS rolling_7d_avg FROM daily ORDER BY day. And, uh, like, I use ROWS BETWEEN rather than, um, RANGE because, you know, RANGE includes all rows with the same date if there are ties, which could, like, double-count. ROWS gives us, uh, exactly the seven most recent records, basically."
+  },
+  {
+    "speaker": "AI",
+    "text": "Good. How would you identify and remove duplicate records from a large dataset before running a cohort analysis?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Uh, so, like, first I'd, you know, profile: COUNT(*) versus COUNT(DISTINCT primary_key) to, um, see the duplication rate, right? And then, like, for exact duplicates, um, I use ROW_NUMBER() partitioned over the business keys—like, user_id, event_type, and DATE(event_time)—ordered by, uh, created_at, and then filter WHERE rn = 1 to keep, you know, the earliest record. And, um, for near-duplicates, like, within a 30-second window, uh, I use LAG to, like, calculate the time gap. And, uh, I'd also, like, save the before and after counts in a data quality log, you know, for stakeholders."
+  },
+  {
+    "speaker": "AI",
+    "text": "Suppose a key metric—weekly revenue—drops 18% week-over-week. Walk me through your root-cause analysis."
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Um, okay, so, like... first, uh, rule out pipeline bugs, right? Like, check if the ETL jobs finished and, uh, compare source record counts to the warehouse. Then, um, if data is good, like, decompose revenue into, you know, orders multiplied by average order value to, uh, see which part dropped. And then, like, segment by channel, category, device, you know? And, uh, also check external stuff, like, did a marketing promo end or, um, was checkout down? And, like, compare year-over-year to, uh, check for seasonality, basically."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you validate the outputs of a newly built data pipeline before it goes to production?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Um, yeah, so, like, validation in layers, I guess. At the schema layer, uh, check data types and null constraints, you know? And at volume layer, like, reconcile row counts between source and destination. Then, um, for business logic, like, run invariant checks—like revenue must be positive, refund can't exceed order total—and, uh, compare old and new pipeline totals on historical data. And, like, run shadow mode for a cycle, and, uh, set up dbt tests or Great Expectations for production alerts, you know?"
+  }
+]
+
