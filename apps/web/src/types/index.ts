@@ -44,8 +44,18 @@ export interface ResumeResponse {
 // Slice A — Live Session
 // ---------------------------------------------------------------------------
 
-export type { Role, SessionStatus, TurnSpeaker } from '@interview/contracts';
-import type { Role, Session, Turn } from '@interview/contracts';
+export type {
+  Role,
+  SessionStatus,
+  TurnSpeaker,
+  ImprovementPlan,
+  TopicPlan,
+  PlanAction,
+  TopicScore,
+  LearningResource,
+  InsightTopic,
+} from '@interview/contracts';
+import type { Role, Session, Turn, ImprovementPlan } from '@interview/contracts';
 
 export type InterviewVoiceState =
   | 'IDLE'
@@ -88,4 +98,10 @@ export interface TurnsListResponse {
   success: boolean;
   message?: string;
   data?: TurnData[];
+}
+
+export interface InsightsResponse {
+  success: boolean;
+  message?: string;
+  data?: ImprovementPlan;
 }

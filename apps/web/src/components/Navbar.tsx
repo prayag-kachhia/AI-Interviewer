@@ -41,6 +41,7 @@ export const Navbar: React.FC = () => {
         <div className="navbar-links">
           <Link to="/dashboard" className={`navbar-link ${isActive('/dashboard') ? 'active' : ''}`}>Dashboard</Link>
           <Link to="/history" className={`navbar-link ${isActive('/history') ? 'active' : ''}`}>History</Link>
+          <Link to="/guide" className={`navbar-link ${isActive('/guide') ? 'active' : ''}`}>Guide</Link>
           <Link to="/profile" className={`navbar-link ${isActive('/profile') ? 'active' : ''}`}>Profile</Link>
           
           <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">

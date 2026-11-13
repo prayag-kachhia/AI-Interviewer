@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Feedback, VoiceToken } from '@interview/contracts';
+import { Feedback, ImprovementPlan, VoiceToken } from '@interview/contracts';
 import { supabase } from './supabase';
 import type {
   ResumeResponse,
@@ -157,6 +157,12 @@ export const getFeedback = async (sessionId: string): Promise<Feedback> => {
 export const retryFeedback = async (sessionId: string): Promise<Feedback> => {
   const { data } = await api.post<{ success: boolean; data?: unknown }>(`/sessions/${sessionId}/feedback/retry`);
   return Feedback.parse(data.data);
+};
+
+// Candidate insights & improvement plan (V-5)
+export const getInsights = async (): Promise<ImprovementPlan> => {
+  const { data } = await api.get<{ success: boolean; data?: unknown }>('/insights');
+  return ImprovementPlan.parse(data.data);
 };
 
 export default api;
