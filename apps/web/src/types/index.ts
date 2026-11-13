@@ -44,7 +44,7 @@ export interface ResumeResponse {
 // Slice A — Live Session
 // ---------------------------------------------------------------------------
 
-export type { Role, SessionStatus, TurnSpeaker } from '@interview/contracts';
+export type { Role, SessionStatus, TurnSpeaker, EndReason } from '@interview/contracts';
 import type { Role, Session, Turn } from '@interview/contracts';
 
 export type InterviewVoiceState =

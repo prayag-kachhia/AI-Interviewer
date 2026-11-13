@@ -102,6 +102,36 @@ test("given past interviews, lists them in the order the API returns with detail
   expect(viewLinks[1]).toHaveAttribute("href", "/interview/session-old/feedback");
 });
 
+test("displays early end reason formatted next to score/status when present (K-10, FR-19)", async () => {
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "session-early",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-01T10:00:00Z",
+        endedAt: "2026-11-01T10:04:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.5,
+        endedEarly: true,
+        endReason: "technical_problem",
+      },
+    ],
+  });
+
+  render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  const badge = await screen.findByTestId("history-ended-early");
+  expect(badge).toHaveTextContent("Ended early (Technical problem)");
+  expect(screen.getByTestId("history-overall-score")).toHaveTextContent("Score: 4.5/5");
+});
+
 test("given the history request fails, shows an error", async () => {
   vi.mocked(getSessions).mockRejectedValue(new Error("Database connection failed"));
 

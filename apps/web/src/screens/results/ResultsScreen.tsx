@@ -1,9 +1,25 @@
 // ResultsScreen.tsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
-import { deleteSession, retryFeedback } from "../../lib/api";
+import { deleteSession, getSession, retryFeedback } from "../../lib/api";
 import { useFeedback, useTurns } from "./useFeedback";
-import type { TurnSpeaker } from "@interview/contracts";
+import type { Session, TurnSpeaker } from "@interview/contracts";
+
+export function formatEndReason(reason?: string | null): string {
+  if (!reason) return '';
+  switch (reason) {
+    case 'finished_early':
+      return 'Finished early';
+    case 'technical_problem':
+      return 'Technical problem';
+    case 'need_to_stop':
+      return 'Need to stop';
+    case 'other':
+      return 'Other';
+    default:
+      return reason.replace(/_/g, ' ');
+  }
+}
 
 export function formatSpeaker(speaker: TurnSpeaker | string): string {
   if (speaker === "AI") return "AI Interviewer";
@@ -28,9 +44,34 @@ export function ResultsScreen() {
   const [retryError, setRetryError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const navigate = useNavigate();
   const { feedback, error: feedbackError, isLongWait } = useFeedback(sessionId, reloadKey);
   const { turns, isLoading, error } = useTurns(sessionId);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    try {
+      const promise = getSession(sessionId);
+      if (promise && typeof promise.then === "function") {
+        promise
+          .then((res) => {
+            if (!cancelled && res?.data) {
+              setSession(res.data);
+            }
+          })
+          .catch(() => {
+            // Silently continue if session metadata is unavailable
+          });
+      }
+    } catch {
+      // Ignore
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   if (!sessionId) {
     return <Navigate to="/dashboard" replace />;
@@ -84,7 +125,25 @@ export function ResultsScreen() {
 
       {feedback?.status === "ready" && (
         <div>
-          <h2>Your Feedback</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+            <h2 style={{ margin: 0 }}>Your Feedback</h2>
+            {(session?.endedEarly || session?.endReason) && (
+              <span
+                data-testid="results-ended-early"
+                style={{
+                  backgroundColor: "var(--warning-bg, #fef3c7)",
+                  color: "var(--warning-text, #92400e)",
+                  border: "1px solid rgba(245, 158, 11, 0.3)",
+                  borderRadius: "9999px",
+                  padding: "0.2rem 0.65rem",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
+                }}
+              >
+                Ended early{session.endReason ? ` (${formatEndReason(session.endReason)})` : ''}
+              </span>
+            )}
+          </div>
           <p>{feedback.summary}</p>
           <ul>
             {feedback.scores?.map((s) => (

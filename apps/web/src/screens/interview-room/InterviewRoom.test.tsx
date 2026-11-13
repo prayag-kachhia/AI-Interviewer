@@ -126,6 +126,37 @@ test('confirming ends interview and navigates to feedback on success', async () 
   });
 });
 
+test('dialog offers early end reasons and submits selected reason (K-10, FR-19)', async () => {
+  const session = makeSession();
+  vi.mocked(api.getSession).mockResolvedValueOnce(session);
+  vi.mocked(api.endSession).mockResolvedValueOnce({
+    success: true,
+    data: {
+      ...session.data,
+      status: 'ENDED',
+      endedAt: new Date().toISOString(),
+      endReason: 'technical_problem',
+    },
+  });
+  renderRoom();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'End Interview' }));
+  expect(screen.getByText('Technical problem')).toBeInTheDocument();
+  expect(screen.getByText('Finished early')).toBeInTheDocument();
+  expect(screen.getByText('Need to stop')).toBeInTheDocument();
+  expect(screen.getByText('Other')).toBeInTheDocument();
+  expect(screen.getByText(/Decline to give a reason/)).toBeInTheDocument();
+
+  // Select "Technical problem"
+  fireEvent.click(screen.getByLabelText('Technical problem'));
+  fireEvent.click(screen.getByRole('button', { name: /Yes, End Interview/ }));
+
+  await waitFor(() => {
+    expect(api.endSession).toHaveBeenCalledWith('sess-123', 'technical_problem');
+    expect(screen.getByText('Feedback page')).toBeInTheDocument();
+  });
+});
+
 test('auto-ends interview once when countdown reaches zero', async () => {
   const expired = new Date(Date.now() - (DEFAULT_TIME_LIMIT_MIN * 60 + 5) * 1000).toISOString();
   const session = makeSession(expired);

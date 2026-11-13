@@ -5,6 +5,22 @@ import { ROLES } from "@interview/contracts";
 import { getSessions } from "../../lib/api";
 import type { SessionData } from "../../types";
 
+export function formatEndReason(reason?: string | null): string {
+  if (!reason) return '';
+  switch (reason) {
+    case 'finished_early':
+      return 'Finished early';
+    case 'technical_problem':
+      return 'Technical problem';
+    case 'need_to_stop':
+      return 'Need to stop';
+    case 'other':
+      return 'Other';
+    default:
+      return reason.replace(/_/g, ' ');
+  }
+}
+
 export const HistoryPage: React.FC = () => {
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -203,7 +219,7 @@ export const HistoryPage: React.FC = () => {
                           fontWeight: 600,
                         }}
                       >
-                        Ended early
+                        Ended early{session.endReason ? ` (${formatEndReason(session.endReason)})` : ''}
                       </span>
                     )}
                   </div>
@@ -228,6 +244,14 @@ export const HistoryPage: React.FC = () => {
                     <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
                       Feedback: {renderFeedbackStatus(session.feedbackStatus)}
                     </span>
+                    {session.overallScore !== undefined && session.overallScore !== null && (
+                      <>
+                        <span>•</span>
+                        <span data-testid="history-overall-score" style={{ fontWeight: 600 }}>
+                          Score: {session.overallScore}/5
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
 

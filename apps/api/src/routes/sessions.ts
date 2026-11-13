@@ -9,6 +9,7 @@ import {
   endSession,
   deleteSession,
   SessionEndedError,
+  validateEndReason,
 } from '../services/session.service';
 import { mintVoiceToken } from '../services/voice-provider.service';
 import { briefingFor } from '../services/briefing.service';
@@ -86,8 +87,10 @@ router.post('/:id/turns', authenticate, async (req, res) => {
 router.post('/:id/end', authenticate, async (req, res) => {
   const userId = req.user!.id;
   const id = req.params.id as string;
+  const { endReason } = req.body ?? {};
 
-  const session = await endSession(id, userId);
+  const validatedReason = validateEndReason(endReason);
+  const session = await endSession(id, userId, validatedReason);
   res.status(200).json({ success: true, data: session });
 });
 
