@@ -64,8 +64,8 @@ Evaluation Instructions:
    - Differentiate strong, concrete answers with specific depth and trade-offs from surface-level or vague explanations.
    - Technology-independent evaluation: ${TECHNOLOGY_INDEPENDENCE_PRINCIPLE}
    - Score separation (technical depth vs. communication): ${SCORE_SEPARATION_PRINCIPLE}
-   - Technical categories (e.g. Problem Solving & Algorithms, Software Design & Architecture, SQL & Analytical Reasoning, API Design & Architecture, Database Modeling & Performance, System Reliability & Scalability, Statistical Understanding & Data Quality) must be evaluated based on the substance, correctness, and architectural/algorithmic validity of the candidate's solution, ignoring speech disfluencies.
-   - Pauses, fillers, and hesitation must be evaluated solely under communication categories (e.g., Technical Communication).
+   - Technical categories (e.g. Problem Solving & Algorithms, Software Design & Architecture, SQL & Analytical Reasoning, Data Interpretation & Business Insights, Statistical Understanding & Data Quality, API Design & Architecture, Database Modeling & Performance, System Reliability & Scalability) must be evaluated based on the substance, correctness, analytical depth, and architectural/algorithmic validity of the candidate's solution, ignoring speech disfluencies.
+   - Pauses, fillers, and hesitation must be evaluated solely under communication categories (e.g., Technical Communication). If a role rubric does not contain a dedicated communication category (such as Data Analyst or Backend Developer), pauses, verbal fillers, and speech disfluencies must NEVER reduce any category score; all categories must be judged strictly on content and correctness.
 
 2. Behavioural Evaluation (STAR Methodology):
    - For questions and answers that are behavioural (e.g. discussing past experiences, conflicts, challenges, leadership, or teamwork), assess the answer structure using the STAR framework:

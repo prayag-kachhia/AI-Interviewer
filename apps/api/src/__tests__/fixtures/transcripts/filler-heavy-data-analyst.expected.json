@@ -9,9 +9,9 @@
     },
     {
       "category": "Data Interpretation & Business Insights",
-      "min": 2,
-      "max": 4,
-      "reason": "Sound root-cause metric decomposition and validation strategy, though frequent verbal hesitation and fillers ('um', 'uh', 'like') impact presentation."
+      "min": 4,
+      "max": 5,
+      "reason": "Systematic root-cause metric decomposition (orders × AOV), multidimensional segmentation, and YoY seasonality checks; analytical depth and business interpretation are evaluated strictly on content, unaffected by verbal hesitation and fillers."
     },
     {
       "category": "Statistical Understanding & Data Quality",

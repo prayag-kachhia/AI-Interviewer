@@ -94,8 +94,8 @@ The "representative" ranges below are rough hand estimates of the average score.
   - Expected ranges: Problem Solving & Algorithms (3–5), Software Design & Architecture (3–5), Technical Communication (1–3).
 - **`filler-heavy-data-analyst.json`**:
   - Role: Data Analyst.
-  - Characteristics: The candidate details SQL rolling 7-day average using CTE and `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW`, deduplication via `ROW_NUMBER()` and `LAG`, structured metric decomposition, and layered pipeline validation, spoken with frequent hesitation and fillers.
-  - Expected ranges: SQL & Analytical Reasoning (4–5), Data Interpretation & Business Insights (2–4), Statistical Understanding & Data Quality (4–5).
+  - Characteristics: The candidate details SQL rolling 7-day average using CTE and `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW`, deduplication via `ROW_NUMBER()` and `LAG`, structured metric decomposition (orders × AOV), multidimensional segmentation, and layered pipeline validation, spoken with frequent hesitation and fillers.
+  - Expected ranges: SQL & Analytical Reasoning (4–5), Data Interpretation & Business Insights (4–5), Statistical Understanding & Data Quality (4–5). All three categories are technical/analytical; speech fillers and hesitation must never penalize technical depth or business interpretation.
 
 The exact range per category is in each fixture's `*.expected.json`.
 
