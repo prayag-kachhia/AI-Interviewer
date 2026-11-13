@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "How do you design, size, and statistically evaluate an A/B experiment for a high-traffic checkout redesign, and how do you guard against false positives from continuous monitoring and peeking?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Before launching the experiment, I perform a statistical power analysis to establish the required sample size and duration based on baseline conversion rate, Minimum Detectable Effect (MDE), significance level alpha (typically 0.05), and statistical power (1 - beta = 0.80). I lock the experiment duration to a minimum of two full business cycles (14 days) to capture weekday versus weekend seasonality and day-of-week novelty effects. To guard against inflated Type I false-positive rates caused by continuous monitoring (peeking at p-values every hour), I do not rely on standard fixed-horizon t-tests or z-tests during live runs. Instead, I use sequential testing frameworks with alpha-spending functions (such as O'Brien-Fleming boundaries) or a Bayesian decision framework with expected loss bounds. Additionally, to reduce metric variance and accelerate time-to-significance, I apply CUPED (Controlled-Experiment using Pre-Experiment Data), using pre-experiment user spend as a covariate to strip out pre-existing behavioral variance."
+  },
+  {
+    "speaker": "AI",
+    "text": "Can you explain Simpson's Paradox using a real analytical scenario from an online platform, and how an analyst avoids making disastrous strategic recommendations because of it?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Simpson's Paradox occurs when a statistical trend or difference appears across multiple segmented subgroups, but disappears or reverses direction when the subgroups are combined into an aggregate metric. In an e-commerce context, suppose we test a new checkout flow: among desktop users, the new flow increases conversion from 4% to 5%; among mobile users, the new flow also increases conversion from 1% to 2%. Yet, when looking at the overall aggregate conversion across all users, the new flow appears to have reduced conversion from 2.5% to 2.2%. This paradox happens due to a confounding variable: a drastic shift in traffic composition. If the treatment variant accidentally received 80% mobile traffic (which has a lower baseline conversion) while control received 80% desktop traffic, the aggregate average is dragged down by the mobile volume weighting. An analyst prevents disastrous recommendations by always checking for sample ratio mismatch (SRM) across covariate segments, calculating stratified or Cochran-Mantel-Haenszel weighted estimates, and never concluding a test on aggregate numbers alone when traffic proportions differ."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you architect a dimensional data warehouse model (Kimball methodology) for a high-scale e-commerce business tracking order fulfillment, inventory snapshots, and marketing attribution?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I design a star schema with clearly declared business process grains, separating dimensional contexts from measurable business facts. For fulfillment, I build a transaction fact table (fact_order_fulfillment) at the grain of one row per order line item per fulfillment event, with surrogate foreign keys referencing conformed dimensions (dim_date, dim_customer, dim_product, dim_warehouse) and additive facts (quantity_ordered, quantity_shipped, fulfillment_cost_cents). For customer addresses and marketing tier changes, I employ Slowly Changing Dimensions Type 2 (SCD2) with effective_start_date, effective_end_date, and is_current boolean flags to preserve historical point-in-time attribution. For inventory, where measuring daily transactions is too noisy, I build a periodic snapshot fact table recording end-of-day stock levels per warehouse and SKU. Finally, for marketing attribution, I build an accumulating snapshot fact table tracking customer journey milestones from first_touch_timestamp through lead_created, trial_started, and conversion_paid, with degenerate dimension identifiers for session tracking."
+  },
+  {
+    "speaker": "AI",
+    "text": "The VP of Product approaches you alarmed that while Daily Active Users (DAU) grew by 22% this quarter, Total Monthly Recurring Revenue (MRR) dropped by 8%. How do you analyze and communicate this divergence?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I explain that user activity and monetary monetization have decoupled, which is common when user growth occurs in non-monetizing or dilutive segments. I decompose the divergence into three factors: cohort quality, product tier mix, and power-user churn. First, I segment DAU by subscription tier: is the 22% growth driven entirely by an influx of free-tier users or viral student signups who contribute zero revenue? Second, I analyze Net Revenue Retention (NRR) and churn among enterprise and top-decile paying accounts: a loss of just five large enterprise customers paying $50,000 annually will drag MRR down significantly, even as thousands of free users sign up and inflate top-line DAU. Third, I measure Average Revenue Per Active User (ARPAU = MRR / DAU) to quantify the dilution rate. In my presentation to the VP, I present a waterfall chart showing how gross new MRR was offset by contraction and churn, clarify that product adoption is healthy in the top funnel, but recommend focusing customer success resources on retention of high-ARR cohorts while instituting feature-gated upgrade paths for the surging free user base."
+  }
+]

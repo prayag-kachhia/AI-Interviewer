@@ -1,0 +1,24 @@
+{
+  "role": "backend-developer",
+  "difficulty": "basic",
+  "scores": [
+    {
+      "category": "API Design & Architecture",
+      "min": 4,
+      "max": 5,
+      "reason": "Accurate articulation of HTTP verbs, idempotency semantics (GET/PUT/DELETE vs POST), and REST convention boundaries."
+    },
+    {
+      "category": "Database Modeling & Performance",
+      "min": 4,
+      "max": 5,
+      "reason": "Clean relational schema design with explicit foreign key cascading, unique constraints, and foreign key index performance reasoning."
+    },
+    {
+      "category": "System Reliability & Scalability",
+      "min": 4,
+      "max": 5,
+      "reason": "Solid security and resource management explaining Argon2id/bcrypt work factors and connection pool reuse preventing thread thrashing."
+    }
+  ]
+}
