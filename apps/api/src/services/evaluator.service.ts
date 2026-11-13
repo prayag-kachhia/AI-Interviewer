@@ -9,7 +9,7 @@ import {
   TECHNOLOGY_INDEPENDENCE_PRINCIPLE,
 } from './rubrics';
 
-// Allows more time for Gemini evaluation when transient API latency is high.
+// Leaves room inside the 15-second feedback budget for polling and the database.
 export const EVALUATION_TIMEOUT_MS = 12_000;
 // A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
 // Google swaps the model behind the alias.
@@ -179,7 +179,7 @@ async function generateWithGemini(
           promptTokenCount: response.usageMetadata.promptTokenCount,
           candidatesTokenCount: response.usageMetadata.candidatesTokenCount,
           totalTokenCount: response.usageMetadata.totalTokenCount,
-      }
+        }
       : undefined,
   };
 }
