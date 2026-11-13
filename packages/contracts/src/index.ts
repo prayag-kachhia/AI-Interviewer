@@ -153,10 +153,40 @@ export const TopicScore = z.object({
 });
 export type TopicScore = z.infer<typeof TopicScore>;
 
+export const PlanAction = z.object({
+  id: z.string(),
+  action: z.string(),
+  resourceId: z.string(),
+  completed: z.boolean().default(false),
+});
+export type PlanAction = z.infer<typeof PlanAction>;
+
+export const TopicPlan = z.object({
+  id: z.string().optional(),
+  topic: InsightTopic,
+  score: z.number().int().min(1).max(5),
+  summary: z.string().optional(),
+  action: z.string().optional(),
+  resourceId: z.string().optional(),
+  actions: z.array(PlanAction).default([]),
+});
+export type TopicPlan = z.infer<typeof TopicPlan>;
+
+export const RoadmapItem = z.object({
+  id: z.string(),
+  topic: InsightTopic,
+  score: z.number().int().min(1).max(5),
+  action: z.string(),
+  resourceId: z.string(),
+  completed: z.boolean().default(false),
+});
+export type RoadmapItem = z.infer<typeof RoadmapItem>;
+
 export const ImprovementPlan = z.object({
   id: z.string().optional(),
   userId: z.string(),
   topics: z.array(TopicScore),
+  plan: z.array(TopicPlan).default([]),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 });
