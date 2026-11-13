@@ -376,4 +376,160 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
     unmount();
     expect(browser.disconnect).toHaveBeenCalledTimes(1);
   });
+
+  describe('thinking-silence prompts (VI-6, #145)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('sends one thinking prompt after 9 s of quiet following an AI question and does not repeat after encouragement', async () => {
+      renderRoom();
+      await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+      vi.useFakeTimers();
+      const live = mockState.liveInstances[0];
+
+      // Opening LISTENING sends the intro cue only; no thinking prompt before AI asks Q1.
+      act(() => {
+        live.callbacks.onStateChange('LISTENING');
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9000);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+
+      // AI finishes asking Q1 and waits for the candidate.
+      act(() => {
+        live.callbacks.onStateChange('AI_SPEAKING');
+        live.callbacks.onTranscript({ speaker: 'AI', text: 'Explain Redis eviction policies.', isFinal: false });
+        live.callbacks.onStateChange('LISTENING');
+      });
+
+      // Quiet mic hum below threshold (0.03) must not delay the 9 s countdown.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      act(() => {
+        live.callbacks.onAudioLevel?.(0.01);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5999);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(2);
+      expect(live.sendText).toHaveBeenLastCalledWith(
+        '[the candidate is thinking; offer brief encouragement]'
+      );
+
+      // Encouragement reply from AI without candidate speech must not re-arm another prompt on Q1.
+      act(() => {
+        live.callbacks.onStateChange('AI_SPEAKING');
+        live.callbacks.onTranscript({ speaker: 'AI', text: 'Take your time.', isFinal: false });
+        live.callbacks.onStateChange('LISTENING');
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(2);
+    });
+
+    it('resets the countdown when mic audio rises above threshold and re-arms on the next question', async () => {
+      renderRoom();
+      await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+      vi.useFakeTimers();
+      const live = mockState.liveInstances[0];
+
+      act(() => {
+        live.callbacks.onStateChange('LISTENING');
+        live.callbacks.onStateChange('AI_SPEAKING');
+        live.callbacks.onTranscript({ speaker: 'AI', text: 'Question 1?', isFinal: false });
+        live.callbacks.onStateChange('LISTENING');
+      });
+
+      // Loud audio above threshold resets the 9 s timer.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      act(() => {
+        live.callbacks.onAudioLevel?.(0.15);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(2);
+
+      // Candidate answers, then AI asks Q2 — silent pause on Q2 triggers one fresh prompt.
+      act(() => {
+        live.callbacks.onTranscript({ speaker: 'CANDIDATE', text: 'LRU evicts least recently used keys.', isFinal: false });
+        live.callbacks.onStateChange('AI_SPEAKING');
+        live.callbacks.onTranscript({ speaker: 'AI', text: 'Question 2?', isFinal: false });
+        live.callbacks.onStateChange('LISTENING');
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9000);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(3);
+      expect(live.sendText).toHaveBeenLastCalledWith(
+        '[the candidate is thinking; offer brief encouragement]'
+      );
+    });
+
+    it('does not prompt while muted or after switching to browser speech fallback', async () => {
+      vi.mocked(api.postNextQuestion).mockResolvedValueOnce({
+        success: true,
+        data: makeTurn({ id: 'ai-1', text: 'Fallback question?' }),
+      });
+
+      renderRoom();
+      await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+      vi.useFakeTimers();
+      const live = mockState.liveInstances[0];
+
+      act(() => {
+        live.callbacks.onStateChange('LISTENING');
+        live.callbacks.onStateChange('AI_SPEAKING');
+        live.callbacks.onTranscript({ speaker: 'AI', text: 'Live Q1?', isFinal: false });
+        live.callbacks.onStateChange('LISTENING');
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Mute Mic' }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12000);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+
+      // Unmuting resumes the 9 s silence countdown, then fallback disables it.
+      fireEvent.click(screen.getByRole('button', { name: 'Unmute Mic' }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8999);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+
+      // Switching to browser fallback clears any Live timer and never calls fallback.sendText.
+      await act(async () => {
+        live.callbacks.onError?.('Network failure');
+      });
+      expect(mockState.browserInstances).toHaveLength(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15000);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+      expect(mockState.browserInstances[0].sendText).not.toHaveBeenCalled();
+    });
+  });
 });

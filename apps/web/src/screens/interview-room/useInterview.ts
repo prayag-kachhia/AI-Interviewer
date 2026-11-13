@@ -37,6 +37,9 @@ export function formatClock(totalSeconds: number): string {
 }
 
 export const DEFAULT_TIME_LIMIT_MIN = 15;
+const THINKING_SILENCE_MS = 9000;
+const THINKING_AUDIO_THRESHOLD = 0.03;
+const THINKING_PROMPT_CUE = '[the candidate is thinking; offer brief encouragement]';
 
 export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -68,8 +71,13 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const startedAtRef = useRef<string | null>(null);
   const statusRef = useRef<SessionStatus>('LIVE');
   const isMutedRef = useRef(false);
+  const voiceStateRef = useRef<InterviewVoiceState>('IDLE');
   const liveSpeakerRef = useRef<TurnSpeaker | null>(null);
   const initialQuestionTriggeredRef = useRef(false);
+  const hasAiSpokenRef = useRef(false);
+  const hasPromptedThinkingRef = useRef(false);
+  const candidateSpokeSinceAiRef = useRef(false);
+  const thinkingSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const endingRef = useRef(false);
   const hasAutoEndedRef = useRef(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -78,6 +86,62 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   startedAtRef.current = startedAt;
   statusRef.current = status;
   isMutedRef.current = isMuted;
+
+  const clearThinkingTimer = useCallback(() => {
+    if (thinkingSilenceTimerRef.current !== null) {
+      clearTimeout(thinkingSilenceTimerRef.current);
+      thinkingSilenceTimerRef.current = null;
+    }
+  }, []);
+
+  const canScheduleThinkingPrompt = useCallback(() => {
+    const adapter = adapterRef.current;
+    return (
+      statusRef.current === 'LIVE' &&
+      !endingRef.current &&
+      Boolean(adapter?.isExternalProvider) &&
+      !isMutedRef.current &&
+      voiceStateRef.current === 'LISTENING' &&
+      hasAiSpokenRef.current &&
+      !hasPromptedThinkingRef.current
+    );
+  }, []);
+
+  const resetThinkingTimer = useCallback(() => {
+    clearThinkingTimer();
+    if (!canScheduleThinkingPrompt()) {
+      return;
+    }
+    thinkingSilenceTimerRef.current = setTimeout(() => {
+      thinkingSilenceTimerRef.current = null;
+      if (!canScheduleThinkingPrompt()) {
+        return;
+      }
+      hasPromptedThinkingRef.current = true;
+      candidateSpokeSinceAiRef.current = false;
+      adapterRef.current?.sendText(THINKING_PROMPT_CUE);
+    }, THINKING_SILENCE_MS);
+  }, [canScheduleThinkingPrompt, clearThinkingTimer]);
+
+  const updateVoiceState = useCallback((nextState: InterviewVoiceState) => {
+    voiceStateRef.current = nextState;
+    setVoiceState(nextState);
+  }, []);
+
+  const markAiQuestionActive = useCallback(() => {
+    hasAiSpokenRef.current = true;
+    // Only unlock a new silence prompt when AI starts a turn after candidate speech.
+    if (candidateSpokeSinceAiRef.current) {
+      hasPromptedThinkingRef.current = false;
+      candidateSpokeSinceAiRef.current = false;
+    }
+    resetThinkingTimer();
+  }, [resetThinkingTimer]);
+
+  const markCandidateSpoke = useCallback(() => {
+    candidateSpokeSinceAiRef.current = true;
+    resetThinkingTimer();
+  }, [resetThinkingTimer]);
 
   const roleLabel = useMemo(() => {
     const match = ROLES.find((r) => r.id === role);
@@ -161,6 +225,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       // Gemini Live emits incremental text chunks; accumulate captions cleanly while VI-2 is separate.
       if (adapterRef.current?.isExternalProvider && !event.isFinal) {
         if (event.speaker === 'AI') {
+          markAiQuestionActive();
           if (liveSpeakerRef.current !== 'AI') {
             liveSpeakerRef.current = 'AI';
             setLiveCandidateSpeech('');
@@ -172,6 +237,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
         }
 
         if (event.speaker === 'CANDIDATE') {
+          markCandidateSpoke();
           if (liveSpeakerRef.current !== 'CANDIDATE') {
             liveSpeakerRef.current = 'CANDIDATE';
             setLiveCandidateSpeech(event.text);
@@ -183,12 +249,14 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       }
 
       if (event.speaker === 'AI' && event.isFinal) {
+        markAiQuestionActive();
         setCurrentAiQuestion(event.text);
         await persistTurnToServer('AI', event.text);
         return;
       }
 
       if (event.speaker === 'CANDIDATE') {
+        markCandidateSpoke();
         if (!event.isFinal) {
           setLiveCandidateSpeech(event.text);
           return;
@@ -201,7 +269,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
         await requestNextQuestion();
       }
     },
-    [persistTurnToServer, requestNextQuestion]
+    [markAiQuestionActive, markCandidateSpoke, persistTurnToServer, requestNextQuestion]
   );
 
   // Load session & verify ownership
@@ -218,6 +286,9 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
           const existingTurns = res.data.turns ?? [];
           setTurns(existingTurns);
           turnsRef.current = existingTurns;
+          hasAiSpokenRef.current = existingTurns[existingTurns.length - 1]?.speaker === 'AI';
+          hasPromptedThinkingRef.current = false;
+          candidateSpokeSinceAiRef.current = false;
 
           const lastAi = [...existingTurns].reverse().find((t) => t.speaker === 'AI');
           if (lastAi) {
@@ -247,6 +318,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     const startFallback = async (reason: string) => {
       if (cancelled || fallbackStarted) return;
       fallbackStarted = true;
+      clearThinkingTimer();
 
       const failedAdapter = activeAdapter;
       const fallbackAdapter = new BrowserWebSpeechVoiceAdapter();
@@ -262,7 +334,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
 
       await fallbackAdapter.connect(sessionId, {
         onStateChange: (nextState) => {
-          if (!cancelled && activeAdapter === fallbackAdapter) setVoiceState(nextState);
+          if (!cancelled && activeAdapter === fallbackAdapter) updateVoiceState(nextState);
         },
         onTranscript: (evt) => {
           if (!cancelled && activeAdapter === fallbackAdapter) {
@@ -308,17 +380,22 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
         await liveAdapter.connect(sessionId, {
           onStateChange: (nextState) => {
             if (cancelled || activeAdapter !== liveAdapter) return;
-            setVoiceState(nextState);
-            if (
-              nextState === 'LISTENING' &&
-              turnsRef.current.length === 0 &&
-              !initialQuestionTriggeredRef.current
-            ) {
-              initialQuestionTriggeredRef.current = true;
-              liveAdapter.sendText(
-                'The candidate is ready. Please introduce yourself briefly and ask your first interview question.'
-              );
+            updateVoiceState(nextState);
+            if (nextState === 'AI_SPEAKING') {
+              markAiQuestionActive();
+              return;
             }
+            if (nextState === 'LISTENING') {
+              if (turnsRef.current.length === 0 && !initialQuestionTriggeredRef.current) {
+                initialQuestionTriggeredRef.current = true;
+                liveAdapter.sendText(
+                  'The candidate is ready. Please introduce yourself briefly and ask your first interview question.'
+                );
+              }
+              resetThinkingTimer();
+              return;
+            }
+            clearThinkingTimer();
           },
           onTranscript: (evt) => {
             if (!cancelled && activeAdapter === liveAdapter) {
@@ -326,7 +403,12 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
             }
           },
           onAudioLevel: (lvl) => {
-            if (!cancelled && activeAdapter === liveAdapter) setAudioLevel(lvl);
+            if (!cancelled && activeAdapter === liveAdapter) {
+              setAudioLevel(lvl);
+              if (lvl >= THINKING_AUDIO_THRESHOLD) {
+                resetThinkingTimer();
+              }
+            }
           },
           onError: (msg) => {
             if (!cancelled && activeAdapter === liveAdapter) {
@@ -345,10 +427,23 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
 
     return () => {
       cancelled = true;
+      clearThinkingTimer();
       activeAdapter?.disconnect();
       adapterRef.current = null;
     };
-  }, [loading, notFound, status, sessionId, startedAt, handleAdapterTranscript, requestNextQuestion]);
+  }, [
+    loading,
+    notFound,
+    status,
+    sessionId,
+    startedAt,
+    handleAdapterTranscript,
+    requestNextQuestion,
+    clearThinkingTimer,
+    markAiQuestionActive,
+    resetThinkingTimer,
+    updateVoiceState,
+  ]);
 
   // Live elapsed timer
   useEffect(() => {
@@ -366,8 +461,14 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
 
   const handleToggleMute = () => {
     const nextMuted = !isMuted;
+    isMutedRef.current = nextMuted;
     setIsMuted(nextMuted);
     adapterRef.current?.setMuted(nextMuted);
+    if (nextMuted) {
+      clearThinkingTimer();
+    } else {
+      resetThinkingTimer();
+    }
   };
 
   const handleFinishSpeaking = () => {
@@ -382,15 +483,16 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     }
     try {
       window.speechSynthesis.cancel();
+      clearThinkingTimer();
       const utterance = new SpeechSynthesisUtterance(currentAiQuestion);
       utterance.rate = 1.02;
-      setVoiceState('AI_SPEAKING');
-      utterance.onend = () => {
-        setVoiceState(isMuted ? 'IDLE' : 'LISTENING');
+      updateVoiceState('AI_SPEAKING');
+      const finishReplay = () => {
+        updateVoiceState(isMutedRef.current ? 'IDLE' : 'LISTENING');
+        resetThinkingTimer();
       };
-      utterance.onerror = () => {
-        setVoiceState(isMuted ? 'IDLE' : 'LISTENING');
-      };
+      utterance.onend = finishReplay;
+      utterance.onerror = finishReplay;
       window.speechSynthesis.speak(utterance);
     } catch {
       // Ignore synthesis errors
@@ -403,6 +505,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     if (!spokenText || savingTurn || status !== 'LIVE') return;
     setFallbackSpeechInput('');
     if (adapterRef.current?.isExternalProvider) {
+      markCandidateSpoke();
       adapterRef.current.sendText(spokenText);
       return;
     }
@@ -416,6 +519,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const handleEndInterview = useCallback(async () => {
     if (!sessionId || endingRef.current) return;
     endingRef.current = true;
+    clearThinkingTimer();
     setEnding(true);
     setError('');
     try {
@@ -424,7 +528,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       if (res.success && res.data) {
         setStatus('ENDED');
         setEndedAt(res.data.endedAt ?? new Date().toISOString());
-        setVoiceState('IDLE');
+        updateVoiceState('IDLE');
         navigate(`/interview/${sessionId}/feedback`);
       } else {
         setError(res.message || 'Failed to end the interview session.');
@@ -435,7 +539,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       endingRef.current = false;
       setEnding(false);
     }
-  }, [sessionId, navigate]);
+  }, [sessionId, navigate, clearThinkingTimer, updateVoiceState]);
 
   const remainingSeconds = Math.max(0, timeLimitMin * 60 - elapsed);
 
