@@ -59,6 +59,7 @@ model Session {
   status    SessionStatus @default(LIVE)
   startedAt DateTime      @default(now())
   endedAt   DateTime?
+  endReason String?
   createdAt DateTime      @default(now())
   turns     Turn[]
   jobs      Job[]

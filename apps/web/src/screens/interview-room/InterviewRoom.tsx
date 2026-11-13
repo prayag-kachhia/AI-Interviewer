@@ -14,6 +14,7 @@ import { TypedAnswerBox } from './TypedAnswerBox';
 import { TranscriptPanel } from './TranscriptPanel';
 import { InterviewCountdown } from './InterviewCountdown';
 import { EndConfirmationDialog } from './EndConfirmationDialog';
+import type { EndReason } from '@interview/contracts';
 import './InterviewRoom.css';
 
 export const InterviewRoom: React.FC = () => {
@@ -56,9 +57,9 @@ export const InterviewRoom: React.FC = () => {
 
   const [isEndDialogOpen, setIsEndDialogOpen] = useState(false);
 
-  const handleConfirmEnd = () => {
+  const handleConfirmEnd = (reason?: EndReason) => {
     setIsEndDialogOpen(false);
-    void handleEndInterview();
+    void handleEndInterview(reason);
   };
 
   if (loading) {

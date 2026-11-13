@@ -1,11 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, PhoneOff } from 'lucide-react';
+import { END_REASONS, type EndReason } from '@interview/contracts';
 import { formatClock } from './useInterview';
 
 interface EndConfirmationDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: (reason?: EndReason) => void;
   remainingSeconds: number;
 }
 
@@ -16,6 +17,13 @@ export const EndConfirmationDialog: React.FC<EndConfirmationDialogProps> = ({
   remainingSeconds,
 }) => {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const [selectedReason, setSelectedReason] = useState<EndReason | ''>('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedReason('');
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -63,11 +71,63 @@ export const EndConfirmationDialog: React.FC<EndConfirmationDialogProps> = ({
             immediately for feedback evaluation, and you cannot resume once ended.
           </p>
 
+          <div className="end-reason-selection" style={{ margin: '1rem 0' }}>
+            <p style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+              Why are you ending early? (Optional)
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+              {END_REASONS.map(({ id, label }) => (
+                <label
+                  key={id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    cursor: 'pointer',
+                    fontSize: '0.875rem',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="earlyEndReason"
+                    value={id}
+                    checked={selectedReason === id}
+                    onChange={() => setSelectedReason(id)}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="earlyEndReason"
+                  value=""
+                  checked={selectedReason === ''}
+                  onChange={() => setSelectedReason('')}
+                />
+                <span>Decline to give a reason / Prefer not to say</span>
+              </label>
+            </div>
+          </div>
+
           <div className="end-dialog-actions">
             <button type="button" className="btn btn-outline" onClick={onClose}>
               Continue Interview
             </button>
-            <button type="button" className="btn btn-danger" onClick={onConfirm}>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => onConfirm(selectedReason ? selectedReason : undefined)}
+            >
               <PhoneOff size={16} />
               Yes, End Interview
             </button>

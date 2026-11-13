@@ -1,6 +1,6 @@
 import prisma from '../db';
 import { AppError, NotFoundError } from '../errors';
-import { FeedbackStatus, ROLES } from '@interview/contracts';
+import { EndReason, FeedbackStatus, ROLES } from '@interview/contracts';
 
 // The role list lives in @interview/contracts so the API and the web app share it.
 const VALID_ROLE_IDS = new Set(ROLES.map((r) => r.id));
@@ -33,6 +33,26 @@ export class SessionEndedError extends AppError {
   constructor(message: string = 'This session has already ended') {
     super(409, message);
   }
+}
+
+export class InvalidEndReasonError extends AppError {
+  constructor(message: string = 'Invalid end reason') {
+    super(400, message);
+  }
+}
+
+export function validateEndReason(val: unknown): EndReason | null {
+  if (val === undefined || val === null || val === '') {
+    return null;
+  }
+  if (typeof val !== 'string') {
+    throw new InvalidEndReasonError('Invalid end reason');
+  }
+  const normalized = val.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (EndReason.options.includes(normalized as EndReason)) {
+    return normalized as EndReason;
+  }
+  throw new InvalidEndReasonError(`Unknown end reason: ${val}`);
 }
 
 /**
@@ -218,7 +238,7 @@ export async function addTurn(
  * mark the session ENDED and insert a `session.ended` job row. Either both
  * happen or neither does.
  */
-export async function endSession(sessionId: string, userId: string) {
+export async function endSession(sessionId: string, userId: string, endReason?: string | null) {
   const session = await getOwnedSession(sessionId, userId);
 
   if (session.status === 'ENDED') {
@@ -229,7 +249,11 @@ export async function endSession(sessionId: string, userId: string) {
   const [updatedSession] = await prisma.$transaction([
     prisma.session.update({
       where: { id: sessionId },
-      data: { status: 'ENDED', endedAt: new Date() },
+      data: {
+        status: 'ENDED',
+        endedAt: new Date(),
+        endReason: endReason ?? null,
+      },
     }),
     prisma.job.create({
       data: {

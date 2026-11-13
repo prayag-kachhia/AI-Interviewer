@@ -737,6 +737,102 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(prisma.job.create).not.toHaveBeenCalled();
     });
 
+    it('accepts a valid endReason and records it on the session (K-10, FR-19)', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+        role: 'software-engineer',
+        status: 'LIVE',
+        startedAt: new Date(Date.now() - 60_000),
+        endedAt: null,
+      });
+      (prisma.session.update as any).mockReturnValue('session-update-op');
+      (prisma.job.create as any).mockReturnValue('job-create-op');
+      (prisma.$transaction as any).mockResolvedValueOnce([
+        {
+          id: 'sess-1',
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          status: 'ENDED',
+          endedAt: new Date(),
+          endReason: 'technical_problem',
+        },
+        { id: 'job-1', type: 'session.ended', sessionId: 'sess-1', status: 'pending' },
+      ]);
+
+      const res = await request(app)
+        .post('/api/sessions/sess-1/end')
+        .set('Authorization', authHeader())
+        .send({ endReason: 'technical_problem' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.endReason).toBe('technical_problem');
+      expect(prisma.session.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sess-1' },
+          data: expect.objectContaining({
+            status: 'ENDED',
+            endedAt: expect.any(Date),
+            endReason: 'technical_problem',
+          }),
+        })
+      );
+    });
+
+    it('allows candidate to decline giving an endReason and stores null (K-10, FR-19)', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+        role: 'software-engineer',
+        status: 'LIVE',
+        startedAt: new Date(Date.now() - 60_000),
+        endedAt: null,
+      });
+      (prisma.session.update as any).mockReturnValue('session-update-op');
+      (prisma.job.create as any).mockReturnValue('job-create-op');
+      (prisma.$transaction as any).mockResolvedValueOnce([
+        {
+          id: 'sess-1',
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          status: 'ENDED',
+          endedAt: new Date(),
+          endReason: null,
+        },
+        { id: 'job-1', type: 'session.ended', sessionId: 'sess-1', status: 'pending' },
+      ]);
+
+      const res = await request(app)
+        .post('/api/sessions/sess-1/end')
+        .set('Authorization', authHeader())
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(prisma.session.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sess-1' },
+          data: expect.objectContaining({
+            status: 'ENDED',
+            endedAt: expect.any(Date),
+            endReason: null,
+          }),
+        })
+      );
+    });
+
+    it('rejects an invalid endReason with 400 (K-10, FR-19)', async () => {
+      const res = await request(app)
+        .post('/api/sessions/sess-1/end')
+        .set('Authorization', authHeader())
+        .send({ endReason: 'invalid_reason_string' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
     it('returns 404 when ending another user\'s session', async () => {
       (prisma.session.findFirst as any).mockResolvedValueOnce(null);
 

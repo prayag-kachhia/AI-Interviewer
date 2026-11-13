@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { getSession, postTurn, endSession } from '../../lib/api';
-import { ROLES } from '@interview/contracts';
+import { EndReason, ROLES } from '@interview/contracts';
 import type { InterviewVoiceState, SessionStatus, TurnData } from '../../types';
 import { interviewQuestionProvider } from '../../lib/questionProvider';
 import {
@@ -295,14 +295,14 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     });
   };
 
-  const handleEndInterview = useCallback(async () => {
+  const handleEndInterview = useCallback(async (reason?: EndReason) => {
     if (!sessionId || endingRef.current) return;
     endingRef.current = true;
     setEnding(true);
     setError('');
     try {
       adapterRef.current?.disconnect();
-      const res = await endSession(sessionId);
+      const res = reason ? await endSession(sessionId, reason) : await endSession(sessionId);
       if (res.success && res.data) {
         setStatus('ENDED');
         setEndedAt(res.data.endedAt ?? new Date().toISOString());
