@@ -33,9 +33,6 @@ export interface VoiceSessionAdapter {
   readonly isExternalProvider: boolean;
   readonly isSpeechRecognitionSupported: boolean;
   connect(sessionId: string, callbacks: VoiceAdapterCallbacks, token?: VoiceSessionToken): Promise<void>;
-  speakAiQuestion(text: string): Promise<void>;
-  startListening(): Promise<void>;
-  finishCandidateTurn(): void;
   setMuted(muted: boolean): void;
   sendText(text: string): void;
   disconnect(): void;
@@ -192,13 +189,6 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
     this.stopRecognitionInternal();
     this.isAiSpeaking = true;
     this.callbacks?.onStateChange('AI_SPEAKING');
-
-    // Emit the AI transcript event so the adapter stores the AI turn in the database
-    this.callbacks?.onTranscript({
-      speaker: 'AI',
-      text,
-      isFinal: true,
-    });
 
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       await new Promise<void>((resolve) => {
@@ -363,8 +353,4 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
 
     this.levelRafId = requestAnimationFrame(tick);
   }
-}
-
-export function createVoiceSessionAdapter(): VoiceSessionAdapter {
-  return new BrowserWebSpeechVoiceAdapter();
 }

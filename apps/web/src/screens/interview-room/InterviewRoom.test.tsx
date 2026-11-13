@@ -1,31 +1,87 @@
 import '@testing-library/jest-dom/vitest';
-import { test, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, test, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { InterviewRoom } from './InterviewRoom';
 import { InterviewCountdown } from './InterviewCountdown';
 import { DEFAULT_TIME_LIMIT_MIN } from './useInterview';
 import * as api from '../../lib/api';
+import type { VoiceAdapterCallbacks } from '../../lib/voiceAdapter';
+import type { TurnData } from '../../types';
+
+const mockState = vi.hoisted(() => ({
+  liveInstances: [] as Array<{
+    sessionId: string;
+    callbacks: VoiceAdapterCallbacks;
+    sendText: ReturnType<typeof vi.fn>;
+    setMuted: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+  }>,
+  browserInstances: [] as Array<{
+    sessionId: string;
+    callbacks: VoiceAdapterCallbacks;
+    speakAiQuestion: ReturnType<typeof vi.fn>;
+    finishCandidateTurn: ReturnType<typeof vi.fn>;
+    setMuted: ReturnType<typeof vi.fn>;
+    sendText: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+  }>,
+}));
 
 vi.mock('../../lib/api', () => ({
   getSession: vi.fn(),
-  endSession: vi.fn(),
   postTurn: vi.fn(),
+  postNextQuestion: vi.fn(),
+  endSession: vi.fn(),
 }));
 
-vi.mock('../../lib/voiceAdapter', () => ({
-  createVoiceSessionAdapter: () => ({
-    providerLabel: 'Mock',
-    isExternalProvider: false,
-    isSpeechRecognitionSupported: true,
-    connect: vi.fn().mockResolvedValue(undefined),
-    speakAiQuestion: vi.fn().mockResolvedValue(undefined),
-    startListening: vi.fn().mockResolvedValue(undefined),
-    finishCandidateTurn: vi.fn(),
-    setMuted: vi.fn(),
-    disconnect: vi.fn(),
-  }),
-}));
+vi.mock('../../lib/geminiLiveAdapter', () => {
+  class MockGeminiLiveVoiceAdapter {
+    public readonly providerLabel = 'Google Gemini Live';
+    public readonly isExternalProvider = true;
+    public readonly isSpeechRecognitionSupported = true;
+    public callbacks!: VoiceAdapterCallbacks;
+    public sessionId = '';
+    public sendText = vi.fn();
+    public setMuted = vi.fn();
+    public disconnect = vi.fn();
+
+    async connect(sessionId: string, callbacks: VoiceAdapterCallbacks): Promise<void> {
+      this.sessionId = sessionId;
+      this.callbacks = callbacks;
+      mockState.liveInstances.push(this);
+      callbacks.onStateChange('IDLE');
+    }
+  }
+
+  return { GeminiLiveVoiceAdapter: MockGeminiLiveVoiceAdapter };
+});
+
+vi.mock('../../lib/voiceAdapter', () => {
+  class MockBrowserWebSpeechVoiceAdapter {
+    public readonly providerLabel = 'Browser Web Speech Audio';
+    public readonly isExternalProvider = false;
+    public readonly isSpeechRecognitionSupported = true;
+    public callbacks!: VoiceAdapterCallbacks;
+    public sessionId = '';
+    public speakAiQuestion = vi.fn(async () => {
+      this.callbacks.onStateChange('LISTENING');
+    });
+    public finishCandidateTurn = vi.fn();
+    public setMuted = vi.fn();
+    public sendText = vi.fn();
+    public disconnect = vi.fn();
+
+    async connect(sessionId: string, callbacks: VoiceAdapterCallbacks): Promise<void> {
+      this.sessionId = sessionId;
+      this.callbacks = callbacks;
+      mockState.browserInstances.push(this);
+      callbacks.onStateChange('IDLE');
+    }
+  }
+
+  return { BrowserWebSpeechVoiceAdapter: MockBrowserWebSpeechVoiceAdapter };
+});
 
 function makeSession(startedAt = new Date().toISOString()) {
   return {
@@ -42,9 +98,22 @@ function makeSession(startedAt = new Date().toISOString()) {
   };
 }
 
-function renderRoom() {
+function makeTurn(overrides: Partial<TurnData> = {}): TurnData {
+  return {
+    id: 'turn-1',
+    sessionId: 's1',
+    speaker: 'AI',
+    text: 'Default AI question?',
+    timestampSec: 1.5,
+    turnIndex: 1,
+    createdAt: '2026-11-11T05:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function renderRoom(sessionId = 's1') {
   return render(
-    <MemoryRouter initialEntries={['/interview/sess-123']}>
+    <MemoryRouter initialEntries={[`/interview/${sessionId}`]}>
       <Routes>
         <Route path="/interview/:sessionId" element={<InterviewRoom />} />
         <Route path="/interview/:sessionId/feedback" element={<p>Feedback page</p>} />
@@ -54,6 +123,8 @@ function renderRoom() {
 }
 
 beforeEach(() => {
+  mockState.liveInstances.length = 0;
+  mockState.browserInstances.length = 0;
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.clearAllMocks();
 });
@@ -78,7 +149,7 @@ test.each([
 
 test('End Interview opens native dialog confirmation and cancels cleanly', async () => {
   vi.mocked(api.getSession).mockResolvedValueOnce(makeSession());
-  renderRoom();
+  renderRoom('sess-123');
 
   fireEvent.click(await screen.findByRole('button', { name: 'End Interview' }));
   const dialog = screen.getByRole('dialog');
@@ -99,7 +170,7 @@ test('confirming closes dialog immediately so error banner is visible when endin
   vi.mocked(api.endSession).mockRejectedValueOnce({
     response: { data: { message: 'Could not reach server' } },
   });
-  renderRoom();
+  renderRoom('sess-123');
 
   fireEvent.click(await screen.findByRole('button', { name: 'End Interview' }));
   fireEvent.click(screen.getByRole('button', { name: /Yes, End Interview/ }));
@@ -115,7 +186,7 @@ test('confirming ends interview and navigates to feedback on success', async () 
     success: true,
     data: { ...session.data, status: 'ENDED', endedAt: new Date().toISOString() },
   });
-  renderRoom();
+  renderRoom('sess-123');
 
   fireEvent.click(await screen.findByRole('button', { name: 'End Interview' }));
   fireEvent.click(screen.getByRole('button', { name: /Yes, End Interview/ }));
@@ -134,10 +205,175 @@ test('auto-ends interview once when countdown reaches zero', async () => {
     success: true,
     data: { ...session.data, status: 'ENDED', endedAt: new Date().toISOString() },
   });
-  renderRoom();
+  renderRoom('sess-123');
 
   await waitFor(() => {
     expect(api.endSession).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Feedback page')).toBeInTheDocument();
+  });
+});
+
+describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
+  beforeEach(() => {
+    mockState.liveInstances.length = 0;
+    mockState.browserInstances.length = 0;
+    Element.prototype.scrollIntoView = vi.fn();
+
+    vi.mocked(api.getSession).mockResolvedValue({
+      success: true,
+      data: {
+        id: 's1',
+        userId: 'user-1',
+        role: 'software-engineer',
+        status: 'LIVE',
+        startedAt: new Date().toISOString(),
+        endedAt: null,
+        turns: [],
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('connects to GeminiLiveVoiceAdapter first and initiates the opening prompt on LISTENING', async () => {
+    renderRoom();
+
+    await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+    expect(mockState.browserInstances).toHaveLength(0);
+
+    const live = mockState.liveInstances[0];
+    act(() => {
+      live.callbacks.onStateChange('LISTENING');
+    });
+
+    expect(live.sendText).toHaveBeenCalledTimes(1);
+    expect(api.postNextQuestion).not.toHaveBeenCalled();
+
+    act(() => {
+      live.callbacks.onTranscript({ speaker: 'AI', text: 'Hello! ', isFinal: false });
+      live.callbacks.onTranscript({ speaker: 'AI', text: 'Walk me through your API.', isFinal: false });
+    });
+
+    expect(screen.getByText(/Hello! Walk me through your API\./)).toBeInTheDocument();
+  });
+
+  it('automatically falls back to BrowserWebSpeechVoiceAdapter and POST /next-question when Live fails', async () => {
+    vi.mocked(api.postNextQuestion).mockResolvedValueOnce({
+      success: true,
+      data: makeTurn({ id: 'ai-1', text: 'Tell me about your Redis caching layer.' }),
+    });
+
+    renderRoom();
+    await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+    const live = mockState.liveInstances[0];
+    await act(async () => {
+      live.callbacks.onError?.('Token network error');
+    });
+
+    expect(live.disconnect).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockState.browserInstances).toHaveLength(1));
+
+    const browser = mockState.browserInstances[0];
+    expect(screen.getByText(/switched to browser speech fallback/i)).toBeInTheDocument();
+    await waitFor(() => expect(api.postNextQuestion).toHaveBeenCalledWith('s1'));
+    expect(browser.speakAiQuestion).toHaveBeenCalledWith('Tell me about your Redis caching layer.');
+    expect(api.postTurn).not.toHaveBeenCalledWith('s1', 'AI', expect.any(String));
+    expect(screen.getByText(/"Tell me about your Redis caching layer\."/)).toBeInTheDocument();
+  });
+
+  it('saves candidate turn before requesting the next question in fallback mode', async () => {
+    const callOrder: string[] = [];
+
+    vi.mocked(api.postNextQuestion)
+      .mockImplementationOnce(async () => {
+        callOrder.push('next-question-1');
+        return { success: true, data: makeTurn({ id: 'ai-1', text: 'Opening question?' }) };
+      })
+      .mockImplementationOnce(async () => {
+        callOrder.push('next-question-2');
+        return { success: true, data: makeTurn({ id: 'ai-2', turnIndex: 3, text: 'Follow-up on TTL?' }) };
+      });
+
+    vi.mocked(api.postTurn).mockImplementationOnce(async (_sid, speaker, text) => {
+      callOrder.push(`postTurn-${speaker}`);
+      return {
+        success: true,
+        data: makeTurn({ id: 'cand-1', speaker: 'CANDIDATE', turnIndex: 2, text }),
+      };
+    });
+
+    renderRoom();
+    await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+    await act(async () => {
+      mockState.liveInstances[0].callbacks.onError?.('WebSocket dropped');
+    });
+
+    await waitFor(() => expect(mockState.browserInstances).toHaveLength(1));
+    const browser = mockState.browserInstances[0];
+
+    await act(async () => {
+      browser.callbacks.onTranscript({
+        speaker: 'CANDIDATE',
+        text: 'We used write-through caching in Redis.',
+        isFinal: true,
+      });
+    });
+
+    await waitFor(() => expect(browser.speakAiQuestion).toHaveBeenCalledWith('Follow-up on TTL?'));
+    expect(callOrder).toEqual(['next-question-1', 'postTurn-CANDIDATE', 'next-question-2']);
+  });
+
+  it('speaks an existing unanswered AI turn on fallback resume without generating a duplicate question', async () => {
+    vi.mocked(api.getSession).mockResolvedValueOnce({
+      success: true,
+      data: {
+        id: 's1',
+        userId: 'user-1',
+        role: 'software-engineer',
+        status: 'LIVE',
+        startedAt: new Date().toISOString(),
+        endedAt: null,
+        turns: [makeTurn({ id: 'ai-existing', text: 'Existing AI prompt from before reload?' })],
+      },
+    });
+
+    renderRoom();
+    await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+    await act(async () => {
+      mockState.liveInstances[0].callbacks.onError?.('Live unavailable');
+    });
+
+    await waitFor(() => expect(mockState.browserInstances).toHaveLength(1));
+    const browser = mockState.browserInstances[0];
+
+    await waitFor(() =>
+      expect(browser.speakAiQuestion).toHaveBeenCalledWith('Existing AI prompt from before reload?')
+    );
+    expect(api.postNextQuestion).not.toHaveBeenCalled();
+  });
+
+  it('disconnects the active fallback adapter on unmount after switching from Live', async () => {
+    vi.mocked(api.postNextQuestion).mockResolvedValueOnce({
+      success: true,
+      data: makeTurn({ id: 'ai-1', text: 'Question 1?' }),
+    });
+
+    const { unmount } = renderRoom();
+    await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+    await act(async () => {
+      mockState.liveInstances[0].callbacks.onError?.('Token unavailable');
+    });
+
+    await waitFor(() => expect(mockState.browserInstances).toHaveLength(1));
+    const browser = mockState.browserInstances[0];
+
+    unmount();
+    expect(browser.disconnect).toHaveBeenCalledTimes(1);
   });
 });
