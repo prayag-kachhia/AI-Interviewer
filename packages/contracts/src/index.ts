@@ -60,6 +60,7 @@ export const Session = z.object({
   resumeId: z.string().nullable().optional(),
   role: z.string(),
   status: SessionStatus,
+  keep: z.boolean().optional(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   createdAt: z.string().optional(),

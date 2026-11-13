@@ -15,6 +15,7 @@ describe.skipIf(!TEST_DATABASE_URL)(
     let userId: string;
     let oldSessionId: string;
     let recentSessionId: string;
+    let keptSessionId: string;
     let purgeNow: Date;
 
     beforeAll(async () => {
@@ -71,6 +72,18 @@ describe.skipIf(!TEST_DATABASE_URL)(
       });
 
       recentSessionId = recentSession.id;
+
+      const keptSession = await prisma.session.create({
+        data: {
+            userId,
+            role: 'software-engineer',
+            status: 'ENDED',
+            endedAt: oldDate,
+            keep: true,
+        },
+      });
+
+      keptSessionId = keptSession.id;
     });
 
     afterAll(async () => {
@@ -78,7 +91,7 @@ describe.skipIf(!TEST_DATABASE_URL)(
       await prisma.$disconnect();
     });
 
-    it('deletes sessions older than 30 days and preserves recent sessions', async () => {
+    it('deletes expired unkept sessions and preserves recent and kept sessions', async () => {
       const result = await purgeExpiredSessions(purgeNow);
 
       expect(result.count).toBe(1);
@@ -89,6 +102,10 @@ describe.skipIf(!TEST_DATABASE_URL)(
 
       expect(
         await prisma.session.findUnique({ where: { id: recentSessionId } })
+      ).not.toBeNull();
+
+      expect(
+        await prisma.session.findUnique({ where: { id: keptSessionId } })
       ).not.toBeNull();
 
       expect(await prisma.turn.count({ where: { sessionId: oldSessionId } })).toBe(0);

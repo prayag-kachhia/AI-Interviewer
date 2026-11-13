@@ -132,6 +132,17 @@ export const deleteSession = async (
   return data;
 };
 
+export const updateSessionKeep = async (
+  sessionId: string,
+  keep: boolean
+): Promise<SessionResponse> => {
+  const { data } = await api.patch<SessionResponse>(
+    `/sessions/${sessionId}/keep`,
+    { keep }
+  );
+  return data;
+};
+
 // Feedback — the results screen polls this until the status is not 'pending'.
 // Short-lived voice token for Gemini Live (POST /api/sessions/:id/voice-token, LS3)
 export const getVoiceToken = async (sessionId: string): Promise<string> => {

@@ -815,4 +815,63 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(prisma.session.delete).not.toHaveBeenCalled();
     });
   });
+
+  describe('PATCH /api/sessions/:id/keep (VM-7)', () => {
+    it('updates keep status for the authenticated session owner', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+      });
+
+      (prisma.session.update as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+        keep: true,
+      });
+
+      const res = await request(app)
+        .patch('/api/sessions/sess-1/keep')
+        .set('Authorization', authHeader())
+        .send({ keep: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.keep).toBe(true);
+      expect(prisma.session.update).toHaveBeenCalledWith({
+        where: { id: 'sess-1' },
+        data: { keep: true },
+      });
+    });
+
+    it('returns 400 when keep is not a boolean', async () => {
+      const res = await request(app)
+        .patch('/api/sessions/sess-1/keep')
+        .set('Authorization', authHeader())
+        .send({ keep: 'true' });
+
+      expect(res.status).toBe(400);
+      expect(prisma.session.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when another user attempts to update keep status', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .patch('/api/sessions/sess-1/keep')
+        .set('Authorization', authHeader())
+        .send({ keep: true });
+
+      expect(res.status).toBe(404);
+      expect(prisma.session.update).not.toHaveBeenCalled();
+    });
+
+    it('requires authentication', async () => {
+      const res = await request(app)
+        .patch('/api/sessions/sess-1/keep')
+        .send({ keep: true });
+
+      expect(res.status).toBe(401);
+      expect(prisma.session.update).not.toHaveBeenCalled();
+    });
+  });
 });

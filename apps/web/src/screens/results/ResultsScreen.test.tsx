@@ -4,7 +4,14 @@ import { test, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ResultsScreen } from "./ResultsScreen";
-import { deleteSession, getFeedback, getTurns, retryFeedback } from "../../lib/api";
+import {
+  deleteSession,
+  getFeedback,
+  getSession,
+  getTurns,
+  retryFeedback,
+  updateSessionKeep,
+} from "../../lib/api";
 
 // The real API client creates a Supabase client on import; these tests replace its calls anyway.
 vi.mock("../../lib/api", () => ({
@@ -12,6 +19,11 @@ vi.mock("../../lib/api", () => ({
   retryFeedback: vi.fn(),
   getTurns: vi.fn().mockResolvedValue({ success: true, data: [] }),
   deleteSession: vi.fn(),
+  getSession: vi.fn().mockResolvedValue({
+    success: true,
+    data: { keep: false },
+  }),
+  updateSessionKeep: vi.fn(),
 }));
 
 // The screen reads its session id from the route and goes to History after a delete.
@@ -32,6 +44,8 @@ afterEach(() => {
   vi.mocked(getFeedback).mockReset();
   vi.mocked(retryFeedback).mockReset();
   vi.mocked(deleteSession).mockReset();
+  vi.mocked(getSession).mockClear();
+  vi.mocked(updateSessionKeep).mockReset();
 });
 
 test("given feedback is pending, then it shows preparing and keeps polling", async () => {
@@ -395,4 +409,74 @@ test("given the delete fails, then an error shows and I can try again", async ()
 
   expect(await screen.findByText("Couldn't delete the interview. Please try again.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Delete interview" })).toBeEnabled();
+});
+
+test("given an unkept interview, when I click Keep interview, then it is protected", async () => {
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      keep: false,
+    },
+  });
+
+  vi.mocked(updateSessionKeep).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      keep: true,
+    },
+  });
+
+  renderResults();
+
+  fireEvent.click(await screen.findByRole("button", { name: "Keep interview" }));
+
+  expect(updateSessionKeep).toHaveBeenCalledWith("s1", true);
+  expect(await screen.findByRole("button", { name: "Unkeep interview" })).toBeInTheDocument();
+});
+
+test("given a kept interview, when I click Unkeep interview, then protection is removed", async () => {
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      keep: true,
+    },
+  });
+
+  vi.mocked(updateSessionKeep).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      keep: false,
+    },
+  });
+
+  renderResults();
+
+  fireEvent.click(await screen.findByRole("button", { name: "Unkeep interview" }));
+
+  expect(updateSessionKeep).toHaveBeenCalledWith("s1", false);
+  expect(await screen.findByRole("button", { name: "Keep interview" })).toBeInTheDocument();
 });

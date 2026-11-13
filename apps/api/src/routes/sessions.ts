@@ -8,6 +8,7 @@ import {
   addTurn,
   endSession,
   deleteSession,
+  updateSessionKeep,
   SessionEndedError,
 } from '../services/session.service';
 import { mintVoiceToken } from '../services/voice-provider.service';
@@ -90,7 +91,28 @@ router.post('/:id/end', authenticate, async (req, res) => {
   const session = await endSession(id, userId);
   res.status(200).json({ success: true, data: session });
 });
+// PATCH /api/sessions/:id/keep
 
+router.patch('/:id/keep', authenticate, async (req, res) => {
+  const userId = req.user!.id;
+  const id = req.params.id as string;
+  const { keep } = req.body ?? {};
+
+  if (typeof keep !== 'boolean') {
+    res.status(400).json({
+      success: false,
+      message: 'keep must be a boolean',
+    });
+    return;
+  }
+
+  const session = await updateSessionKeep(id, userId, keep);
+
+  res.status(200).json({
+    success: true,
+    data: session,
+  });
+});
 // POST /api/sessions/:id/voice-token
 router.post('/:id/voice-token', authenticate, async (req, res) => {
   const userId = req.user!.id;

@@ -57,6 +57,7 @@ model Session {
   resume    Resume?       @relation(fields: [resumeId], references: [id], onDelete: SetNull)
   role      String
   status    SessionStatus @default(LIVE)
+  keep      Boolean       @default(false)
   startedAt DateTime      @default(now())
   endedAt   DateTime?
   createdAt DateTime      @default(now())
