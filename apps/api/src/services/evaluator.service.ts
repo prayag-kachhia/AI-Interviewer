@@ -10,7 +10,7 @@ import {
 } from './rubrics';
 
 // Allows more time for Gemini evaluation when transient API latency is high.
-export const EVALUATION_TIMEOUT_MS = 30_000;
+export const EVALUATION_TIMEOUT_MS = 12_000;
 // A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
 // Google swaps the model behind the alias.
 const DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -176,9 +176,9 @@ async function generateWithGemini(
     text: response.text ?? '',
     usageMetadata: response.usageMetadata
       ? {
-        promptTokenCount: response.usageMetadata.promptTokenCount,
-        candidatesTokenCount: response.usageMetadata.candidatesTokenCount,
-        totalTokenCount: response.usageMetadata.totalTokenCount,
+          promptTokenCount: response.usageMetadata.promptTokenCount,
+          candidatesTokenCount: response.usageMetadata.candidatesTokenCount,
+          totalTokenCount: response.usageMetadata.totalTokenCount,
       }
       : undefined,
   };
