@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { CreateSessionInput, Feedback, ImprovementPlan, VoiceToken } from '@interview/contracts';
+import { CreateSessionInput, EndReason, Feedback, ImprovementPlan, VoiceToken } from '@interview/contracts';
 import { supabase } from './supabase';
 import type {
   ResumeResponse,
@@ -136,8 +136,12 @@ export const postNextQuestion = async (
   return data;
 };
 
-export const endSession = async (sessionId: string): Promise<SessionResponse> => {
-  const { data } = await api.post<SessionResponse>(`/sessions/${sessionId}/end`);
+export const endSession = async (
+  sessionId: string,
+  endReason?: EndReason | string | null
+): Promise<SessionResponse> => {
+  const payload = endReason ? { endReason } : undefined;
+  const { data } = await api.post<SessionResponse>(`/sessions/${sessionId}/end`, payload);
   return data;
 };
 

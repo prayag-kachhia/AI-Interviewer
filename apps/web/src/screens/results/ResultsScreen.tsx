@@ -33,7 +33,7 @@ import {
 } from "../../lib/api";
 import { useFeedback, useTurns } from "./useFeedback";
 import { PerAnswerFeedbackSection } from "./PerAnswerFeedbackSection";
-import type { TurnSpeaker } from "@interview/contracts";
+import { formatEndReason, type Session, type TurnSpeaker } from "@interview/contracts";
 import "./ResultsScreen.css";
 
 const chartConfig = {
@@ -66,6 +66,7 @@ export function ResultsScreen() {
   const [retryError, setRetryError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const navigate = useNavigate();
   const { feedback, error: feedbackError, isLongWait } = useFeedback(sessionId, reloadKey);
   const { turns, isLoading, error } = useTurns(sessionId);
@@ -80,8 +81,9 @@ export function ResultsScreen() {
       try {
         const response = await getSession(sessionId!);
 
-        if (!cancelled) {
-          setKeep(response.data?.keep ?? false);
+        if (!cancelled && response.data) {
+          setSession(response.data);
+          setKeep(response.data.keep ?? false);
         }
       } catch {
         if (!cancelled) {
@@ -223,9 +225,20 @@ export function ResultsScreen() {
         {feedback?.status === "ready" && (
             <div className="space-y-6">
               <div className="flex flex-col gap-1">
-                <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                  Your Feedback
-                </h1>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                    Your Feedback
+                  </h1>
+                  {(session?.endedEarly || session?.endReason) && (
+                    <Badge
+                      data-testid="results-ended-early"
+                      variant="pending"
+                      className="text-xs"
+                    >
+                      Ended early{session.endReason ? ` (${formatEndReason(session.endReason)})` : ""}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Detailed performance review and competency evaluation
                 </p>

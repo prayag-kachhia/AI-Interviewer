@@ -20,6 +20,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import type { EndReason } from '@interview/contracts';
 import './InterviewRoom.css';
 
 export const InterviewRoom: React.FC = () => {
@@ -71,9 +72,9 @@ export const InterviewRoom: React.FC = () => {
 
   const [isEndDialogOpen, setIsEndDialogOpen] = useState(false);
 
-  const handleConfirmEnd = () => {
+  const handleConfirmEnd = (reason?: EndReason) => {
     setIsEndDialogOpen(false);
-    void handleEndInterview();
+    void handleEndInterview(reason);
   };
 
   if (loading) {

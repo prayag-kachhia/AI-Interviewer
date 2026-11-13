@@ -97,6 +97,28 @@ export type CreateSessionInput = z.infer<typeof CreateSessionInput>;
 export const SessionStatus = z.enum(["LIVE", "ENDED"]);
 export type SessionStatus = z.infer<typeof SessionStatus>;
 
+// Candidate reasons for ending an interview early (FR-19, K-10).
+export const EndReason = z.enum([
+  "finished_early",
+  "technical_problem",
+  "need_to_stop",
+  "other",
+]);
+export type EndReason = z.infer<typeof EndReason>;
+
+export const END_REASONS: { id: EndReason; label: string }[] = [
+  { id: "finished_early", label: "Finished early" },
+  { id: "technical_problem", label: "Technical problem" },
+  { id: "need_to_stop", label: "Need to stop" },
+  { id: "other", label: "Other" },
+];
+
+export function formatEndReason(reason?: string | null): string {
+  if (!reason) return "";
+  const match = END_REASONS.find((r) => r.id === reason);
+  return match ? match.label : reason;
+}
+
 export const TurnSpeaker = z.enum(["AI", "CANDIDATE"]);
 export type TurnSpeaker = z.infer<typeof TurnSpeaker>;
 
@@ -129,11 +151,12 @@ export const Session = z.object({
   keep: z.boolean().optional(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
+  endReason: EndReason.nullable().optional(),
   createdAt: z.string().optional(),
   turns: z.array(Turn).optional(),
   feedbackStatus: FeedbackStatus.nullable().optional(),
-  endedEarly: z.boolean().optional(),
   overallScore: z.number().nullable().optional(),
+  endedEarly: z.boolean().optional(),
 });
 export type Session = z.infer<typeof Session>;
 

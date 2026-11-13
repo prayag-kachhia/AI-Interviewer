@@ -17,7 +17,7 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-import { ROLES } from "@interview/contracts";
+import { ROLES, formatEndReason } from "@interview/contracts";
 import { getSessions } from "../../lib/api";
 import type { SessionData } from "../../types";
 import {
@@ -499,7 +499,7 @@ export const HistoryPage: React.FC = () => {
                             fontWeight: 600,
                           }}
                         >
-                          Ended early
+                          Ended early{session.endReason ? ` (${formatEndReason(session.endReason)})` : ''}
                         </span>
                       )}
                     </div>
@@ -524,6 +524,14 @@ export const HistoryPage: React.FC = () => {
                       <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
                         Feedback: {renderFeedbackStatus(session.feedbackStatus)}
                       </span>
+                      {session.overallScore !== undefined && session.overallScore !== null && (
+                        <>
+                          <span>•</span>
+                          <span data-testid="history-overall-score" style={{ fontWeight: 600 }}>
+                            Score: {session.overallScore}/5
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
 
