@@ -105,6 +105,7 @@ export const Session = z.object({
   turns: z.array(Turn).optional(),
   feedbackStatus: FeedbackStatus.nullable().optional(),
   endedEarly: z.boolean().optional(),
+  overallScore: z.number().nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
