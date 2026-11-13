@@ -38,6 +38,9 @@ export interface VoiceSessionAdapter {
   disconnect(): void;
 }
 
+const SILENCE_AUTO_SUBMIT_MS = 5000;
+const VOICES_WAIT_MS = 250;
+
 /**
  * Browser Web Speech API + Web Audio microphone adapter implementing `VoiceSessionAdapter`.
  * Used when no external token is configured so the spoken audio flow
@@ -58,6 +61,9 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
   private isMuted = false;
   private isListeningActive = false;
   private isAiSpeaking = false;
+  private isDisconnected = false;
+  private hasEmittedPartial = false;
+  private hasWarnedNoVoices = false;
   private accumulatedTranscript = '';
   private interimTranscript = '';
   private silenceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -76,7 +82,17 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
     _token?: VoiceSessionToken
   ): Promise<void> {
     this.callbacks = callbacks;
+    this.isDisconnected = false;
+    this.isListeningActive = false;
+    this.isAiSpeaking = false;
+    this.hasWarnedNoVoices = false;
+    this.clearPartialTranscript(false);
     this.callbacks.onStateChange('IDLE');
+
+    // Trigger lazy browser voice list loading early so getVoices() is ready when speaking starts.
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.getVoices?.();
+    }
 
     // Initialize microphone audio level meter if permitted by browser
     if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
@@ -111,7 +127,7 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
       recognition.lang = 'en-US';
 
       recognition.onresult = (event: any) => {
-        if (this.isMuted || this.isAiSpeaking) return;
+        if (!this.isListeningActive || this.isMuted || this.isAiSpeaking) return;
 
         let finalChunk = '';
         let interimChunk = '';
@@ -132,6 +148,7 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
 
         const combined = `${this.accumulatedTranscript} ${this.interimTranscript}`.trim();
         if (combined) {
+          this.hasEmittedPartial = true;
           this.callbacks?.onStateChange('CANDIDATE_SPEAKING');
           this.callbacks?.onTranscript({
             speaker: 'CANDIDATE',
@@ -139,15 +156,13 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
             isFinal: false,
           });
 
-          // Reset natural pause timer (auto-finalize turn after 2.4s of silence following speech)
-          if (this.silenceTimer) {
-            clearTimeout(this.silenceTimer);
-          }
+          // Reset pause timer (auto-finalize turn after 5s of silence while still listening; Done button submits sooner).
+          this.clearSilenceTimer();
           this.silenceTimer = setTimeout(() => {
             if (this.isListeningActive && (this.accumulatedTranscript || this.interimTranscript)) {
               this.finishCandidateTurn();
             }
-          }, 2400);
+          }, SILENCE_AUTO_SUBMIT_MS);
         }
       };
 
@@ -187,10 +202,17 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
 
   async speakAiQuestion(text: string): Promise<void> {
     this.stopRecognitionInternal();
+    this.clearPartialTranscript(true);
     this.isAiSpeaking = true;
     this.callbacks?.onStateChange('AI_SPEAKING');
 
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    const canSpeak = await this.hasSpeakingVoices();
+    if (this.isDisconnected) {
+      this.isAiSpeaking = false;
+      return;
+    }
+
+    if (canSpeak) {
       await new Promise<void>((resolve) => {
         try {
           window.speechSynthesis.cancel();
@@ -220,10 +242,13 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
         }
       });
     } else {
-      await new Promise((r) => setTimeout(r, 1200));
+      this.warnNoVoicesOnce();
     }
 
     this.isAiSpeaking = false;
+    if (this.isDisconnected) {
+      return;
+    }
     if (!this.isMuted) {
       await this.startListening();
     } else {
@@ -232,6 +257,8 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
   }
 
   async startListening(): Promise<void> {
+    if (this.isDisconnected) return;
+
     if (this.isAiSpeaking) {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -239,8 +266,7 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
       this.isAiSpeaking = false;
     }
 
-    this.accumulatedTranscript = '';
-    this.interimTranscript = '';
+    this.clearPartialTranscript(true);
     this.isListeningActive = true;
 
     if (!this.isMuted && this.recognition) {
@@ -255,14 +281,8 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
   }
 
   finishCandidateTurn(): void {
-    if (this.silenceTimer) {
-      clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
-    }
-
     const finalSpokenText = `${this.accumulatedTranscript} ${this.interimTranscript}`.trim();
-    this.accumulatedTranscript = '';
-    this.interimTranscript = '';
+    this.clearPartialTranscript(false);
     this.stopRecognitionInternal();
 
     if (finalSpokenText) {
@@ -290,7 +310,7 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
       if (!this.isAiSpeaking) {
         this.callbacks?.onStateChange('IDLE');
       }
-    } else if (!this.isAiSpeaking) {
+    } else if (!this.isAiSpeaking && !this.isDisconnected) {
       void this.startListening();
     }
   }
@@ -300,10 +320,8 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
   }
 
   disconnect(): void {
-    if (this.silenceTimer) {
-      clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
-    }
+    this.isDisconnected = true;
+    this.clearPartialTranscript(false);
     this.stopRecognitionInternal();
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -320,6 +338,76 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
       void this.audioContext.close().catch(() => {});
       this.audioContext = null;
     }
+  }
+
+  private clearSilenceTimer(): void {
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+  }
+
+  private clearPartialTranscript(notifyRoom: boolean): void {
+    this.clearSilenceTimer();
+    const hadPartial = this.hasEmittedPartial || Boolean(this.accumulatedTranscript || this.interimTranscript);
+    this.accumulatedTranscript = '';
+    this.interimTranscript = '';
+    this.hasEmittedPartial = false;
+    if (notifyRoom && hadPartial) {
+      this.callbacks?.onTranscript({
+        speaker: 'CANDIDATE',
+        text: '',
+        isFinal: false,
+      });
+    }
+  }
+
+  private async hasSpeakingVoices(): Promise<boolean> {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return false;
+    }
+    const synth = window.speechSynthesis;
+    if (typeof synth.getVoices !== 'function') {
+      return true;
+    }
+    if (synth.getVoices().length > 0) {
+      return true;
+    }
+    if (typeof synth.addEventListener !== 'function') {
+      return false;
+    }
+
+    // Chrome sometimes returns [] briefly until voiceschanged fires on cold start.
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const cleanup = () => {
+        clearTimeout(timer);
+        synth.removeEventListener?.('voiceschanged', onVoicesChanged);
+      };
+      const onVoicesChanged = () => {
+        if (settled) return;
+        if (synth.getVoices().length > 0) {
+          settled = true;
+          cleanup();
+          resolve(true);
+        }
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(synth.getVoices().length > 0);
+      }, VOICES_WAIT_MS);
+      synth.addEventListener('voiceschanged', onVoicesChanged);
+    });
+  }
+
+  private warnNoVoicesOnce(): void {
+    if (this.hasWarnedNoVoices) return;
+    this.hasWarnedNoVoices = true;
+    this.callbacks?.onError?.(
+      'No browser speaking voices are available. Please read the interviewer questions on screen.'
+    );
   }
 
   private stopRecognitionInternal(): void {
