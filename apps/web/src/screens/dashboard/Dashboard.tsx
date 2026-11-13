@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { UploadCloud, FileText, CheckCircle, ArrowRight, Loader2, AlertCircle, UserCircle2, BrainCircuit } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle, ArrowRight, Loader2, AlertCircle, UserCircle2 } from 'lucide-react';
 import { uploadResume, getLatestResume } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const Dashboard: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -106,95 +110,81 @@ export const Dashboard: React.FC = () => {
         <p style={{ fontSize: '1.25rem', color: 'var(--text-muted)' }}>Build your AI-powered interview profile.</p>
       </div>
 
-      <div className="card" style={{ maxWidth: '750px', margin: '0 auto' }}>
-        <div className="card-header">
-          <h2>Upload Resume</h2>
-          <p>Upload your resume in PDF format (Max 5 MB)</p>
-        </div>
-
-        {error && (
-          <div className="alert alert-error">
-            <AlertCircle size={20} />
-            {error}
+      <Card className="mx-auto max-w-[750px]">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4">
+            <CardTitle>Upload resume</CardTitle>
+            <Badge variant={hasProfile ? 'success' : 'pending'}>{hasProfile ? 'On file' : 'Not uploaded'}</Badge>
           </div>
-        )}
+          <CardDescription>A PDF up to 5 MB. The interviewer uses it to tailor your questions.</CardDescription>
+        </CardHeader>
 
-        {status && (
-          <div className="alert alert-info">
-            <Loader2 size={20} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-            {status}
-          </div>
-        )}
-        
-        <style>{`
-          @keyframes spin { 100% { transform: rotate(360deg); } }
-        `}</style>
-
-        <div 
-          className={`upload-area ${file ? 'active' : ''} ${isDragging ? 'drag-over' : ''}`} 
-          onClick={() => !loading && fileInputRef.current?.click()}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileChange} 
-            accept="application/pdf"
-            style={{ display: 'none' }} 
-            disabled={loading}
-          />
-          
-          {file ? (
-            <div>
-              <FileText className="upload-icon" />
-              <div className="upload-text">{file.name}</div>
-              <div className="upload-hint">{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to analyze</div>
-            </div>
-          ) : (
-            <div>
-              <UploadCloud className="upload-icon" />
-              <div className="upload-text">Drag & drop your PDF here</div>
-              <div className="upload-hint">or click to browse from your device</div>
-            </div>
+        <CardContent className="flex flex-col gap-4">
+          {error && (
+            <Alert variant="error">
+              <AlertCircle />
+              <AlertTitle>{error}</AlertTitle>
+            </Alert>
           )}
-        </div>
 
-        <div style={{ textAlign: 'right' }}>
-          <button 
-            className="btn btn-primary" 
-            onClick={handleUpload} 
-            disabled={!file || loading}
+          {status && (
+            <Alert>
+              <Loader2 className="motion-safe:animate-spin" />
+              <AlertTitle>Reading your resume</AlertTitle>
+              <AlertDescription>{status}</AlertDescription>
+            </Alert>
+          )}
+
+          <div
+            className={`upload-area ${file ? 'active' : ''} ${isDragging ? 'drag-over' : ''}`}
+            onClick={() => !loading && fileInputRef.current?.click()}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
           >
-            {loading ? (
-              <>
-                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-                Processing...
-              </>
-            ) : (
-              <>
-                Analyze Resume
-                <ArrowRight size={18} />
-              </>
-            )}
-          </button>
-        </div>
-      </div>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="application/pdf"
+              style={{ display: 'none' }}
+              disabled={loading}
+            />
 
-      <div className="card" style={{ maxWidth: '750px', margin: '2rem auto 0' }}>
-        <div className="card-header">
-          <h2>Practice Interview</h2>
-          <p>Start a live AI interview session for a role of your choice.</p>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <button className="btn btn-primary" onClick={() => navigate('/new-interview')}>
-            <BrainCircuit size={18} />
-            Start Interview
-            <ArrowRight size={18} />
-          </button>
-        </div>
-      </div>
+            {file ? (
+              <div>
+                <FileText className="upload-icon" />
+                <div className="upload-text">{file.name}</div>
+                <div className="upload-hint">{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to analyze</div>
+              </div>
+            ) : (
+              <div>
+                <UploadCloud className="upload-icon" />
+                <div className="upload-text">Drag & drop your PDF here</div>
+                <div className="upload-hint">or click to browse from your device</div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+
+        <CardFooter className="justify-end">
+          <Button onClick={handleUpload} disabled={!file} loading={loading}>
+            {loading ? 'Analyzing…' : <>Analyze resume <ArrowRight /></>}
+          </Button>
+        </CardFooter>
+      </Card>
+
+      <Card className="mx-auto mt-8 max-w-[750px]">
+        <CardHeader>
+          <CardTitle>Practice interview</CardTitle>
+          <CardDescription>Pick a role and talk it through with the AI interviewer.</CardDescription>
+        </CardHeader>
+        <CardFooter className="justify-end">
+          <Button onClick={() => navigate('/new-interview')}>
+            Start interview <ArrowRight />
+          </Button>
+        </CardFooter>
+      </Card>
 
       <div className="dashboard-grid" style={{ maxWidth: '750px', margin: '2.5rem auto' }}>
         <div className="stat-card">

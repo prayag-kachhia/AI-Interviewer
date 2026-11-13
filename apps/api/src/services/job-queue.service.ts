@@ -5,8 +5,16 @@ import prisma from '../db';
 // this many times; after that it is marked failed so it can't loop forever.
 export const MAX_ATTEMPTS = 3;
 
+export const JOB_TYPES = {
+  SESSION_ENDED: 'session.ended',
+  INSIGHTS_REFRESH: 'insights.refresh',
+  RETENTION_PURGE: 'retention.purge',
+} as const;
+
+export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES] | (string & {});
+
 export interface EnqueueJobParams {
-  type: string;
+  type: JobType;
   sessionId?: string;
   payload?: Prisma.InputJsonObject;
 }

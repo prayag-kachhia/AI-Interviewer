@@ -1,0 +1,23 @@
+{
+  "role": "software-engineer",
+  "scores": [
+    {
+      "category": "Problem Solving & Algorithms",
+      "min": 4,
+      "max": 5,
+      "reason": "Accurately analyzes min-heap complexity O(N + U log K) using Python heapq and explains frequency map edge cases."
+    },
+    {
+      "category": "Software Design & Architecture",
+      "min": 4,
+      "max": 5,
+      "reason": "Designs asynchronous worker pipelines with asyncio queues, token-bucket rate limiting, exponential backoff, and dead-letter queues."
+    },
+    {
+      "category": "Technical Communication",
+      "min": 4,
+      "max": 5,
+      "reason": "Clearly articulates Python memory management, cyclic generational GC tuning, and parameterized testing methodologies."
+    }
+  ]
+}

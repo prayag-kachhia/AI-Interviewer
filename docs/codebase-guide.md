@@ -371,7 +371,7 @@ scores, latency and cost. See [evaluation-benchmark.md](evaluation-benchmark.md)
 - `components/ProtectedRoute.tsx`: shows "Loading…" while the session is restored, sends
   signed-out users to `/login`, and otherwise renders the page.
 - `components/Navbar.tsx`: links (Dashboard, History, Profile), theme toggle, the user's email,
-  Logout. Hidden when signed out.
+  Sign out. Hidden when signed out.
 
 **State**
 - `context/AuthContext.tsx`: the signed-in user, and `signIn`, `signUp`, `signInWithGoogle`,

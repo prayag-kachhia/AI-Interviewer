@@ -24,7 +24,9 @@ export function formatClock(totalSeconds: number): string {
   return `${mm}:${ss}`;
 }
 
-export function useInterview() {
+export const DEFAULT_TIME_LIMIT_MIN = 15;
+
+export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
 
@@ -55,6 +57,8 @@ export function useInterview() {
   const roleRef = useRef<string>('software-engineer');
   const statusRef = useRef<SessionStatus>('LIVE');
   const initialQuestionTriggeredRef = useRef(false);
+  const endingRef = useRef(false);
+  const hasAutoEndedRef = useRef(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
   turnsRef.current = turns;
@@ -291,8 +295,9 @@ export function useInterview() {
     });
   };
 
-  const handleEndInterview = async () => {
-    if (!sessionId || ending) return;
+  const handleEndInterview = useCallback(async () => {
+    if (!sessionId || endingRef.current) return;
+    endingRef.current = true;
     setEnding(true);
     setError('');
     try {
@@ -309,9 +314,20 @@ export function useInterview() {
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to end the interview session.');
     } finally {
+      endingRef.current = false;
       setEnding(false);
     }
-  };
+  }, [sessionId, navigate]);
+
+  const remainingSeconds = Math.max(0, timeLimitMin * 60 - elapsed);
+
+  useEffect(() => {
+    if (status !== 'LIVE' || !startedAt || hasAutoEndedRef.current) return;
+    if (remainingSeconds === 0) {
+      hasAutoEndedRef.current = true;
+      void handleEndInterview();
+    }
+  }, [status, startedAt, remainingSeconds, handleEndInterview]);
 
   const isAiSpeaking = voiceState === 'AI_SPEAKING';
   const isCandidateSpeaking = voiceState === 'CANDIDATE_SPEAKING' || Boolean(liveCandidateSpeech);
@@ -326,6 +342,8 @@ export function useInterview() {
     endedAt,
     turns,
     elapsed,
+    timeLimitMin,
+    remainingSeconds,
     loading,
     notFound,
     error,

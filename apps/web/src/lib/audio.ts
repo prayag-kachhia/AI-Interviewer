@@ -8,6 +8,46 @@
  * - PlaybackQueue: schedules 24kHz audio buffers back-to-back on an AudioContext with stop()
  */
 
+/** Target microphone sample rate required by Gemini Live. */
+export const LIVE_INPUT_SAMPLE_RATE = 16000;
+
+/** AudioWorkletProcessor registration name for mic PCM capture. */
+export const PCM_CAPTURE_PROCESSOR = "pcm-capture-processor";
+
+/**
+ * Downsamples mono Float32 audio from `inputSampleRate` to `outputSampleRate` using box averaging.
+ */
+export function downsampleBuffer(
+  buffer: Float32Array,
+  inputSampleRate: number,
+  outputSampleRate = LIVE_INPUT_SAMPLE_RATE
+): Float32Array {
+  if (buffer.length === 0 || inputSampleRate <= outputSampleRate || outputSampleRate <= 0) {
+    return buffer;
+  }
+
+  const ratio = inputSampleRate / outputSampleRate;
+  const newLength = Math.round(buffer.length / ratio);
+  const result = new Float32Array(newLength);
+  let offsetResult = 0;
+  let offsetBuffer = 0;
+
+  while (offsetResult < result.length) {
+    const nextOffsetBuffer = Math.min(buffer.length, Math.round((offsetResult + 1) * ratio));
+    let accum = 0;
+    let count = 0;
+    for (let i = offsetBuffer; i < nextOffsetBuffer; i++) {
+      accum += buffer[i];
+      count++;
+    }
+    result[offsetResult] = count > 0 ? accum / count : 0;
+    offsetResult++;
+    offsetBuffer = nextOffsetBuffer;
+  }
+
+  return result;
+}
+
 /**
  * Converts browser microphone Float32Array [-1.0, 1.0] samples into
  * 16-bit signed PCM ArrayBuffer (little-endian) expected by Gemini Live.

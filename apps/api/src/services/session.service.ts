@@ -1,5 +1,5 @@
 import prisma from '../db';
-import { NotFoundError } from '../errors';
+import { AppError, NotFoundError } from '../errors';
 import { FeedbackStatus, ROLES, type CreateSessionInput } from '@interview/contracts';
 
 // The role list lives in @interview/contracts so the API and the web app share it.
@@ -9,33 +9,29 @@ export function isValidRoleId(roleId: string): boolean {
   return typeof roleId === 'string' && VALID_ROLE_IDS.has(roleId);
 }
 
-export class InvalidRoleError extends Error {
+export class InvalidRoleError extends AppError {
   constructor(message: string = 'Invalid role') {
-    super(message);
-    this.name = 'InvalidRoleError';
+    super(400, message);
   }
 }
 
 export const MAX_TURN_TEXT_LENGTH = 4000;
 
-export class TurnTextTooLongError extends Error {
+export class TurnTextTooLongError extends AppError {
   constructor(message: string = `Turn text exceeds maximum allowed length of ${MAX_TURN_TEXT_LENGTH} characters`) {
-    super(message);
-    this.name = 'TurnTextTooLongError';
+    super(400, message);
   }
 }
 
-export class InvalidTimestampError extends Error {
+export class InvalidTimestampError extends AppError {
   constructor(message: string = 'Turn timestamp is ahead of the session\'s elapsed time') {
-    super(message);
-    this.name = 'InvalidTimestampError';
+    super(400, message);
   }
 }
 
-export class SessionEndedError extends Error {
+export class SessionEndedError extends AppError {
   constructor(message: string = 'This session has already ended') {
-    super(message);
-    this.name = 'SessionEndedError';
+    super(409, message);
   }
 }
 

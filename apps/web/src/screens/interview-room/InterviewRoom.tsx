@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router';
 import {
   PhoneOff,
@@ -12,6 +12,8 @@ import { InterviewerCard } from './InterviewerCard';
 import { MicrophoneCard } from './MicrophoneCard';
 import { TypedAnswerBox } from './TypedAnswerBox';
 import { TranscriptPanel } from './TranscriptPanel';
+import { InterviewCountdown } from './InterviewCountdown';
+import { EndConfirmationDialog } from './EndConfirmationDialog';
 import './InterviewRoom.css';
 
 export const InterviewRoom: React.FC = () => {
@@ -22,6 +24,8 @@ export const InterviewRoom: React.FC = () => {
     endedAt,
     turns,
     elapsed,
+    timeLimitMin,
+    remainingSeconds,
     loading,
     notFound,
     error,
@@ -49,6 +53,13 @@ export const InterviewRoom: React.FC = () => {
     handleEndInterview,
     navigate,
   } = useInterview();
+
+  const [isEndDialogOpen, setIsEndDialogOpen] = useState(false);
+
+  const handleConfirmEnd = () => {
+    setIsEndDialogOpen(false);
+    void handleEndInterview();
+  };
 
   if (loading) {
     return (
@@ -112,7 +123,7 @@ export const InterviewRoom: React.FC = () => {
           <button
             type="button"
             className="btn"
-            onClick={handleEndInterview}
+            onClick={() => setIsEndDialogOpen(true)}
             disabled={ending}
             style={{
               backgroundColor: 'var(--error-color)',
@@ -206,27 +217,37 @@ export const InterviewRoom: React.FC = () => {
 
       {/* Primary Spoken Audio Studio Stage */}
       {status === 'LIVE' && (
-        <div className="interview-stage-grid">
-          <InterviewerCard
-            isAiSpeaking={isAiSpeaking}
-            interviewComplete={interviewComplete}
-            currentAiQuestion={currentAiQuestion}
-            onReplayAiQuestion={handleReplayAiQuestion}
-          />
-          <MicrophoneCard
-            isMuted={isMuted}
-            isListening={isListening}
-            isCandidateSpeaking={isCandidateSpeaking}
-            audioLevel={audioLevel}
-            liveCandidateSpeech={liveCandidateSpeech}
-            interviewComplete={interviewComplete}
-            savingTurn={savingTurn}
-            isAiSpeaking={isAiSpeaking}
-            onToggleMute={handleToggleMute}
-            onFinishSpeaking={handleFinishSpeaking}
-          />
-        </div>
+        <>
+          <InterviewCountdown elapsed={elapsed} timeLimitMin={timeLimitMin} />
+          <div className="interview-stage-grid">
+            <InterviewerCard
+              isAiSpeaking={isAiSpeaking}
+              interviewComplete={interviewComplete}
+              currentAiQuestion={currentAiQuestion}
+              onReplayAiQuestion={handleReplayAiQuestion}
+            />
+            <MicrophoneCard
+              isMuted={isMuted}
+              isListening={isListening}
+              isCandidateSpeaking={isCandidateSpeaking}
+              audioLevel={audioLevel}
+              liveCandidateSpeech={liveCandidateSpeech}
+              interviewComplete={interviewComplete}
+              savingTurn={savingTurn}
+              isAiSpeaking={isAiSpeaking}
+              onToggleMute={handleToggleMute}
+              onFinishSpeaking={handleFinishSpeaking}
+            />
+          </div>
+        </>
       )}
+
+      <EndConfirmationDialog
+        isOpen={isEndDialogOpen}
+        onClose={() => setIsEndDialogOpen(false)}
+        onConfirm={handleConfirmEnd}
+        remainingSeconds={remainingSeconds}
+      />
 
       {/* Collapsible Accessibility / Simulated Speech Trigger */}
       {status === 'LIVE' && !interviewComplete && (

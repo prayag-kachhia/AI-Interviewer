@@ -158,6 +158,87 @@ export function calculateBenchmarkCost(
   };
 }
 
+/**
+ * Asserts that two technology stack variants score within acceptable parity (PN-8, DR-05).
+ * Definition of Done: both stacks score within 1.0 point of each other.
+ */
+export function checkTechnologyParity(
+  scoreA: number,
+  scoreB: number,
+  maxAllowedDiff = 1.0
+): { diff: number; pass: boolean } {
+  const diff = Math.abs(scoreA - scoreB);
+  const roundedDiff = Math.round(diff * 100) / 100;
+  return {
+    diff: roundedDiff,
+    pass: roundedDiff <= maxAllowedDiff,
+  };
+}
+
+export interface TechnologyIndependenceResult {
+  pass: boolean;
+  pyAvg?: number;
+  javaAvg?: number;
+  diff?: number;
+  error?: string;
+}
+
+/**
+ * Evaluates parity between tech-stack-python and tech-stack-java fixtures (PN-8, DR-05).
+ * Defaults to failing unless both fixtures exist and have successful runs with valid scores.
+ */
+export function evaluateTechnologyIndependence(
+  fixtureResults: Array<{ name: string; runs: RunResult[] }>
+): TechnologyIndependenceResult {
+  const pythonResult = fixtureResults.find((f) => f.name === 'tech-stack-python');
+  const javaResult = fixtureResults.find((f) => f.name === 'tech-stack-java');
+
+  if (!pythonResult || !javaResult) {
+    const missing = [
+      !pythonResult ? 'tech-stack-python' : null,
+      !javaResult ? 'tech-stack-java' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `Missing required technology stack fixture(s): ${missing}`,
+    };
+  }
+
+  const getValidScores = (runs: RunResult[]) =>
+    runs
+      .filter((r) => !r.error)
+      .flatMap((r) => r.scores.map((s) => s.score));
+
+  const pyScores = getValidScores(pythonResult.runs);
+  const javaScores = getValidScores(javaResult.runs);
+
+  if (pyScores.length === 0 || javaScores.length === 0) {
+    const emptyRuns = [
+      pyScores.length === 0 ? 'tech-stack-python' : null,
+      javaScores.length === 0 ? 'tech-stack-java' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `No successful evaluated runs with scores for: ${emptyRuns}`,
+    };
+  }
+
+  const pyAvg = pyScores.reduce((a, b) => a + b, 0) / pyScores.length;
+  const javaAvg = javaScores.reduce((a, b) => a + b, 0) / javaScores.length;
+  const parity = checkTechnologyParity(pyAvg, javaAvg, 1.0);
+
+  return {
+    pass: parity.pass,
+    pyAvg,
+    javaAvg,
+    diff: parity.diff,
+  };
+}
+
 const defaultPricing = resolveBenchmarkPricing();
 const INPUT_COST_USD_PER_1M = defaultPricing.inputCostPer1M;
 const OUTPUT_COST_USD_PER_1M = defaultPricing.outputCostPer1M;
@@ -601,6 +682,24 @@ async function main() {
     );
   }
 
+  // ── Technology Independence (PN-8, DR-05) ──────────────────────────────────
+  console.log('\nTechnology Independence (PN-8 / DR-05):');
+  let techIndependenceOk = false;
+  const techEval = evaluateTechnologyIndependence(fixtureResults);
+
+  if (techEval.error) {
+    console.log(`  ❌ FAIL — ${techEval.error}`);
+  } else if (techEval.pyAvg !== undefined && techEval.javaAvg !== undefined && techEval.diff !== undefined) {
+    techIndependenceOk = techEval.pass;
+    console.log(`  tech-stack-python avg : ${techEval.pyAvg.toFixed(2)} / 5.00`);
+    console.log(`  tech-stack-java   avg : ${techEval.javaAvg.toFixed(2)} / 5.00`);
+    console.log(
+      `  Difference            : ${techEval.diff.toFixed(2)} pts (target: <= 1.00 pt)  ${
+        techIndependenceOk ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+  }
+
   // ── Accuracy verdict ─────────────────────────────────────────────────────────
 
   console.log('\nAccuracy:');
@@ -610,13 +709,15 @@ async function main() {
   const accuracyOk = passCount >= threshold;
 
   console.log('');
-  if (!accuracyOk || !latencyOk) {
+  if (!accuracyOk || !latencyOk || !techIndependenceOk) {
     if (!accuracyOk)
       console.error(
         `❌ ACCURACY: only ${passCount}/${totalWithExpected} pass (need ≥ ${threshold})`
       );
     if (!latencyOk)
       console.error(`❌ LATENCY:  p95 = ${p95} ms exceeds ${LATENCY_TARGET_MS} ms target`);
+    if (!techIndependenceOk)
+      console.error(`❌ TECHNOLOGY INDEPENDENCE: score difference exceeds 1.0 point limit (PN-8, DR-05)`);
     process.exit(1);
   } else {
     console.log(
