@@ -432,7 +432,7 @@ types come from `@interview/contracts`.
 | `Role`, `RoleList`, `ROLES` | The one role list (STUB until roles move into the database) |
 | `Session`, `SessionStatus`, `Turn`, `TurnSpeaker` | Session and transcript shapes; `Session` also carries the optional `resumeId`, `turns`, `feedbackStatus` and `endedEarly` |
 | `VoiceToken` | The voice-token response |
-| `Feedback`, `FeedbackStatus`, `FeedbackScore` | The feedback response, and the evaluator's output check. A score has `category`, `score` (1–5), `comment`, `strengths`, `improvements` and `quote` |
+| `Feedback`, `FeedbackStatus`, `FeedbackScore`, `PerAnswerFeedback` | The feedback response, and the evaluator's output check. A score has `category`, `score` (1–5), `comment`, `strengths`, `improvements` and `quote`; `PerAnswerFeedback` carries `question`, `summary`, `strengths`, and `improvements` |
 
 The `feedback.error` column is deliberately not in the contract: the failure reason stays on
 the server.

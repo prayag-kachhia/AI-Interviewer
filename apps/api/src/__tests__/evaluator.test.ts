@@ -6,6 +6,8 @@ import {
   evaluateTranscript,
   buildEvaluationPrompt,
   evaluationSchema,
+  deriveExpectedQuestions,
+  normalizeWhitespace,
   type EvaluationInput,
   type TranscriptTurn,
 } from '../services/evaluator.service';
@@ -310,6 +312,304 @@ describe('FB4 — evaluator', () => {
       const diff = Math.abs(scoreStackA - scoreStackB);
       expect(diff).toBeGreaterThan(1);
       expect(diff <= 1.0).toBe(false);
+    });
+  });
+
+  describe('PN-9 - Per-answer feedback (#174)', () => {
+    const SAMPLE_PER_ANSWER = [
+      {
+        question: 'Welcome to the Software Engineer interview. Could you describe how you would design an asynchronous notification service that delivers emails and SMS messages reliably?',
+        summary: 'Decoupled API with RabbitMQ/SQS message queue and worker pool with 202 Accepted responses.',
+        strengths: ['Effective asynchronous queuing to decouple external latency', 'Appropriate 202 Accepted HTTP response design'],
+        improvements: ['Elaborate on queue partition keying for per-user FIFO ordering'],
+      },
+      {
+        question: 'What happens if a third-party provider like SendGrid experiences downtime or returns rate-limit errors?',
+        summary: 'Implemented exponential backoff with jitter and dead-letter queue routing for persistent failures.',
+        strengths: ['Exponential backoff with jitter avoids thundering herd', 'DLQ prevents bad messages from poisoning worker pool'],
+        improvements: ['Consider adding circuit breaker to halt requests during prolonged provider outage'],
+      },
+      {
+        question: 'How would you prevent duplicate notifications from being sent to a user if network timeouts occur during the third-party call?',
+        summary: 'Used database-backed idempotency keys in PostgreSQL with status tracking.',
+        strengths: ['Idempotency key protocol prevents duplicate sends on retries', 'Checked provider idempotency header integration'],
+        improvements: ['Discuss atomic state updates or distributed locks to prevent concurrent worker race conditions'],
+      },
+      {
+        question: 'How do you test and verify this notification service?',
+        summary: 'Outlined unit tests with mocked clients and integration tests with Docker Testcontainers.',
+        strengths: ['Thorough testing pyramid using Testcontainers for realistic dependencies', 'Simulated provider network timeouts for DLQ verification'],
+        improvements: ['Add end-to-end stress testing to assess queue throughput under high concurrency'],
+      },
+    ];
+
+    it('returns perAnswer feedback for every candidate answer in the transcript', async () => {
+      const replyWithPerAnswer = JSON.stringify({
+        summary: 'Solid performance across architecture and error handling.',
+        scores: RUBRIC.map((r, i) => scoreFor(r.category, 4)),
+        perAnswer: SAMPLE_PER_ANSWER,
+      });
+
+      const result = await evaluateTranscript(SAMPLE, {
+        generate: async () => ({ text: replyWithPerAnswer }),
+      });
+
+      expect(result.perAnswer).toBeDefined();
+      expect(result.perAnswer).toHaveLength(4);
+      expect(result.perAnswer![0].question).toContain('asynchronous notification service');
+      expect(result.perAnswer![0].summary).toContain('RabbitMQ/SQS');
+      expect(result.perAnswer![0].strengths.length).toBeGreaterThan(0);
+      expect(result.perAnswer![0].improvements.length).toBeGreaterThan(0);
+    });
+
+    it('puts per-answer instructions and perAnswer JSON schema into the evaluation prompt', () => {
+      const prompt = buildEvaluationPrompt(SAMPLE);
+      expect(prompt).toContain('Per-Answer Feedback');
+      expect(prompt).toContain('"perAnswer"');
+      expect(prompt).toContain('"question"');
+      expect(prompt).toContain('"summary"');
+      expect(prompt).toContain('"strengths"');
+      expect(prompt).toContain('"improvements"');
+      expect(prompt).toContain('Provide feedback ONLY for candidate answers');
+    });
+
+    it('evaluationSchema includes perAnswer with required fields', () => {
+      const schema = evaluationSchema(['Problem Solving & Algorithms']);
+      expect(schema.required).toContain('perAnswer');
+      expect((schema.properties as any).perAnswer).toBeDefined();
+      const perAnswerProps = (schema.properties as any).perAnswer;
+      expect(perAnswerProps.items.required).toEqual(['question', 'summary', 'strengths', 'improvements']);
+    });
+
+    it('rejects when perAnswer feedback has incomplete answer coverage', async () => {
+      // Transcript has 4 candidate answers, but perAnswer only has 2
+      const incompleteReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: SAMPLE_PER_ANSWER.slice(0, 2),
+      });
+
+      await expect(
+        evaluateTranscript(SAMPLE, {
+          generate: async () => ({ text: incompleteReply }),
+        })
+      ).rejects.toThrow(/Incomplete per-answer feedback: expected 4 answer\(s\) but received 2/);
+    });
+
+    it('rejects when a perAnswer entry has an empty question', async () => {
+      const emptyQuestionReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: [
+          { ...SAMPLE_PER_ANSWER[0], question: '' },
+          SAMPLE_PER_ANSWER[1],
+          SAMPLE_PER_ANSWER[2],
+          SAMPLE_PER_ANSWER[3],
+        ],
+      });
+
+      await expect(
+        evaluateTranscript(SAMPLE, {
+          generate: async () => ({ text: emptyQuestionReply }),
+        })
+      ).rejects.toThrow();
+    });
+
+    it('rejects when a perAnswer entry has an empty summary', async () => {
+      const emptySummaryReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: [
+          { ...SAMPLE_PER_ANSWER[0], summary: '' },
+          SAMPLE_PER_ANSWER[1],
+          SAMPLE_PER_ANSWER[2],
+          SAMPLE_PER_ANSWER[3],
+        ],
+      });
+
+      await expect(
+        evaluateTranscript(SAMPLE, {
+          generate: async () => ({ text: emptySummaryReply }),
+        })
+      ).rejects.toThrow();
+    });
+
+    it('strictly enforces perAnswer when options.requirePerAnswer is true', async () => {
+      await expect(
+        evaluateTranscript(SAMPLE, {
+          generate: async () => ({ text: VALID }),
+          requirePerAnswer: true,
+        })
+      ).rejects.toThrow('The evaluator did not return per-answer feedback');
+    });
+
+    it('maintains backward compatibility when perAnswer is omitted and requirePerAnswer is false', async () => {
+      const result = await evaluateTranscript(SAMPLE, {
+        generate: async () => ({ text: VALID }),
+      });
+      expect(result.perAnswer).toBeUndefined();
+      expect(result.scores).toHaveLength(RUBRIC.length);
+      expect(result.summary).toBeTruthy();
+    });
+
+    it('handles multi-turn conversation preserving question-answer pairing and order', async () => {
+      const multiTurnInput: EvaluationInput = {
+        roleId: 'software-engineer',
+        turns: [
+          { speaker: 'AI', text: 'Question 1: What is a hash map?' },
+          { speaker: 'CANDIDATE', text: 'Answer 1: A hash map provides O(1) average lookup using hash buckets.' },
+          { speaker: 'AI', text: 'Follow-up 1: What happens on collision?' },
+          { speaker: 'CANDIDATE', text: 'Answer 2: Separate chaining with linked lists or open addressing.' },
+        ],
+      };
+
+      const reply = JSON.stringify({
+        summary: 'Clear algorithmic knowledge.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: [
+          {
+            question: 'Question 1: What is a hash map?',
+            summary: 'Accurately defined hash map with O(1) average lookup and hash buckets.',
+            strengths: ['Correct time complexity'],
+            improvements: ['Mention worst-case O(N) degradation'],
+          },
+          {
+            question: 'Follow-up 1: What happens on collision?',
+            summary: 'Identified separate chaining and open addressing collision resolution.',
+            strengths: ['Identified primary collision resolution strategies'],
+            improvements: ['Explain tree-based bucket optimization in Java 8+'],
+          },
+        ],
+      });
+
+      const result = await evaluateTranscript(multiTurnInput, {
+        generate: async () => ({ text: reply }),
+      });
+
+      expect(result.perAnswer).toHaveLength(2);
+      expect(result.perAnswer![0].question).toBe('Question 1: What is a hash map?');
+      expect(result.perAnswer![1].question).toBe('Follow-up 1: What happens on collision?');
+    });
+
+    describe('question-answer pairing validation', () => {
+      const PAIRING_INPUT: EvaluationInput = {
+        roleId: 'software-engineer',
+        turns: [
+          { speaker: 'AI', text: 'Question 1: What is a hash map?' },
+          { speaker: 'CANDIDATE', text: 'A hash map provides O(1) average lookup.' },
+          { speaker: 'AI', text: 'Follow-up: What happens on collision?' },
+          { speaker: 'CANDIDATE', text: 'Separate chaining or open addressing.' },
+        ],
+      };
+
+      function pairingReply(perAnswer: Array<{ question: string; summary: string; strengths: string[]; improvements: string[] }>) {
+        return JSON.stringify({
+          summary: 'Good answers.',
+          scores: RUBRIC.map((r) => scoreFor(r.category)),
+          perAnswer,
+        });
+      }
+
+      const CORRECT_PER_ANSWER = [
+        {
+          question: 'Question 1: What is a hash map?',
+          summary: 'Defined hash map with O(1) lookup.',
+          strengths: ['Correct complexity'],
+          improvements: ['Mention worst case'],
+        },
+        {
+          question: 'Follow-up: What happens on collision?',
+          summary: 'Identified chaining and open addressing.',
+          strengths: ['Named both strategies'],
+          improvements: ['Explain rehashing'],
+        },
+      ];
+
+      it('accepts correct question-answer pairing', async () => {
+        const result = await evaluateTranscript(PAIRING_INPUT, {
+          generate: async () => ({ text: pairingReply(CORRECT_PER_ANSWER) }),
+        });
+        expect(result.perAnswer).toHaveLength(2);
+        expect(result.perAnswer![0].question).toBe('Question 1: What is a hash map?');
+        expect(result.perAnswer![1].question).toBe('Follow-up: What happens on collision?');
+      });
+
+      it('rejects a wrong question for an answer', async () => {
+        const wrong = [
+          { ...CORRECT_PER_ANSWER[0], question: 'Completely different question?' },
+          CORRECT_PER_ANSWER[1],
+        ];
+        await expect(
+          evaluateTranscript(PAIRING_INPUT, {
+            generate: async () => ({ text: pairingReply(wrong) }),
+          })
+        ).rejects.toThrow(/entry 1 question does not match/);
+      });
+
+      it('rejects reordered questions', async () => {
+        const swapped = [CORRECT_PER_ANSWER[1], CORRECT_PER_ANSWER[0]];
+        await expect(
+          evaluateTranscript(PAIRING_INPUT, {
+            generate: async () => ({ text: pairingReply(swapped) }),
+          })
+        ).rejects.toThrow(/entry 1 question does not match/);
+      });
+
+      it('rejects candidate answer without a preceding interviewer question', async () => {
+        const noAiFirst: EvaluationInput = {
+          roleId: 'software-engineer',
+          turns: [
+            { speaker: 'CANDIDATE', text: 'I know hash maps.' },
+            { speaker: 'AI', text: 'Tell me more.' },
+            { speaker: 'CANDIDATE', text: 'They use buckets.' },
+          ],
+        };
+        const reply = pairingReply([
+          {
+            question: 'N/A',
+            summary: 'Stated knowledge.',
+            strengths: ['Confidence'],
+            improvements: ['Wait for the question'],
+          },
+          {
+            question: 'Tell me more.',
+            summary: 'Mentioned buckets.',
+            strengths: ['Correct'],
+            improvements: ['Elaborate'],
+          },
+        ]);
+        await expect(
+          evaluateTranscript(noAiFirst, {
+            generate: async () => ({ text: reply }),
+          })
+        ).rejects.toThrow(/entry 1 has no preceding interviewer question/);
+      });
+
+      it('accepts whitespace-only differences without false failures', async () => {
+        const whitespaced = [
+          { ...CORRECT_PER_ANSWER[0], question: '  Question  1:  What is a hash map?  ' },
+          { ...CORRECT_PER_ANSWER[1], question: 'Follow-up:  What happens\ton collision?' },
+        ];
+        const result = await evaluateTranscript(PAIRING_INPUT, {
+          generate: async () => ({ text: pairingReply(whitespaced) }),
+        });
+        expect(result.perAnswer).toHaveLength(2);
+      });
+
+      it('deriveExpectedQuestions returns null for orphaned candidate turns', () => {
+        const turns: TranscriptTurn[] = [
+          { speaker: 'CANDIDATE', text: 'No preceding AI turn.' },
+          { speaker: 'AI', text: 'First AI question.' },
+          { speaker: 'CANDIDATE', text: 'Answer to first AI question.' },
+        ];
+        expect(deriveExpectedQuestions(turns)).toEqual([null, 'First AI question.']);
+      });
+
+      it('normalizeWhitespace collapses tabs, newlines, and multiple spaces', () => {
+        expect(normalizeWhitespace('  hello   world  ')).toBe('hello world');
+        expect(normalizeWhitespace('a\tb\nc')).toBe('a b c');
+        expect(normalizeWhitespace('   ')).toBe('');
+      });
     });
   });
 });

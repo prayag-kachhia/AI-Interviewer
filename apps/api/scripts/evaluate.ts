@@ -124,7 +124,11 @@ export async function runCLI(argv: string[] = process.argv.slice(2)) {
 
     console.log(
       JSON.stringify(
-        { summary: evaluation.summary, scores: evaluation.scores },
+        {
+          summary: evaluation.summary,
+          scores: evaluation.scores,
+          ...(evaluation.perAnswer ? { perAnswer: evaluation.perAnswer } : {}),
+        },
         null,
         2
       )

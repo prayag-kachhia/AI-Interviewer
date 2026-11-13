@@ -91,13 +91,19 @@ export const EARLY_END_THRESHOLD_MINUTES = 15;
  * Returns the average of valid scores rounded to 1 decimal place, or null if no valid scores remain.
  */
 export function computeOverallScore(scores: unknown): number | null {
-  if (!Array.isArray(scores) || scores.length === 0) {
+  const items = Array.isArray(scores)
+    ? scores
+    : scores && typeof scores === 'object' && Array.isArray((scores as { scores?: unknown }).scores)
+      ? (scores as { scores: unknown[] }).scores
+      : null;
+
+  if (!items || items.length === 0) {
     return null;
   }
 
   const validScores: number[] = [];
 
-  for (const item of scores) {
+  for (const item of items) {
     if (typeof item === 'object' && item !== null && 'score' in item) {
       const val = (item as { score?: unknown }).score;
       if (typeof val === 'number' && Number.isFinite(val) && val >= 1 && val <= 5) {
