@@ -56,6 +56,10 @@ model Session {
   resumeId  String?
   resume    Resume?       @relation(fields: [resumeId], references: [id], onDelete: SetNull)
   role      String
+  company   String?
+  level     String? // entry | mid | senior
+  focus     String?
+  mode      String        @default("voice") // voice | typed
   status    SessionStatus @default(LIVE)
   startedAt DateTime      @default(now())
   endedAt   DateTime?

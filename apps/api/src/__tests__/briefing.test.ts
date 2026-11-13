@@ -141,6 +141,39 @@ describe('Briefing Service — briefingFor(session)', () => {
     expect(briefing).toContain('Project 1: Chat Engine: real-time WebSocket server');
   });
 
+  it("passes the session's focus, company and level to the briefing (P-7)", async () => {
+    const briefing = await briefingFor({
+      role: 'software-engineer',
+      resumeId: null,
+      userId: 'user-1',
+      focus: 'System design',
+      company: 'Stripe',
+      level: 'senior',
+    });
+
+    expect(briefing).toContain('PRIMARY FOCUS AREA:');
+    expect(briefing).toContain('"System design"');
+    expect(briefing).toContain('TARGET COMPANY / ORGANIZATION:');
+    expect(briefing).toContain('"Stripe"');
+    expect(briefing).toContain('TARGET SENIORITY LEVEL:');
+    expect(briefing).toContain('an engineer at the senior level');
+  });
+
+  it('leaves out focus, company and level when the session has none', async () => {
+    const briefing = await briefingFor({
+      role: 'software-engineer',
+      resumeId: null,
+      userId: 'user-1',
+      focus: null,
+      company: null,
+      level: null,
+    });
+
+    expect(briefing).not.toContain('PRIMARY FOCUS AREA:');
+    expect(briefing).not.toContain('TARGET COMPANY / ORGANIZATION:');
+    expect(briefing).not.toContain('TARGET SENIORITY LEVEL:');
+  });
+
   it('automatically queries recentQuestions and includes them in the briefing (FR-16)', async () => {
     const mockPastQuestions = [
       'Can you explain the virtual DOM?',
