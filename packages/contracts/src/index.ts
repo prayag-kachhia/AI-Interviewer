@@ -99,6 +99,7 @@ export const Session = z.object({
   focus: z.string().nullable().optional(),
   mode: InterviewMode.optional(),
   status: SessionStatus,
+  keep: z.boolean().optional(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   createdAt: z.string().optional(),

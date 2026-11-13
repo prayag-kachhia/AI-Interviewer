@@ -10,6 +10,7 @@ export async function purgeExpiredSessions(now: Date = new Date()) {
   return prisma.session.deleteMany({
     where: {
       status: 'ENDED',
+      keep: false,
       endedAt: {
         lt: cutoff,
       },

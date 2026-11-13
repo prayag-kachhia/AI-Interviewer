@@ -1,5 +1,5 @@
 // ResultsScreen.tsx
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import {
   RadarChart,
@@ -25,7 +25,12 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { cn } from "@/lib/utils";
-import { deleteSession, retryFeedback } from "../../lib/api";
+import {
+  deleteSession,
+  getSession,
+  retryFeedback,
+  updateSessionKeep,
+} from "../../lib/api";
 import { useFeedback, useTurns } from "./useFeedback";
 import type { TurnSpeaker } from "@interview/contracts";
 import "./ResultsScreen.css";
@@ -63,6 +68,39 @@ export function ResultsScreen() {
   const navigate = useNavigate();
   const { feedback, error: feedbackError, isLongWait } = useFeedback(sessionId, reloadKey);
   const { turns, isLoading, error } = useTurns(sessionId);
+  const [keep, setKeep] = useState(false);
+  const [keepLoading, setKeepLoading] = useState(true);
+  const [keepError, setKeepError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSession() {
+      try {
+        const response = await getSession(sessionId!);
+
+        if (!cancelled) {
+          setKeep(response.data?.keep ?? false);
+        }
+      } catch {
+        if (!cancelled) {
+          setKeepError("Unable to load interview protection status.");
+        }
+      } finally {
+        if (!cancelled) {
+          setKeepLoading(false);
+        }
+      }
+    }
+
+    if (sessionId) {
+      loadSession();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   const radarData = useMemo(() => {
     if (!feedback?.scores || feedback.scores.length === 0) return [];
@@ -96,6 +134,27 @@ export function ResultsScreen() {
     }
   };
 
+  const handleToggleKeep = async () => {
+    const nextKeep = !keep;
+
+    setKeepLoading(true);
+    setKeepError(null);
+
+    try {
+      const response = await updateSessionKeep(sessionId, nextKeep);
+
+      if (response.success) {
+        setKeep(response.data?.keep ?? nextKeep);
+      } else {
+        throw new Error(response.message || "Unable to update protection status.");
+      }
+    } catch {
+      setKeepError("Couldn't update interview protection. Please try again.");
+    } finally {
+      setKeepLoading(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!window.confirm("Are you sure you want to delete this interview? This action cannot be undone.")) return;
     setDeleting(true);
@@ -121,6 +180,29 @@ export function ResultsScreen() {
           </AlertDescription>
         </Alert>
         )}
+{keepError && (
+  <Alert variant="error" role="alert">
+    <AlertDescription>{keepError}</AlertDescription>
+  </Alert>
+)}
+
+<p className="text-sm text-muted-foreground">
+  Kept interviews are protected from automatic 30-day cleanup.
+</p>
+
+<Button
+  type="button"
+  variant="outline"
+  onClick={handleToggleKeep}
+  loading={keepLoading}
+  aria-pressed={keep}
+>
+  {keepLoading
+    ? "Updating…"
+    : keep
+      ? "Unkeep interview"
+      : "Keep interview"}
+</Button>
 
         {feedback?.status === "failed" && (
         <Alert variant="error" role="alert">

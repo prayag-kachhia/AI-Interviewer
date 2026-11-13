@@ -61,6 +61,7 @@ model Session {
   focus     String?
   mode      String        @default("voice") // voice | typed
   status    SessionStatus @default(LIVE)
+  keep      Boolean       @default(false)
   startedAt DateTime      @default(now())
   endedAt   DateTime?
   createdAt DateTime      @default(now())
