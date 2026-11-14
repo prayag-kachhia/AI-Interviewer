@@ -2,6 +2,11 @@ import { GoogleGenAI, Type, type Schema } from '@google/genai';
 import { z } from 'zod';
 import type { ImprovementPlan, Job, Prisma } from '../generated/prisma/client';
 import prisma from '../db';
+import {
+  isValidResourceId,
+  getResourcesByTopic,
+  normalizeTopic,
+} from '../data/resources';
 
 export const INSIGHT_TOPICS = [
   'DBMS',
@@ -26,6 +31,190 @@ export const InsightsOutputSchema = z.object({
   topics: z.array(TopicScoreSchema),
 });
 export type InsightsOutput = z.infer<typeof InsightsOutputSchema>;
+
+// V-4: Improvement roadmap schemas, types, and resource validation
+export const PlanActionSchema = z.object({
+  id: z.string(),
+  action: z.string().min(1),
+  resourceId: z.string().min(1),
+  completed: z.boolean().default(false),
+});
+export type PlanAction = z.infer<typeof PlanActionSchema>;
+
+export const TopicPlanSchema = z.object({
+  id: z.string().optional(),
+  topic: z.enum(INSIGHT_TOPICS),
+  score: z.number().int().min(1).max(5),
+  summary: z.string().optional(),
+  action: z.string().optional(),
+  resourceId: z.string().optional(),
+  actions: z.array(PlanActionSchema).default([]),
+});
+export type TopicPlan = z.infer<typeof TopicPlanSchema>;
+
+export const RoadmapItemSchema = z.object({
+  id: z.string(),
+  topic: z.enum(INSIGHT_TOPICS),
+  score: z.number().int().min(1).max(5),
+  action: z.string(),
+  resourceId: z.string(),
+  completed: z.boolean().default(false),
+});
+export type RoadmapItem = z.infer<typeof RoadmapItemSchema>;
+
+export class InvalidResourceIdError extends Error {
+  constructor(public readonly resourceId: string) {
+    super(`Unknown resource id '${resourceId}' is not a vetted learning resource`);
+    this.name = 'InvalidResourceIdError';
+  }
+}
+
+export function validateResourceId(resourceId: string): string {
+  if (!resourceId || !isValidResourceId(resourceId)) {
+    throw new InvalidResourceIdError(resourceId);
+  }
+  return resourceId;
+}
+
+export function validatePlanAction(action: {
+  id?: string;
+  action: string;
+  resourceId: string;
+  completed?: boolean;
+}): PlanAction {
+  if (!action.resourceId || !isValidResourceId(action.resourceId)) {
+    throw new InvalidResourceIdError(action.resourceId ?? 'undefined');
+  }
+  return {
+    id: action.id ?? `${action.resourceId}-action`,
+    action: action.action,
+    resourceId: action.resourceId,
+    completed: action.completed ?? false,
+  };
+}
+
+export function validateTopicPlan(item: {
+  id?: string;
+  topic: string;
+  score: number;
+  summary?: string;
+  action?: string;
+  resourceId?: string;
+  actions?: Array<{
+    id?: string;
+    action: string;
+    resourceId: string;
+    completed?: boolean;
+  }>;
+}): TopicPlan {
+  const normalizedTopic = normalizeTopic(item.topic);
+  if (!normalizedTopic) {
+    throw new Error(`Invalid topic: ${item.topic}`);
+  }
+  if (item.resourceId && !isValidResourceId(item.resourceId)) {
+    throw new InvalidResourceIdError(item.resourceId);
+  }
+  const validatedActions: PlanAction[] = [];
+  if (Array.isArray(item.actions) && item.actions.length > 0) {
+    for (const act of item.actions) {
+      validatedActions.push(validatePlanAction(act));
+    }
+  } else if (item.action && item.resourceId) {
+    validatedActions.push(
+      validatePlanAction({
+        id: item.id ?? `${item.resourceId}-action`,
+        action: item.action,
+        resourceId: item.resourceId,
+      })
+    );
+  }
+  return {
+    id: item.id,
+    topic: normalizedTopic as InsightTopic,
+    score: item.score,
+    summary: item.summary,
+    action: item.action ?? validatedActions[0]?.action,
+    resourceId: item.resourceId ?? validatedActions[0]?.resourceId,
+    actions: validatedActions,
+  };
+}
+
+export function validateImprovementPlanRoadmap(plan: unknown[]): TopicPlan[] {
+  if (!Array.isArray(plan)) {
+    throw new Error('Improvement plan roadmap must be an array');
+  }
+  return plan.map((item) => validateTopicPlan(item as any));
+}
+
+export const WEAKNESS_THRESHOLD = 3;
+
+export interface GeneratePlanOptions {
+  weaknessThreshold?: number;
+  maxActionsPerTopic?: number;
+}
+
+/**
+ * Generates an ordered plan of weak topics with concrete actions,
+ * citing only validated resource IDs from V-3 (apps/api/src/data/resources.ts).
+ * The plan is ordered strictly by weakness (lowest score first).
+ */
+export function generateImprovementPlan(
+  topics: TopicScore[],
+  options: GeneratePlanOptions = {}
+): TopicPlan[] {
+  const threshold = options.weaknessThreshold ?? WEAKNESS_THRESHOLD;
+  const maxActions = options.maxActionsPerTopic ?? 3;
+
+  // Filter weak topics only (scores <= threshold)
+  const weakTopics = topics.filter((t) => t.score <= threshold);
+
+  // Ordered by weakness: lowest score first (1, then 2, then 3).
+  // Ties broken alphabetically by topic name for deterministic output.
+  weakTopics.sort((a, b) => a.score - b.score || a.topic.localeCompare(b.topic));
+
+  return weakTopics.map((t) => {
+    const resources = getResourcesByTopic(t.topic).slice(0, maxActions);
+    const actions: PlanAction[] = resources.map((r) => {
+      validateResourceId(r.id);
+      return {
+        id: `${t.topic.toLowerCase()}-${r.id}`,
+        action: `Study ${r.title} to improve ${t.topic} foundations (${r.type}: ${r.description})`,
+        resourceId: r.id,
+        completed: false,
+      };
+    });
+
+    return {
+      id: `plan-${t.topic.toLowerCase()}`,
+      topic: t.topic,
+      score: t.score,
+      summary: t.summary,
+      action: actions[0]?.action,
+      resourceId: actions[0]?.resourceId,
+      actions,
+    };
+  });
+}
+
+/**
+ * Flattens a TopicPlan array into a flat list of RoadmapItem steps.
+ */
+export function flattenPlan(plan: TopicPlan[]): RoadmapItem[] {
+  const items: RoadmapItem[] = [];
+  for (const p of plan) {
+    for (const act of p.actions) {
+      items.push({
+        id: act.id,
+        topic: p.topic,
+        score: p.score,
+        action: act.action,
+        resourceId: act.resourceId,
+        completed: act.completed ?? false,
+      });
+    }
+  }
+  return items;
+}
 
 export interface GenerateResult {
   text: string;
@@ -219,9 +408,11 @@ export async function refreshInsightsForUser(
       create: {
         userId,
         topics: [],
+        plan: [],
       },
       update: {
         topics: [],
+        plan: [],
       },
     });
   }
@@ -248,15 +439,18 @@ export async function refreshInsightsForUser(
   }
 
   const parsed = InsightsOutputSchema.parse(json);
+  const plan = generateImprovementPlan(parsed.topics);
 
   return prisma.improvementPlan.upsert({
     where: { userId },
     create: {
       userId,
       topics: parsed.topics as unknown as Prisma.InputJsonValue,
+      plan: plan as unknown as Prisma.InputJsonValue,
     },
     update: {
       topics: parsed.topics as unknown as Prisma.InputJsonValue,
+      plan: plan as unknown as Prisma.InputJsonValue,
     },
   });
 }

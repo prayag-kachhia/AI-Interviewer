@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { AlertTriangle, PhoneOff } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { formatClock } from './useInterview';
 
 interface EndConfirmationDialogProps {
@@ -31,7 +32,7 @@ export const EndConfirmationDialog: React.FC<EndConfirmationDialogProps> = ({
   return (
     <dialog
       ref={dialogRef}
-      className="card end-dialog"
+      className="m-auto max-w-md w-[calc(100%-2rem)] p-6 rounded-xl border border-border bg-card text-card-foreground shadow-2xl backdrop:bg-black/60 backdrop:backdrop-blur-xs outline-none"
       aria-labelledby="end-dialog-title"
       aria-describedby="end-dialog-desc"
       onCancel={(e) => {
@@ -43,36 +44,36 @@ export const EndConfirmationDialog: React.FC<EndConfirmationDialogProps> = ({
       }}
     >
       {isOpen && (
-        <>
-          <div className="end-dialog-header">
-            <div className="stat-icon warning">
-              <AlertTriangle size={22} />
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="size-10 rounded-full bg-warning/15 text-warning flex items-center justify-center shrink-0">
+              <AlertTriangle className="size-5" />
             </div>
             <div>
-              <h3 id="end-dialog-title" style={{ margin: 0 }}>
+              <h3 id="end-dialog-title" className="font-display text-lg font-semibold text-foreground m-0">
                 End Interview Early?
               </h3>
-              <p style={{ margin: 0, fontSize: '0.85rem' }}>
-                Time remaining: <strong>{formatClock(remainingSeconds)}</strong>
+              <p className="text-xs text-muted-foreground m-0">
+                Time remaining: <strong className="font-mono text-foreground">{formatClock(remainingSeconds)}</strong>
               </p>
             </div>
           </div>
 
-          <p id="end-dialog-desc" style={{ margin: '1rem 0' }}>
+          <p id="end-dialog-desc" className="text-sm text-muted-foreground leading-relaxed m-0">
             Are you sure you want to end this interview? Your recorded transcript will be submitted
             immediately for feedback evaluation, and you cannot resume once ended.
           </p>
 
-          <div className="end-dialog-actions">
-            <button type="button" className="btn btn-outline" onClick={onClose}>
+          <div className="flex justify-end items-center gap-2.5 mt-2">
+            <Button type="button" variant="outline" onClick={onClose}>
               Continue Interview
-            </button>
-            <button type="button" className="btn btn-danger" onClick={onConfirm}>
-              <PhoneOff size={16} />
+            </Button>
+            <Button type="button" variant="destructive" onClick={onConfirm} className="gap-2">
+              <PhoneOff className="size-4" />
               Yes, End Interview
-            </button>
+            </Button>
           </div>
-        </>
+        </div>
       )}
     </dialog>
   );

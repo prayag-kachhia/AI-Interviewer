@@ -1,5 +1,7 @@
 import React from 'react';
 import { Timer, AlertTriangle } from 'lucide-react';
+import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { formatClock } from './useInterview';
 
 interface InterviewCountdownProps {
@@ -28,41 +30,83 @@ export const InterviewCountdown: React.FC<InterviewCountdownProps> = ({
           : 'Time Remaining';
 
   return (
-    <div
-      className={`card interview-countdown countdown-${variant}`}
+    <Card
+      className={cn(
+        'p-4.5 mb-6 gap-3',
+        variant === 'danger'
+          ? 'border-destructive/40 bg-destructive/5'
+          : variant === 'warning'
+            ? 'border-warning/40 bg-warning/5'
+            : 'border-border'
+      )}
       role="region"
       aria-label="Interview time remaining"
     >
-      <div className="interview-countdown-row">
-        <div className="interview-countdown-meta">
-          <div className={`stat-icon ${variant}`}>
-            {variant === 'primary' ? <Timer size={22} /> : <AlertTriangle size={22} />}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div
+            className={cn(
+              'size-10 rounded-full flex items-center justify-center shrink-0',
+              variant === 'danger'
+                ? 'bg-destructive/15 text-destructive'
+                : variant === 'warning'
+                  ? 'bg-warning/15 text-warning'
+                  : 'bg-primary/15 text-primary'
+            )}
+          >
+            {variant === 'primary' ? (
+              <Timer className="size-5" />
+            ) : (
+              <AlertTriangle className="size-5" />
+            )}
           </div>
           <div>
-            <div className="countdown-label">{statusLabel}</div>
-            <div className={`countdown-digits ${variant}`} role="timer">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {statusLabel}
+            </div>
+            <div
+              className={cn(
+                'text-xl font-bold font-mono tracking-tight countdown-digits',
+                variant,
+                variant === 'danger'
+                  ? 'text-destructive'
+                  : variant === 'warning'
+                    ? 'text-warning'
+                    : 'text-foreground'
+              )}
+              role="timer"
+            >
               {formatClock(remainingSeconds)}
             </div>
           </div>
         </div>
-        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+        <span className="text-xs text-muted-foreground font-mono">
           {timeLimitMin} min session
         </span>
       </div>
 
+      {/* Progress Bar */}
       <div
         role="progressbar"
         aria-valuenow={progressPercent}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={`Interview time elapsed: ${progressPercent}%`}
-        className="interview-progress"
+        className="w-full h-2 rounded-full bg-secondary overflow-hidden"
       >
         <div
-          className={`interview-progress-fill ${variant}`}
+          className={cn(
+            'interview-progress-fill h-full rounded-full transition-all duration-300',
+            variant,
+            variant === 'danger'
+              ? 'bg-destructive'
+              : variant === 'warning'
+                ? 'bg-warning'
+                : 'bg-primary'
+          )}
           style={{ width: `${progressPercent}%` }}
         />
       </div>
-    </div>
+    </Card>
   );
 };

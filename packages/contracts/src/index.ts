@@ -5,6 +5,8 @@ export const Role = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   description: z.string(),
+  // Areas the candidate can ask the interviewer to concentrate on. The briefing quotes them as-is.
+  focuses: z.array(z.string().min(1)),
 });
 export type Role = z.infer<typeof Role>;
 
@@ -19,18 +21,51 @@ export const ROLES: RoleList = [
     id: "software-engineer",
     label: "Software Engineer",
     description: "Full-stack architecture, system design, debugging, and engineering collaboration.",
+    focuses: ["System design", "Data structures and algorithms", "Debugging", "Frontend"],
   },
   {
     id: "data-analyst",
     label: "Data Analyst",
     description: "SQL & data pipelines, exploratory analysis, metrics validation, and stakeholder insights.",
+    focuses: ["SQL", "Statistics", "Data visualization", "Product metrics"],
   },
   {
     id: "backend-developer",
     label: "Backend Developer",
     description: "API design, database modeling, query optimization, and service reliability.",
+    focuses: ["API design", "Databases", "Caching", "Reliability"],
   },
 ];
+
+export const Level = z.enum(["entry", "mid", "senior"]);
+export type Level = z.infer<typeof Level>;
+
+export const InterviewMode = z.enum(["voice", "typed"]);
+export type InterviewMode = z.infer<typeof InterviewMode>;
+
+// What the candidate chose on the setup screen (POST /api/sessions).
+// The role itself is checked by the API; a focus must belong to the chosen role.
+export const CreateSessionInput = z
+  .object({
+    roleId: z.string().min(1, "required"),
+    focus: z.string().optional(),
+    // Free text that goes into the interviewer's briefing, so it is trimmed and capped.
+    company: z
+      .string()
+      .trim()
+      .max(100)
+      .optional()
+      .transform((c) => c || undefined),
+    level: Level.optional(),
+    mode: InterviewMode.default("voice"),
+  })
+  .superRefine((input, ctx) => {
+    const role = ROLES.find((r) => r.id === input.roleId);
+    if (input.focus !== undefined && role && !role.focuses.includes(input.focus)) {
+      ctx.addIssue({ code: "custom", path: ["focus"], message: `not a focus of ${role.label}` });
+    }
+  });
+export type CreateSessionInput = z.infer<typeof CreateSessionInput>;
 
 // Sessions and transcript turns. Dates travel as ISO strings.
 export const SessionStatus = z.enum(["LIVE", "ENDED"]);
@@ -59,6 +94,10 @@ export const Session = z.object({
   userId: z.string(),
   resumeId: z.string().nullable().optional(),
   role: z.string(),
+  company: z.string().nullable().optional(),
+  level: Level.nullable().optional(),
+  focus: z.string().nullable().optional(),
+  mode: InterviewMode.optional(),
   status: SessionStatus,
   startedAt: z.string(),
   endedAt: z.string().nullable(),
@@ -114,10 +153,40 @@ export const TopicScore = z.object({
 });
 export type TopicScore = z.infer<typeof TopicScore>;
 
+export const PlanAction = z.object({
+  id: z.string(),
+  action: z.string(),
+  resourceId: z.string(),
+  completed: z.boolean().default(false),
+});
+export type PlanAction = z.infer<typeof PlanAction>;
+
+export const TopicPlan = z.object({
+  id: z.string().optional(),
+  topic: InsightTopic,
+  score: z.number().int().min(1).max(5),
+  summary: z.string().optional(),
+  action: z.string().optional(),
+  resourceId: z.string().optional(),
+  actions: z.array(PlanAction).default([]),
+});
+export type TopicPlan = z.infer<typeof TopicPlan>;
+
+export const RoadmapItem = z.object({
+  id: z.string(),
+  topic: InsightTopic,
+  score: z.number().int().min(1).max(5),
+  action: z.string(),
+  resourceId: z.string(),
+  completed: z.boolean().default(false),
+});
+export type RoadmapItem = z.infer<typeof RoadmapItem>;
+
 export const ImprovementPlan = z.object({
   id: z.string().optional(),
   userId: z.string(),
   topics: z.array(TopicScore),
+  plan: z.array(TopicPlan).default([]),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 });

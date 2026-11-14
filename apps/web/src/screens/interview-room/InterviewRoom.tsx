@@ -14,6 +14,10 @@ import { TypedAnswerBox } from './TypedAnswerBox';
 import { TranscriptPanel } from './TranscriptPanel';
 import { InterviewCountdown } from './InterviewCountdown';
 import { EndConfirmationDialog } from './EndConfirmationDialog';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import './InterviewRoom.css';
 
 export const InterviewRoom: React.FC = () => {
@@ -63,163 +67,141 @@ export const InterviewRoom: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="container page-wrapper" style={{ textAlign: 'center', paddingTop: '10rem' }}>
-        <Loader2
-          size={40}
-          color="var(--primary-color)"
-          style={{ animation: 'spin 1s linear infinite', marginBottom: '1rem' }}
-        />
-        <p style={{ fontWeight: 500 }}>Connecting to your interview room...</p>
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="size-10 text-primary animate-spin" />
+        <p className="text-sm font-medium text-muted-foreground">
+          Connecting to your interview room...
+        </p>
       </div>
     );
   }
 
   if (notFound) {
     return (
-      <div className="container page-wrapper" style={{ maxWidth: '600px', textAlign: 'center' }}>
-        <div className="card">
-          <div className="alert alert-error" style={{ justifyContent: 'center' }}>
-            <AlertCircle size={20} />
-            <span>Interview session not found or inaccessible.</span>
-          </div>
-          <p style={{ marginBottom: '1.75rem' }}>
+      <div className="max-w-md mx-auto my-12 px-4">
+        <Card className="p-6 text-center flex flex-col items-center gap-4">
+          <Alert variant="error" className="text-left">
+            <AlertCircle className="size-4" />
+            <AlertDescription>
+              Interview session not found or inaccessible.
+            </AlertDescription>
+          </Alert>
+          <p className="text-sm text-muted-foreground">
             This session may not exist or belongs to a different candidate account.
           </p>
-          <Link className="btn btn-primary" to="/new-interview">
-            Start a New Interview
-          </Link>
-        </div>
+          <Button asChild className="w-full">
+            <Link to="/new-interview">Start a New Interview</Link>
+          </Button>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="container page-wrapper interview-room-container">
+    <div className="max-w-4xl mx-auto px-4 py-6 flex flex-col gap-5">
       {/* Top Header Bar */}
-      <div className="interview-header">
-        <div>
-          <div className="interview-title-row">
-            <h2 className="interview-title">AI Interview — {roleLabel}</h2>
-            <span
-              className={`interview-badge ${
-                status === 'LIVE' ? 'interview-badge-live' : 'interview-badge-ended'
-              }`}
-            >
-              <span
-                className={`interview-badge-dot ${
-                  status === 'LIVE' ? 'interview-badge-dot-live' : 'interview-badge-dot-ended'
-                }`}
-              />
+      <div className="flex flex-wrap justify-between items-center gap-4 pb-2 border-b border-border/60">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="font-display text-2xl font-bold tracking-tight text-foreground capitalize m-0">
+              AI Interview — {roleLabel}
+            </h2>
+            <Badge variant={status === 'LIVE' ? 'live' : 'ended'}>
               {status === 'LIVE' ? `LIVE • ${formatClock(elapsed)}` : 'ENDED'}
-            </span>
+            </Badge>
           </div>
-          <p className="interview-session-info">
-            Session ID: <code>{sessionId}</code> • {turns.length} transcript{' '}
+          <p className="text-xs text-muted-foreground m-0">
+            Session ID: <code className="font-mono bg-secondary px-1.5 py-0.5 rounded text-foreground">{sessionId}</code> • {turns.length} transcript{' '}
             {turns.length === 1 ? 'turn' : 'turns'} recorded
           </p>
         </div>
 
         {status === 'LIVE' ? (
-          <button
+          <Button
             type="button"
-            className="btn"
+            variant="destructive"
             onClick={() => setIsEndDialogOpen(true)}
             disabled={ending}
-            style={{
-              backgroundColor: 'var(--error-color)',
-              color: '#ffffff',
-              padding: '0.65rem 1.35rem',
-            }}
+            loading={ending}
+            className="gap-2"
           >
-            {ending ? (
-              <>
-                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-                Ending Session...
-              </>
-            ) : (
-              <>
-                <PhoneOff size={18} />
-                End Interview
-              </>
-            )}
-          </button>
+            <PhoneOff className="size-4" />
+            End Interview
+          </Button>
         ) : (
-          <button
+          <Button
             type="button"
-            className="btn btn-outline"
+            variant="outline"
             onClick={() => navigate('/dashboard')}
-            style={{ padding: '0.6rem 1.2rem' }}
+            className="gap-2"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft className="size-4" />
             Back to Dashboard
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Error & Warning Banners */}
       {error && (
-        <div className="alert alert-error" role="alert" style={{ marginBottom: '1.25rem' }}>
-          <AlertCircle size={20} />
-          <span>{error}</span>
-        </div>
+        <Alert variant="error">
+          <AlertCircle className="size-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {isReconnecting && (
-        <div
-          className="alert alert-warning"
-          role="alert"
-          style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}
-        >
-          <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
-          <span>Reconnecting… Please hold on.</span>
-        </div>
+        <Alert variant="warning">
+          <Loader2 className="size-4 animate-spin" />
+          <AlertDescription>Reconnecting… Please hold on.</AlertDescription>
+        </Alert>
       )}
 
       {voiceWarning && status === 'LIVE' && !isReconnecting && (
-        <div className="alert alert-info" style={{ marginBottom: '1.25rem' }}>
-          <AlertCircle size={20} />
-          <span>{voiceWarning}</span>
-        </div>
+        <Alert variant="info">
+          <AlertCircle className="size-4" />
+          <AlertDescription>{voiceWarning}</AlertDescription>
+        </Alert>
       )}
 
       {/* Ended Confirmation Banner */}
       {status === 'ENDED' && (
-        <div className="card" style={{ marginBottom: '1.5rem', padding: '2rem', borderColor: 'var(--success-color)' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-            <div className="stat-icon success">
-              <CheckCircle2 size={28} />
+        <Card className="p-6 border-success/40 bg-success/5 gap-0">
+          <div className="flex items-start gap-4">
+            <div className="size-10 rounded-full bg-success/15 text-success flex items-center justify-center shrink-0">
+              <CheckCircle2 className="size-6" />
             </div>
-            <div style={{ flexGrow: 1 }}>
-              <h3 style={{ marginBottom: '0.35rem', color: 'var(--text-main)' }}>
+            <div className="flex-1 flex flex-col gap-2">
+              <h3 className="font-display text-lg font-semibold text-foreground m-0">
                 Interview Ended — Queued for Feedback Evaluation
               </h3>
-              <p style={{ marginBottom: '1rem', fontSize: '0.95rem' }}>
-                Your session has been marked <strong>ENDED</strong> and a <code>session.ended</code> job has been
+              <p className="text-sm text-muted-foreground leading-relaxed m-0">
+                Your session has been marked <strong>ENDED</strong> and a{' '}
+                <code className="font-mono text-xs bg-muted px-1 rounded">session.ended</code> job has been
                 recorded in the database for the Feedback module to evaluate your transcript.
               </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <Link className="btn btn-primary" to="/new-interview">
-                  Practice Another Role
-                </Link>
-                <Link className="btn btn-outline" to="/dashboard">
-                  Return to Dashboard
-                </Link>
+              <div className="flex flex-wrap gap-2.5 mt-2">
+                <Button asChild size="sm">
+                  <Link to="/new-interview">Practice Another Role</Link>
+                </Button>
+                <Button variant="outline" asChild size="sm">
+                  <Link to="/dashboard">Return to Dashboard</Link>
+                </Button>
               </div>
               {endedAt && (
-                <p style={{ marginTop: '0.85rem', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                <p className="text-xs text-muted-foreground mt-1">
                   Ended at {new Date(endedAt).toLocaleTimeString()}
                 </p>
               )}
             </div>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Primary Spoken Audio Studio Stage */}
       {status === 'LIVE' && (
         <>
           <InterviewCountdown elapsed={elapsed} timeLimitMin={timeLimitMin} />
-          <div className="interview-stage-grid">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-2">
             <InterviewerCard
               isAiSpeaking={isAiSpeaking}
               interviewComplete={interviewComplete}

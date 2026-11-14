@@ -7,7 +7,16 @@ import {
   refreshInsightsForUser,
   handleInsightsRefresh,
   getImprovementPlan,
+  generateImprovementPlan,
+  validateResourceId,
+  validatePlanAction,
+  validateTopicPlan,
+  validateImprovementPlanRoadmap,
+  flattenPlan,
+  InvalidResourceIdError,
+  WEAKNESS_THRESHOLD,
 } from '../services/insights.service';
+import { isValidResourceId, LEARNING_RESOURCES } from '../data/resources';
 import { handleJob } from '../worker';
 import * as feedbackService from '../services/feedback.service';
 
@@ -206,9 +215,11 @@ describe('V-2 · Topic weaknesses from your interviews (Issue #181)', () => {
         create: {
           userId: USER_ID,
           topics: MOCK_GEMINI_OUTPUT.topics,
+          plan: expect.any(Array),
         },
         update: {
           topics: MOCK_GEMINI_OUTPUT.topics,
+          plan: expect.any(Array),
         },
       });
 
@@ -297,8 +308,8 @@ describe('V-2 · Topic weaknesses from your interviews (Issue #181)', () => {
       expect(mockGenerate).not.toHaveBeenCalled();
       expect(prisma.improvementPlan.upsert).toHaveBeenCalledWith({
         where: { userId: USER_ID },
-        create: { userId: USER_ID, topics: [] },
-        update: { topics: [] },
+        create: { userId: USER_ID, topics: [], plan: [] },
+        update: { topics: [], plan: [] },
       });
     });
   });
@@ -424,6 +435,240 @@ describe('V-2 · Topic weaknesses from your interviews (Issue #181)', () => {
         where: { userId: USER_ID },
       });
       expect(result).toEqual(mockPlan);
+    });
+  });
+
+  describe('V-4 · Improvement roadmap (Issue #183)', () => {
+    const SAMPLE_TOPICS = [
+      { topic: 'System Design' as const, score: 5, summary: 'Mastered distributed architectures.' },
+      { topic: 'DBMS' as const, score: 2, summary: 'Struggled with transaction isolation levels.' },
+      { topic: 'OS' as const, score: 1, summary: 'Major conceptual gaps in virtual memory.' },
+      { topic: 'SQL' as const, score: 3, summary: 'Understands basic queries but weak on joins.' },
+      { topic: 'OOP' as const, score: 4, summary: 'Good grasp of SOLID principles.' },
+    ];
+
+    describe('Plan generation and weakness ordering', () => {
+      it('generates an ordered plan sorted strictly by weakness (lowest score first)', () => {
+        const plan = generateImprovementPlan(SAMPLE_TOPICS);
+
+        // Weak topics: OS (1), DBMS (2), SQL (3). Strong topics (OOP: 4, System Design: 5) are excluded.
+        expect(plan.map((p) => p.topic)).toEqual(['OS', 'DBMS', 'SQL']);
+        expect(plan[0].score).toBe(1);
+        expect(plan[1].score).toBe(2);
+        expect(plan[2].score).toBe(3);
+
+        // Verification of weakness order: scores must be monotonically non-decreasing
+        for (let i = 0; i < plan.length - 1; i++) {
+          expect(plan[i].score).toBeLessThanOrEqual(plan[i + 1].score);
+        }
+      });
+
+      it('excludes strong topics (score >= 4) from the weakness roadmap', () => {
+        const plan = generateImprovementPlan(SAMPLE_TOPICS);
+
+        const includedTopics = plan.map((p) => p.topic);
+        expect(includedTopics).not.toContain('OOP');
+        expect(includedTopics).not.toContain('System Design');
+      });
+
+      it('returns an empty plan when all evaluated topics are strong', () => {
+        const strongTopics = [
+          { topic: 'OOP' as const, score: 4, summary: 'Solid design' },
+          { topic: 'CN' as const, score: 5, summary: 'Networking expert' },
+        ];
+
+        const plan = generateImprovementPlan(strongTopics);
+        expect(plan).toEqual([]);
+      });
+
+      it('breaks score ties deterministically by topic name', () => {
+        const tiedTopics = [
+          { topic: 'SQL' as const, score: 2 },
+          { topic: 'DBMS' as const, score: 2 },
+          { topic: 'CN' as const, score: 2 },
+        ];
+
+        const plan = generateImprovementPlan(tiedTopics);
+        expect(plan.map((p) => p.topic)).toEqual(['CN', 'DBMS', 'SQL']);
+      });
+
+      it('respects a custom weaknessThreshold option', () => {
+        // With threshold = 1, only OS (score 1) should be in the plan
+        const strictPlan = generateImprovementPlan(SAMPLE_TOPICS, { weaknessThreshold: 1 });
+        expect(strictPlan.map((p) => p.topic)).toEqual(['OS']);
+
+        // With threshold = 4, OOP (score 4) should also be included
+        const broadPlan = generateImprovementPlan(SAMPLE_TOPICS, { weaknessThreshold: 4 });
+        expect(broadPlan.map((p) => p.topic)).toEqual(['OS', 'DBMS', 'SQL', 'OOP']);
+      });
+
+      it('limits actions per topic according to maxActionsPerTopic option', () => {
+        const singleActionPlan = generateImprovementPlan(SAMPLE_TOPICS, { maxActionsPerTopic: 1 });
+        expect(singleActionPlan[0].actions).toHaveLength(1);
+
+        const defaultPlan = generateImprovementPlan(SAMPLE_TOPICS);
+        expect(defaultPlan[0].actions.length).toBeGreaterThan(1);
+        expect(defaultPlan[0].actions.length).toBeLessThanOrEqual(3);
+      });
+    });
+
+    describe('Learning resource citation and validation (V-3)', () => {
+      it('cites only valid resource IDs from V-3 (apps/api/src/data/resources.ts)', () => {
+        const plan = generateImprovementPlan(SAMPLE_TOPICS);
+
+        for (const topicPlan of plan) {
+          expect(topicPlan.actions.length).toBeGreaterThan(0);
+          for (const action of topicPlan.actions) {
+            expect(isValidResourceId(action.resourceId)).toBe(true);
+            expect(action.action).toBeTruthy();
+            expect(action.completed).toBe(false);
+          }
+        }
+      });
+
+      it('rejects an unknown resource id via validateResourceId', () => {
+        expect(() => validateResourceId('unknown-resource-xyz')).toThrow(InvalidResourceIdError);
+        expect(() => validateResourceId('invalid-dbms-link')).toThrow(
+          "Unknown resource id 'invalid-dbms-link' is not a vetted learning resource"
+        );
+      });
+
+      it('accepts a valid resource id via validateResourceId', () => {
+        expect(validateResourceId('dbms-acid-transactions')).toBe('dbms-acid-transactions');
+      });
+
+      it('rejects unknown resource ids in plan actions via validatePlanAction', () => {
+        expect(() =>
+          validatePlanAction({
+            action: 'Read unofficial blog',
+            resourceId: 'random-unvetted-id',
+          })
+        ).toThrow(InvalidResourceIdError);
+      });
+
+      it('rejects topic plan containing unknown resource ids via validateTopicPlan', () => {
+        expect(() =>
+          validateTopicPlan({
+            topic: 'DBMS',
+            score: 2,
+            resourceId: 'non-existent-resource',
+          })
+        ).toThrow(InvalidResourceIdError);
+
+        expect(() =>
+          validateTopicPlan({
+            topic: 'OS',
+            score: 1,
+            actions: [
+              {
+                action: 'Valid action',
+                resourceId: 'os-three-easy-pieces',
+              },
+              {
+                action: 'Invalid action',
+                resourceId: 'fake-os-doc',
+              },
+            ],
+          })
+        ).toThrow(InvalidResourceIdError);
+      });
+
+      it('rejects improvement plan roadmap containing unknown resource ids via validateImprovementPlanRoadmap', () => {
+        const invalidRoadmap = [
+          {
+            topic: 'SQL',
+            score: 2,
+            actions: [{ action: 'Do SQL exercises', resourceId: 'sql-queries-joins' }],
+          },
+          {
+            topic: 'CN',
+            score: 1,
+            actions: [{ action: 'Invalid', resourceId: 'hallucinated-cn-resource' }],
+          },
+        ];
+
+        expect(() => validateImprovementPlanRoadmap(invalidRoadmap)).toThrow(
+          InvalidResourceIdError
+        );
+      });
+
+      it('accepts and normalizes valid topic plans with curated resource IDs', () => {
+        const validRoadmap = [
+          {
+            topic: 'DBMS',
+            score: 2,
+            actions: [
+              {
+                id: 'act-1',
+                action: 'Review ACID properties',
+                resourceId: 'dbms-acid-transactions',
+              },
+            ],
+          },
+        ];
+
+        const validated = validateImprovementPlanRoadmap(validRoadmap);
+        expect(validated).toHaveLength(1);
+        expect(validated[0].topic).toBe('DBMS');
+        expect(validated[0].actions[0].resourceId).toBe('dbms-acid-transactions');
+      });
+    });
+
+    describe('Flattening and plan structure', () => {
+      it('flattens a nested TopicPlan into individual RoadmapItems', () => {
+        const plan = generateImprovementPlan(SAMPLE_TOPICS);
+        const flat = flattenPlan(plan);
+
+        expect(flat.length).toBeGreaterThan(0);
+        expect(flat[0]).toHaveProperty('id');
+        expect(flat[0]).toHaveProperty('topic');
+        expect(flat[0]).toHaveProperty('score');
+        expect(flat[0]).toHaveProperty('action');
+        expect(flat[0]).toHaveProperty('resourceId');
+        expect(flat[0]).toHaveProperty('completed', false);
+        expect(isValidResourceId(flat[0].resourceId)).toBe(true);
+      });
+    });
+
+    describe('Integration with refreshInsightsForUser', () => {
+      it('generates and persists the roadmap plan along with topics in ImprovementPlan', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(MOCK_GEMINI_OUTPUT));
+        const result: any = await refreshInsightsForUser(USER_ID, { generate: mockGenerate });
+
+        expect(prisma.improvementPlan.upsert).toHaveBeenCalledWith({
+          where: { userId: USER_ID },
+          create: {
+            userId: USER_ID,
+            topics: MOCK_GEMINI_OUTPUT.topics,
+            plan: expect.any(Array),
+          },
+          update: {
+            topics: MOCK_GEMINI_OUTPUT.topics,
+            plan: expect.any(Array),
+          },
+        });
+
+        // The persisted plan must be ordered by weakness
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+        expect(savedPlan.length).toBeGreaterThan(0);
+        expect(savedPlan[0].topic).toBe('DBMS'); // score 2 is weakest in MOCK_GEMINI_OUTPUT
+        expect(savedPlan[0].score).toBe(2);
+
+        // Every action in the saved plan cites valid resource IDs from V-3
+        for (const item of savedPlan) {
+          for (const act of item.actions) {
+            expect(isValidResourceId(act.resourceId)).toBe(true);
+          }
+        }
+      });
     });
   });
 });

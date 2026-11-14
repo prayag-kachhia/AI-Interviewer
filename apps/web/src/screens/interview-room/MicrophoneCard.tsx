@@ -1,5 +1,9 @@
 import React from 'react';
 import { Mic, MicOff, Check } from 'lucide-react';
+import { Card, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface MicrophoneCardProps {
   isMuted: boolean;
@@ -27,124 +31,132 @@ export const MicrophoneCard: React.FC<MicrophoneCardProps> = ({
   onFinishSpeaking,
 }) => {
   return (
-    <div
-      className="card stage-card"
-      style={{
-        border: `2px solid ${
-          isCandidateSpeaking
-            ? 'var(--success-color)'
-            : isListening
-              ? 'var(--primary-color)'
-              : 'var(--border-color)'
-        }`,
-      }}
+    <Card
+      className={cn(
+        'p-6 flex flex-col items-center text-center transition-all duration-200 gap-4',
+        isCandidateSpeaking
+          ? 'border-success ring-2 ring-success/20 shadow-md'
+          : isListening
+            ? 'border-primary ring-2 ring-primary/20 shadow-md'
+            : 'border-border'
+      )}
     >
-      <div className="stage-avatar-wrapper">
-        {(isListening || isCandidateSpeaking) && (
+      {/* Microphone Avatar & Pulse Ring */}
+      <div className="relative size-24 flex items-center justify-center">
+        {(isListening || isCandidateSpeaking) && !isMuted && (
           <div
-            className="stage-pulse-ring"
+            className={cn(
+              'absolute inset-0 rounded-full transition-transform duration-100',
+              isCandidateSpeaking
+                ? 'bg-success/20 animate-pulse'
+                : 'bg-primary/20 animate-pulse'
+            )}
             style={{
-              background: isCandidateSpeaking ? 'var(--success-bg)' : 'var(--primary-light)',
-              transform: `scale(${1 + audioLevel * 0.35})`,
-              transition: 'transform 0.1s ease-out',
+              transform: `scale(${1 + Math.min(audioLevel * 0.4, 0.4)})`,
             }}
           />
         )}
         <div
-          className="stage-avatar-circle"
-          style={{
-            background: isMuted
-              ? 'var(--border-color)'
+          className={cn(
+            'relative size-18 rounded-full flex items-center justify-center transition-colors duration-200 shadow-sm',
+            isMuted
+              ? 'bg-muted text-muted-foreground'
               : isCandidateSpeaking
-                ? 'var(--success-color)'
+                ? 'bg-success text-white'
                 : isListening
-                  ? 'var(--primary-color)'
-                  : 'var(--primary-light)',
-            color: isMuted
-              ? 'var(--text-muted)'
-              : isCandidateSpeaking || isListening
-                ? '#ffffff'
-                : 'var(--primary-color)',
-          }}
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-secondary text-primary'
+          )}
         >
-          {isMuted ? <MicOff size={32} /> : <Mic size={32} />}
+          {isMuted ? <MicOff className="size-8" /> : <Mic className="size-8" />}
         </div>
       </div>
 
-      <div
-        className="stage-status-label"
-        style={{
-          color: isMuted
-            ? 'var(--error-color)'
-            : isCandidateSpeaking
-              ? 'var(--success-color)'
-              : isListening
-                ? 'var(--primary-color)'
-                : 'var(--text-muted)',
-        }}
+      {/* Status Badge */}
+      <Badge
+        variant={
+          savingTurn
+            ? 'pending'
+            : isMuted
+              ? 'error'
+              : isCandidateSpeaking
+                ? 'success'
+                : isListening
+                  ? 'live'
+                  : 'outline'
+        }
       >
         {savingTurn
-          ? '⏳ Storing transcript turn...'
+          ? 'Saving transcript...'
           : isMuted
-            ? '🔇 Microphone Muted'
+            ? 'Microphone Muted'
             : isCandidateSpeaking
-              ? '🗣️ Candidate is speaking...'
+              ? 'Candidate Speaking'
               : isListening
-                ? '🎤 Listening for your answer...'
-                : 'Waiting for AI question to finish'}
+                ? 'Listening for your answer...'
+                : 'Waiting for AI'}
+      </Badge>
+
+      <CardTitle className="text-lg font-semibold text-foreground">
+        Your Microphone
+      </CardTitle>
+
+      {/* Spoken Answer Bubble */}
+      <div className="w-full rounded-xl bg-secondary/60 dark:bg-secondary/40 border border-border/70 p-4 text-center text-sm md:text-base leading-relaxed text-foreground min-h-[4.5rem] flex items-center justify-center">
+        <p
+          className={cn(
+            liveCandidateSpeech
+              ? 'font-normal text-foreground'
+              : 'italic text-muted-foreground text-xs md:text-sm'
+          )}
+        >
+          {liveCandidateSpeech
+            ? `"${liveCandidateSpeech}"`
+            : interviewComplete
+              ? 'You have completed all questions for this session. Click End Interview when ready.'
+              : isAiSpeaking
+                ? 'Listen to the interviewer, then speak your answer clearly.'
+                : 'Speak naturally into your microphone. Your answer will be transcribed and saved automatically.'}
+        </p>
       </div>
 
-      <h3 className="stage-heading">Your Microphone</h3>
-
-      <p
-        className="stage-speech-bubble"
-        style={{
-          color: liveCandidateSpeech ? 'var(--text-main)' : 'var(--text-muted)',
-          fontStyle: liveCandidateSpeech ? 'normal' : 'italic',
-        }}
-      >
-        {liveCandidateSpeech
-          ? `"${liveCandidateSpeech}"`
-          : interviewComplete
-            ? 'You have completed all questions for this session. Click End Interview above when ready.'
-            : isAiSpeaking
-              ? 'Listen to the interviewer, then speak your answer clearly.'
-              : 'Speak naturally into your microphone. Your spoken answer will be transcribed and saved automatically.'}
-      </p>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.65rem', justifyContent: 'center' }}>
-        <button
+      {/* Microphone Controls */}
+      <div className="flex flex-wrap items-center justify-center gap-2 mt-auto">
+        <Button
           type="button"
-          className="btn btn-outline"
+          variant="outline"
+          size="sm"
           onClick={onToggleMute}
-          style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+          className="gap-2"
         >
           {isMuted ? (
             <>
-              <Mic size={16} />
+              <Mic className="size-3.5" />
               Unmute Mic
             </>
           ) : (
             <>
-              <MicOff size={16} />
+              <MicOff className="size-3.5" />
               Mute Mic
             </>
           )}
-        </button>
+        </Button>
 
         {liveCandidateSpeech && (
-          <button
+          <Button
             type="button"
-            className="btn btn-primary"
+            variant="default"
+            size="sm"
             onClick={onFinishSpeaking}
             disabled={savingTurn}
-            style={{ padding: '0.5rem 1.1rem', fontSize: '0.875rem' }}
+            loading={savingTurn}
+            className="gap-1.5 bg-success hover:bg-success/90 text-white"
           >
-            <Check size={16} />
+            <Check className="size-3.5" />
             Done Speaking
-          </button>
+          </Button>
         )}
       </div>
-    </div>
+    </Card>
   );
 };

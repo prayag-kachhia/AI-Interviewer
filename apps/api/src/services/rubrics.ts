@@ -26,6 +26,15 @@ export const DIFFICULTY_AWARE_PRINCIPLE =
 export const TECHNOLOGY_INDEPENDENCE_PRINCIPLE =
   'Any valid technology, programming language, framework, library, or technical approach earns full credit when the underlying concept, correctness, and reasoning satisfy the criteria; evaluate the quality and depth of the solution rather than the specific choice of technology.';
 
+/**
+ * Core principle for separating technical depth from communication (S-5, FR-21, NFR-19).
+ * Technical categories are judged strictly on content, correctness, and reasoning.
+ * Pauses, fillers ("um", "uh", "like", "you know"), repetition, and hesitation affect
+ * Communication only, never technical scores. Every comment must state why its score was given.
+ */
+export const SCORE_SEPARATION_PRINCIPLE =
+  'Judge technical depth on content only; pauses, verbal fillers (such as "um", "uh", "like", "you know"), repetition, and hesitation affect Communication only, never technical scores. If the technical solution, algorithm, design, or reasoning is correct and sound, technical categories must receive high scores (4-5) regardless of hesitation or filler words. Every score comment must explicitly explain why its score was given.';
+
 export class UnknownRoleError extends Error {
   constructor(roleId: string) {
     super(`Unsupported or unknown role: "${roleId}"`);

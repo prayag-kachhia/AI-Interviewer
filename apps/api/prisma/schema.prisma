@@ -56,6 +56,10 @@ model Session {
   resumeId  String?
   resume    Resume?       @relation(fields: [resumeId], references: [id], onDelete: SetNull)
   role      String
+  company   String?
+  level     String? // entry | mid | senior
+  focus     String?
+  mode      String        @default("voice") // voice | typed
   status    SessionStatus @default(LIVE)
   startedAt DateTime      @default(now())
   endedAt   DateTime?
@@ -130,6 +134,7 @@ model ImprovementPlan {
   userId    String   @unique
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   topics    Json     @default("[]")
+  plan      Json     @default("[]")
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 

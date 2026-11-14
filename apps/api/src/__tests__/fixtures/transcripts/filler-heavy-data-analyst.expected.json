@@ -1,0 +1,24 @@
+{
+  "role": "data-analyst",
+  "scores": [
+    {
+      "category": "SQL & Analytical Reasoning",
+      "min": 4,
+      "max": 5,
+      "reason": "Optimal window function syntax with explicit ROWS BETWEEN distinction and correct ROW_NUMBER() deduplication; technical SQL depth is preserved despite verbal disfluency."
+    },
+    {
+      "category": "Data Interpretation & Business Insights",
+      "min": 4,
+      "max": 5,
+      "reason": "Systematic root-cause metric decomposition (orders × AOV), multidimensional segmentation, and YoY seasonality checks; analytical depth and business interpretation are evaluated strictly on content, unaffected by verbal hesitation and fillers."
+    },
+    {
+      "category": "Statistical Understanding & Data Quality",
+      "min": 4,
+      "max": 5,
+      "reason": "Comprehensive understanding of data quality invariants, deduplication edge cases, and layered validation; technical accuracy is judged on content alone."
+    }
+  ]
+}
+

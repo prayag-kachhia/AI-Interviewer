@@ -63,9 +63,80 @@ test("given feedback is ready, then it is displayed", async () => {
 
   renderResults();
   expect(await screen.findByText("Great job.")).toBeInTheDocument();
-  expect(screen.getByText("Strengths: Clear communication")).toBeInTheDocument();
-  expect(screen.getByText("To improve: Keep it up")).toBeInTheDocument();
-  expect(screen.getByText("“I would decouple the notification requests”")).toBeInTheDocument();
+  expect(screen.getByText("Communication:")).toBeInTheDocument();
+  expect(screen.getByText("Score: 5/5")).toBeInTheDocument();
+  expect(screen.getByText("Excellent.")).toBeInTheDocument();
+  expect(screen.getByText("Strengths")).toBeInTheDocument();
+  expect(screen.getByText("Clear communication")).toBeInTheDocument();
+  expect(screen.getByText("To improve")).toBeInTheDocument();
+  expect(screen.getByText("Keep it up")).toBeInTheDocument();
+  const quote = screen.getByText("“I would decouple the notification requests”");
+  expect(quote).toBeInTheDocument();
+  expect(quote.closest("blockquote")).toBeInTheDocument();
+});
+
+test("given ready feedback with rubric categories, then radar chart and accessible table are rendered", async () => {
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Solid interview performance.",
+    scores: [
+      { category: "Communication", score: 4, comment: "Good", strengths: [], improvements: [], quote: "" },
+      { category: "System Design", score: 5, comment: "Great", strengths: [], improvements: [], quote: "" },
+      { category: "Problem Solving", score: 3, comment: "Fair", strengths: [], improvements: [], quote: "" },
+    ],
+  });
+
+  renderResults();
+
+  const chartImg = await screen.findByRole("img", {
+    name: "Radar chart showing rubric scores on a 1 to 5 scale",
+  });
+  expect(chartImg).toBeInTheDocument();
+
+  expect(screen.getByRole("table", { hidden: true })).toBeInTheDocument();
+  expect(screen.getByText("Communication", { selector: "td" })).toBeInTheDocument();
+  expect(screen.getByText("System Design", { selector: "td" })).toBeInTheDocument();
+  expect(screen.getByText("Problem Solving", { selector: "td" })).toBeInTheDocument();
+});
+
+test("given ready feedback with empty scores, renders empty state safely without crashing", async () => {
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Interview completed.",
+    scores: [],
+  });
+
+  renderResults();
+  expect(await screen.findByText("Interview completed.")).toBeInTheDocument();
+  expect(screen.getByText("No rubric scores available for this session.")).toBeInTheDocument();
+});
+
+test("category cards have sequential reveal indices and reduced-motion utility classes", async () => {
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Good.",
+    scores: [
+      { category: "Leadership", score: 4, comment: "Nice", strengths: [], improvements: [], quote: "" },
+      { category: "Coding", score: 5, comment: "Fast", strengths: [], improvements: [], quote: "" },
+    ],
+  });
+
+  renderResults();
+  expect(await screen.findByText("Leadership:")).toBeInTheDocument();
+
+  const card1 = screen.getByText("Leadership:").closest("[data-reveal-index]");
+  const card2 = screen.getByText("Coding:").closest("[data-reveal-index]");
+
+  expect(card1).toHaveAttribute("data-reveal-index", "0");
+  expect(card1).toHaveClass("category-card-reveal");
+  expect(card1).toHaveClass("motion-reduce:animate-none");
+
+  expect(card2).toHaveAttribute("data-reveal-index", "1");
+  expect(card2).toHaveClass("category-card-reveal");
+  expect(card2).toHaveClass("motion-reduce:animate-none");
 });
 
 test("given feedback failed, when I press Try again, then it goes back to preparing and then shows the result", async () => {
@@ -342,7 +413,7 @@ test("while transcript is loading, displays a loading message", async () => {
     scores: [],
   });
 
-  let resolveTurns: (value: any) => void = () => {};
+  let resolveTurns: (value: any) => void = () => { };
   const turnsPromise = new Promise((resolve) => {
     resolveTurns = resolve;
   });
