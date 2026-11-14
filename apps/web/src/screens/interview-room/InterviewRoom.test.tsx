@@ -234,7 +234,7 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('connects to GeminiLiveVoiceAdapter first and initiates the opening prompt on LISTENING', async () => {
@@ -253,10 +253,116 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
 
     act(() => {
       live.callbacks.onTranscript({ speaker: 'AI', text: 'Hello! ', isFinal: false });
-      live.callbacks.onTranscript({ speaker: 'AI', text: 'Walk me through your API.', isFinal: false });
+      live.callbacks.onTranscript({ speaker: 'AI', text: 'Hello! Walk me through your API.', isFinal: false });
     });
 
-    expect(screen.getByText(/Hello! Walk me through your API\./)).toBeInTheDocument();
+    expect(screen.getByText(/"Hello! Walk me through your API\."/)).toBeInTheDocument();
+  });
+
+  it('saves finished Gemini Live turns sequentially without parallel postTurn calls or /next-question', async () => {
+    let resolveFirst!: (val: Awaited<ReturnType<typeof api.postTurn>>) => void;
+    const firstTurnPromise = new Promise<Awaited<ReturnType<typeof api.postTurn>>>((resolve) => {
+      resolveFirst = resolve;
+    });
+
+    vi.mocked(api.postTurn)
+      .mockReturnValueOnce(firstTurnPromise)
+      .mockResolvedValueOnce({
+        success: true,
+        data: makeTurn({ id: 'cand-1', speaker: 'CANDIDATE', turnIndex: 2, text: 'Answer 1.' }),
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        data: makeTurn({ id: 'ai-2', speaker: 'AI', turnIndex: 3, text: 'Question 2?' }),
+      });
+
+    renderRoom();
+    await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+    const live = mockState.liveInstances[0];
+
+    act(() => {
+      live.callbacks.onTranscript({ speaker: 'AI', text: 'Question 1?', isFinal: true });
+      live.callbacks.onTranscript({ speaker: 'CANDIDATE', text: 'Answer 1.', isFinal: true });
+      live.callbacks.onTranscript({ speaker: 'AI', text: 'Question 2?', isFinal: true });
+    });
+
+    // Only the first postTurn should be in-flight before it settles.
+    await waitFor(() => expect(api.postTurn).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.postTurn).toHaveBeenCalledTimes(1);
+    expect(api.postTurn).toHaveBeenCalledWith('s1', 'AI', 'Question 1?');
+
+    await act(async () => {
+      resolveFirst({
+        success: true,
+        data: makeTurn({ id: 'ai-1', speaker: 'AI', turnIndex: 1, text: 'Question 1?' }),
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(api.postTurn).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(api.postTurn).mock.calls).toEqual([
+      ['s1', 'AI', 'Question 1?'],
+      ['s1', 'CANDIDATE', 'Answer 1.'],
+      ['s1', 'AI', 'Question 2?'],
+    ]);
+    expect(api.postNextQuestion).not.toHaveBeenCalled();
+    expect(screen.getByText('Recorded Session Transcript')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('waits for flushed Live turns to finish posting before calling endSession', async () => {
+    let resolveTurn!: (val: Awaited<ReturnType<typeof api.postTurn>>) => void;
+    vi.mocked(api.postTurn).mockReturnValueOnce(
+      new Promise<Awaited<ReturnType<typeof api.postTurn>>>((resolve) => {
+        resolveTurn = resolve;
+      })
+    );
+    vi.mocked(api.endSession).mockResolvedValueOnce({
+      success: true,
+      data: {
+        id: 's1',
+        userId: 'user-1',
+        role: 'software-engineer',
+        status: 'ENDED',
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
+      },
+    });
+
+    renderRoom();
+    await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+    const live = mockState.liveInstances[0];
+
+    // Simulate disconnect() flushing a buffered final candidate turn during End Interview.
+    live.disconnect.mockImplementation(() => {
+      live.callbacks.onTranscript({ speaker: 'CANDIDATE', text: 'Final closing answer.', isFinal: true });
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /end interview/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Yes, End Interview/i }));
+
+    await waitFor(() =>
+      expect(api.postTurn).toHaveBeenCalledWith('s1', 'CANDIDATE', 'Final closing answer.')
+    );
+    expect(api.endSession).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveTurn({
+        success: true,
+        data: makeTurn({
+          id: 'cand-final',
+          speaker: 'CANDIDATE',
+          turnIndex: 1,
+          text: 'Final closing answer.',
+        }),
+      });
+    });
+
+    await waitFor(() => expect(api.endSession).toHaveBeenCalledWith('s1'));
   });
 
   it('automatically falls back to BrowserWebSpeechVoiceAdapter and POST /next-question when Live fails', async () => {

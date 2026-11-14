@@ -457,4 +457,84 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
       expect(callbacks.onStateChange).toHaveBeenLastCalledWith('IDLE');
     });
   });
+
+  describe('transcript accumulation', () => {
+    it('combines streamed chunks into one final turn when chunk and turnComplete arrive together', async () => {
+      const { callbacks, ws } = await connectReady();
+
+      ws.simulateMessage({ serverContent: { outputTranscription: { text: 'Tell me about ' } } });
+      ws.simulateMessage({
+        serverContent: {
+          outputTranscription: { text: 'your Redis cache.' },
+          turnComplete: true,
+        },
+      });
+
+      const finals = vi
+        .mocked(callbacks.onTranscript)
+        .mock.calls.map(([evt]) => evt)
+        .filter((evt) => evt.isFinal);
+
+      expect(finals).toEqual([
+        { speaker: 'AI', text: 'Tell me about your Redis cache.', isFinal: true },
+      ]);
+    });
+
+    it('flushes the interrupted AI turn cleanly before collecting candidate response', async () => {
+      const { callbacks, ws } = await connectReady();
+
+      ws.simulateMessage({ serverContent: { outputTranscription: { text: 'Can you explain how...' } } });
+      ws.simulateMessage({ serverContent: { interrupted: true } });
+      ws.simulateMessage({ serverContent: { inputTranscription: { text: 'Sure, it uses B-trees.' } } });
+      ws.simulateMessage({ serverContent: { turnComplete: true } });
+
+      const finals = vi
+        .mocked(callbacks.onTranscript)
+        .mock.calls.map(([evt]) => evt)
+        .filter((evt) => evt.isFinal);
+
+      expect(finals).toEqual([
+        { speaker: 'AI', text: 'Can you explain how...', isFinal: true },
+        { speaker: 'CANDIDATE', text: 'Sure, it uses B-trees.', isFinal: true },
+      ]);
+    });
+
+    it('flushes the previous speaker turn cleanly on speaker change', async () => {
+      const { callbacks, ws } = await connectReady();
+
+      ws.simulateMessage({ serverContent: { outputTranscription: { text: 'First question?' } } });
+      ws.simulateMessage({ serverContent: { turnComplete: true } });
+      ws.simulateMessage({ serverContent: { inputTranscription: { text: 'My first ' } } });
+      ws.simulateMessage({ serverContent: { inputTranscription: { text: 'answer.' } } });
+      ws.simulateMessage({ serverContent: { outputTranscription: { text: 'Follow-up question?' } } });
+      ws.simulateMessage({ serverContent: { turnComplete: true } });
+
+      const finals = vi
+        .mocked(callbacks.onTranscript)
+        .mock.calls.map(([evt]) => evt)
+        .filter((evt) => evt.isFinal);
+
+      expect(finals).toEqual([
+        { speaker: 'AI', text: 'First question?', isFinal: true },
+        { speaker: 'CANDIDATE', text: 'My first answer.', isFinal: true },
+        { speaker: 'AI', text: 'Follow-up question?', isFinal: true },
+      ]);
+    });
+
+    it('flushes a pending spoken turn once on disconnect', async () => {
+      const { adapter, callbacks, ws } = await connectReady();
+
+      ws.simulateMessage({ serverContent: { inputTranscription: { text: 'Closing thoughts.' } } });
+
+      adapter.disconnect();
+      adapter.disconnect();
+
+      const finals = vi
+        .mocked(callbacks.onTranscript)
+        .mock.calls.map(([evt]) => evt)
+        .filter((evt) => evt.isFinal);
+
+      expect(finals).toEqual([{ speaker: 'CANDIDATE', text: 'Closing thoughts.', isFinal: true }]);
+    });
+  });
 });
