@@ -25,6 +25,7 @@ export interface EvaluationInput {
   roleId: string;
   turns: TranscriptTurn[];
   difficulty?: 'basic' | 'intermediate' | 'advanced' | string;
+  jobContext?: string;
 }
 
 export interface EvaluationUsageMetadata {
@@ -52,7 +53,7 @@ export interface EvaluatorOptions {
   timeoutMs?: number;
 }
 
-export function buildEvaluationPrompt({ roleId, turns, difficulty }: EvaluationInput): string {
+export function buildEvaluationPrompt({ roleId, turns, difficulty, jobContext }: EvaluationInput): string {
   const roleLabel = ROLES.find((r) => r.id === roleId)?.label ?? roleId;
   const rubric = getRubric(roleId)
     .map((r) => `- ${r.category}: ${r.criteria}`)
@@ -60,6 +61,10 @@ export function buildEvaluationPrompt({ roleId, turns, difficulty }: EvaluationI
   const transcript = turns
     .map((t) => `${t.speaker === 'AI' ? 'Interviewer' : 'Candidate'}: ${t.text}`)
     .join('\n');
+
+  const jobContextSection = jobContext?.trim()
+    ? `\nTarget Job Context (Candidate-Supplied):\n"""\n${jobContext.trim()}\n"""\nCalibrate your assessment of technical fit and strengths against the requirements and competencies outlined in this job context.\n`
+    : '';
 
   const normalizedDifficulty = difficulty?.trim().toLowerCase();
   let difficultyInstruction: string;
@@ -77,7 +82,7 @@ export function buildEvaluationPrompt({ roleId, turns, difficulty }: EvaluationI
       `- Difficulty-Aware Expectations (PN-3, DR-05): ${DIFFICULTY_AWARE_PRINCIPLE}`;
   }
 
-  return `You are evaluating a mock job interview for the role "${roleLabel}".
+  return `You are evaluating a mock job interview for the role "${roleLabel}".${jobContextSection}
 Score ONLY the candidate's answers, using this rubric. Each score is an integer from 1 (poor) to 5 (excellent).
 ${rubric}
 

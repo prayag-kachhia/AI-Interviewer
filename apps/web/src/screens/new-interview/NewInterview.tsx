@@ -25,6 +25,7 @@ const ROLE_ICONS: Record<string, React.ReactNode> = {
 export const NewInterview: React.FC = () => {
   const [roles, setRoles] = useState<Role[]>(ROLES);
   const [roleId, setRoleId] = useState<string>('');
+  const [jobContext, setJobContext] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [resumeName, setResumeName] = useState<string | null>(null);
@@ -67,7 +68,10 @@ export const NewInterview: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await createSession(roleId);
+      const res = await createSession({
+        roleId,
+        jobContext: jobContext.trim() || undefined,
+      });
       if (res.success && res.data?.id) {
         navigate(`/interview/${res.data.id}`);
       } else {
@@ -236,6 +240,52 @@ export const NewInterview: React.FC = () => {
           >
             View Profile
           </Link>
+        </div>
+
+        {/* Optional Target Job Description (FR-11, PK-9) */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label
+            htmlFor="job-description-input"
+            style={{
+              display: 'block',
+              fontSize: '0.92rem',
+              fontWeight: 600,
+              color: 'var(--text-main)',
+              marginBottom: '0.35rem',
+            }}
+          >
+            Target Job Description <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(Optional)</span>
+          </label>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+            Paste the job description you are targeting (up to 4,000 characters). The AI interviewer will tailor its technical questions to the role.
+          </p>
+          <textarea
+            id="job-description-input"
+            aria-label="Target Job Description"
+            value={jobContext}
+            onChange={(e) => setJobContext(e.target.value)}
+            disabled={loading}
+            maxLength={4000}
+            rows={4}
+            placeholder="Paste job requirements, responsibilities, or role expectations here..."
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              borderRadius: '10px',
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-color)',
+              color: 'var(--text-main)',
+              fontSize: '0.9rem',
+              fontFamily: 'inherit',
+              resize: 'vertical',
+              boxSizing: 'border-box',
+            }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
+            <span style={{ fontSize: '0.75rem', color: jobContext.length > 4000 ? 'var(--danger-color)' : 'var(--text-muted)' }}>
+              {jobContext.length}/4,000 characters
+            </span>
+          </div>
         </div>
 
         <div
