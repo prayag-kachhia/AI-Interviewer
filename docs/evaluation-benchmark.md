@@ -66,6 +66,8 @@ BENCH_USD_TO_INR=84.0               # default USD to INR conversion rate
 | `tech-stack-java` | Software Engineer | Top-tier (Java stack) | ✅ (DR-05 parity) |
 | `filler-heavy-correct` | Software Engineer | Competent, heavy speech fillers | ✅ (FR-21 separation) |
 | `filler-heavy-data-analyst` | Data Analyst | Competent, heavy speech fillers | ✅ (FR-21 separation) |
+| `concise-correct` | Software Engineer | Competent, concise & accurate | ✅ (NFR-19 conciseness) |
+| `long-vague` | Software Engineer | Underprepared, long & vague | ✅ (NFR-19 conciseness) |
 
 Each `*.expected.json` file stores the fixture's role and, per rubric category, the acceptable score range `[min, max]` with a one-line reason. The benchmark averages scores across all runs and fails a fixture if a category's average is outside its range or the category is missing.
 
