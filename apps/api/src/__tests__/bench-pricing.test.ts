@@ -4,6 +4,7 @@ import {
   calculateBenchmarkCost,
   checkTechnologyParity,
   evaluateTechnologyIndependence,
+  evaluateDifficultyAwareness,
   KNOWN_MODEL_PRICING,
   DEFAULT_BENCH_MODEL,
 } from '../../scripts/bench';
@@ -197,6 +198,109 @@ describe('Benchmark Pricing & Cost Calculation', () => {
       expect(res.pyAvg).toBe(5);
       expect(res.javaAvg).toBe(5);
       expect(res.diff).toBe(0);
+    });
+  });
+
+  describe('evaluateDifficultyAwareness (PN-3, DR-05)', () => {
+    const makeRun = (score: number, error?: string, categories?: string[]) => {
+      const cats = categories ?? [
+        'Problem Solving & Algorithms',
+        'Software Design & Architecture',
+        'Technical Communication',
+      ];
+      return {
+        wallMs: 1000,
+        promptTokens: 100,
+        outputTokens: 50,
+        scores: error ? [] : cats.map((category) => ({ category, score })),
+        error,
+      };
+    };
+
+    it('passes when basic fixture achieves full marks 5/5 and advanced meets expectations', () => {
+      const results = [
+        { name: 'difficulty-basic', runs: [makeRun(5), makeRun(5)] },
+        { name: 'difficulty-advanced', runs: [makeRun(5), makeRun(4)] }, // avg 4.5
+      ];
+      const res = evaluateDifficultyAwareness(results);
+      expect(res.pass).toBe(true);
+      expect(res.basicAvg).toBe(5.0);
+      expect(res.advancedAvg).toBe(4.5);
+      expect(res.error).toBeUndefined();
+    });
+
+    it('fails when basic fixture receives less than full marks (penalized for lacking advanced depth)', () => {
+      const results = [
+        { name: 'difficulty-basic', runs: [makeRun(4)] }, // scored 4/5 instead of 5/5
+        { name: 'difficulty-advanced', runs: [makeRun(5)] },
+      ];
+      const res = evaluateDifficultyAwareness(results);
+      expect(res.pass).toBe(false);
+      expect(res.error).toContain('Basic question did not achieve full marks (5/5)');
+    });
+
+    it('fails when difficulty-basic fixture is missing', () => {
+      const results = [
+        { name: 'difficulty-advanced', runs: [makeRun(5)] },
+      ];
+      const res = evaluateDifficultyAwareness(results);
+      expect(res.pass).toBe(false);
+      expect(res.error).toContain('Missing required difficulty benchmark fixture(s): difficulty-basic');
+    });
+
+    it('fails when difficulty-advanced fixture is missing', () => {
+      const results = [
+        { name: 'difficulty-basic', runs: [makeRun(5)] },
+      ];
+      const res = evaluateDifficultyAwareness(results);
+      expect(res.pass).toBe(false);
+      expect(res.error).toContain('Missing required difficulty benchmark fixture(s): difficulty-advanced');
+    });
+
+    it('fails when a fixture has only errored runs and no valid scores', () => {
+      const results = [
+        { name: 'difficulty-basic', runs: [makeRun(0, '503 error')] },
+        { name: 'difficulty-advanced', runs: [makeRun(5)] },
+      ];
+      const res = evaluateDifficultyAwareness(results);
+      expect(res.pass).toBe(false);
+      expect(res.error).toContain('No successful evaluated runs with scores for: difficulty-basic');
+    });
+
+    it('fails when advanced fixture average drops below 4.0', () => {
+      const results = [
+        { name: 'difficulty-basic', runs: [makeRun(5)] },
+        { name: 'difficulty-advanced', runs: [makeRun(3)] }, // avg 3.0 < 4.0
+      ];
+      const res = evaluateDifficultyAwareness(results);
+      expect(res.pass).toBe(false);
+      expect(res.error).toContain('fell below expectations');
+    });
+
+    it('fails when difficulty-basic is missing an expected rubric category (Task 5)', () => {
+      const results = [
+        {
+          name: 'difficulty-basic',
+          runs: [makeRun(5, undefined, ['Problem Solving & Algorithms', 'Technical Communication'])], // Missing Software Design & Architecture
+        },
+        { name: 'difficulty-advanced', runs: [makeRun(5)] },
+      ];
+      const res = evaluateDifficultyAwareness(results);
+      expect(res.pass).toBe(false);
+      expect(res.error).toContain('Basic fixture missing required rubric category/categories: Software Design & Architecture');
+    });
+
+    it('fails when difficulty-advanced is missing an expected rubric category (Task 5)', () => {
+      const results = [
+        { name: 'difficulty-basic', runs: [makeRun(5)] },
+        {
+          name: 'difficulty-advanced',
+          runs: [makeRun(5, undefined, ['Problem Solving & Algorithms'])], // Missing Software Design & Architecture and Technical Communication
+        },
+      ];
+      const res = evaluateDifficultyAwareness(results);
+      expect(res.pass).toBe(false);
+      expect(res.error).toContain('Advanced fixture missing required rubric category/categories: Software Design & Architecture, Technical Communication');
     });
   });
 });

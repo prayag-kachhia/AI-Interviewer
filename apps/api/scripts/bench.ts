@@ -239,6 +239,158 @@ export function evaluateTechnologyIndependence(
   };
 }
 
+export interface DifficultyAwarenessResult {
+  pass: boolean;
+  basicAvg?: number;
+  advancedAvg?: number;
+  basicScoresByCategory?: Record<string, number>;
+  advancedScoresByCategory?: Record<string, number>;
+  error?: string;
+}
+
+const REQUIRED_DIFFICULTY_RUBRIC_CATEGORIES = [
+  'Problem Solving & Algorithms',
+  'Software Design & Architecture',
+  'Technical Communication',
+];
+
+/**
+ * Asserts that a fully correct basic answer earns full marks (5/5) without being marked down
+ * for lacking advanced-level depth, and verifies that all expected rubric categories are present (PN-3, DR-05).
+ */
+export function evaluateDifficultyAwareness(
+  fixtureResults: Array<{ name: string; runs: RunResult[]; expected?: FixtureExpected }>
+): DifficultyAwarenessResult {
+  const basicResult = fixtureResults.find((f) => f.name === 'difficulty-basic');
+  const advancedResult = fixtureResults.find((f) => f.name === 'difficulty-advanced');
+
+  if (!basicResult || !advancedResult) {
+    const missing = [
+      !basicResult ? 'difficulty-basic' : null,
+      !advancedResult ? 'difficulty-advanced' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `Missing required difficulty benchmark fixture(s): ${missing}`,
+    };
+  }
+
+  const getValidRuns = (res: { runs: RunResult[] }) => res.runs.filter((r) => !r.error);
+  const basicValid = getValidRuns(basicResult);
+  const advancedValid = getValidRuns(advancedResult);
+
+  if (basicValid.length === 0 || advancedValid.length === 0) {
+    const empty = [
+      basicValid.length === 0 ? 'difficulty-basic' : null,
+      advancedValid.length === 0 ? 'difficulty-advanced' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `No successful evaluated runs with scores for: ${empty}`,
+    };
+  }
+
+  // Determine required categories from fixture expected config or fallback to required SE categories
+  const expectedBasicCategories =
+    basicResult.expected?.scores && basicResult.expected.scores.length > 0
+      ? basicResult.expected.scores.map((s) => s.category)
+      : REQUIRED_DIFFICULTY_RUBRIC_CATEGORIES;
+
+  const expectedAdvancedCategories =
+    advancedResult.expected?.scores && advancedResult.expected.scores.length > 0
+      ? advancedResult.expected.scores.map((s) => s.category)
+      : REQUIRED_DIFFICULTY_RUBRIC_CATEGORIES;
+
+  // Validate that all expected categories are present in evaluated runs
+  const missingBasicCategories = expectedBasicCategories.filter((cat) =>
+    basicValid.every((r) => !r.scores.some((s) => s.category === cat))
+  );
+  if (missingBasicCategories.length > 0) {
+    return {
+      pass: false,
+      error: `Basic fixture missing required rubric category/categories: ${missingBasicCategories.join(', ')}`,
+    };
+  }
+
+  const missingAdvancedCategories = expectedAdvancedCategories.filter((cat) =>
+    advancedValid.every((r) => !r.scores.some((s) => s.category === cat))
+  );
+  if (missingAdvancedCategories.length > 0) {
+    return {
+      pass: false,
+      error: `Advanced fixture missing required rubric category/categories: ${missingAdvancedCategories.join(', ')}`,
+    };
+  }
+
+  // Calculate per-category averages for basic fixture across expected categories
+  const basicCategoryAverages: Record<string, number> = {};
+  for (const cat of expectedBasicCategories) {
+    const catScores = basicValid
+      .flatMap((r) => r.scores.filter((s) => s.category === cat).map((s) => s.score));
+    basicCategoryAverages[cat] =
+      catScores.length > 0 ? catScores.reduce((a, b) => a + b, 0) / catScores.length : 0;
+  }
+
+  // Calculate per-category averages for advanced fixture across expected categories
+  const advancedCategoryAverages: Record<string, number> = {};
+  for (const cat of expectedAdvancedCategories) {
+    const catScores = advancedValid
+      .flatMap((r) => r.scores.filter((s) => s.category === cat).map((s) => s.score));
+    advancedCategoryAverages[cat] =
+      catScores.length > 0 ? catScores.reduce((a, b) => a + b, 0) / catScores.length : 0;
+  }
+
+  const basicAllScores = basicValid.flatMap((r) => r.scores.map((s) => s.score));
+  const basicAvg = basicAllScores.reduce((a, b) => a + b, 0) / basicAllScores.length;
+
+  const advancedAllScores = advancedValid.flatMap((r) => r.scores.map((s) => s.score));
+  const advancedAvg = advancedAllScores.reduce((a, b) => a + b, 0) / advancedAllScores.length;
+
+  // Acceptance criteria (PN-3, DR-05):
+  // 1. Fully correct basic answer must achieve 5/5 in all categories (not marked down for lacking advanced depth).
+  // 2. Advanced answer must meet high advanced expectations (avg >= 4.00).
+  const basicHasFullMarks = Object.values(basicCategoryAverages).every((avg) => avg >= 5.0);
+  const advancedMeetsExpectations = advancedAvg >= 4.0;
+
+  if (!basicHasFullMarks) {
+    const sub5 = Object.entries(basicCategoryAverages)
+      .filter(([, avg]) => avg < 5.0)
+      .map(([cat, avg]) => `${cat} (${avg.toFixed(2)})`)
+      .join(', ');
+    return {
+      pass: false,
+      basicAvg,
+      advancedAvg,
+      basicScoresByCategory: basicCategoryAverages,
+      advancedScoresByCategory: advancedCategoryAverages,
+      error: `Basic question did not achieve full marks (5/5) in: ${sub5}. Basic answers must not be penalized for lacking advanced depth.`,
+    };
+  }
+
+  if (!advancedMeetsExpectations) {
+    return {
+      pass: false,
+      basicAvg,
+      advancedAvg,
+      basicScoresByCategory: basicCategoryAverages,
+      advancedScoresByCategory: advancedCategoryAverages,
+      error: `Advanced question average (${advancedAvg.toFixed(2)}) fell below expectations (>= 4.00).`,
+    };
+  }
+
+  return {
+    pass: true,
+    basicAvg,
+    advancedAvg,
+    basicScoresByCategory: basicCategoryAverages,
+    advancedScoresByCategory: advancedCategoryAverages,
+  };
+}
+
 export interface ScoreSeparationResult {
   pass: boolean;
   technicalAvg?: number;
@@ -359,6 +511,7 @@ interface ExpectedScore {
 
 interface FixtureExpected {
   role: string;
+  difficulty?: string;
   scores: ExpectedScore[];
 }
 
@@ -604,7 +757,7 @@ async function main() {
         const result = await runWithRetry(
           () =>
             evaluateTranscript(
-              { roleId: role.id, turns },
+              { roleId: role.id, turns, difficulty: expected?.difficulty },
               generateFn ? { generate: generateFn, timeoutMs: BENCH_TIMEOUT_MS } : { timeoutMs: BENCH_TIMEOUT_MS }
             ),
           MAX_RETRIES,
@@ -804,6 +957,41 @@ async function main() {
     );
   }
 
+  // ── Difficulty-Aware Expectations (PN-3, DR-05) ───────────────────────────
+  console.log('\nDifficulty-Aware Expectations (PN-3 / DR-05):');
+  let difficultyAwarenessOk = false;
+  const diffEval = evaluateDifficultyAwareness(fixtureResults);
+
+  if (diffEval.error) {
+    console.log(`  ❌ FAIL — ${diffEval.error}`);
+  } else if (diffEval.basicAvg !== undefined && diffEval.advancedAvg !== undefined) {
+    difficultyAwarenessOk = diffEval.pass;
+    const basicOk =
+      diffEval.basicAvg >= 5.0 &&
+      (diffEval.basicScoresByCategory
+        ? Object.values(diffEval.basicScoresByCategory).every((avg) => avg >= 5.0)
+        : false);
+    const advancedOk = diffEval.advancedAvg >= 4.0;
+
+    console.log(
+      `  difficulty-basic    avg : ${diffEval.basicAvg.toFixed(2)} / 5.00  (requires full marks 5.00/5.00)  ${
+        basicOk ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(
+      `  difficulty-advanced avg : ${diffEval.advancedAvg.toFixed(2)} / 5.00  (requires >= 4.00/5.00)          ${
+        advancedOk ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(
+      `  Verdict                 : ${
+        difficultyAwarenessOk
+          ? '✅ PASS — Basic answer earns full marks without advanced-level depth'
+          : '❌ FAIL — ' + (diffEval.error ?? 'Difficulty awareness criteria not met')
+      }`
+    );
+  }
+
   // ── Score Separation (S-5, FR-21, NFR-19) ──────────────────────────────────
   console.log('\nScore Separation (S-5 / FR-21):');
   let scoreSeparationOk = false;
@@ -845,7 +1033,7 @@ async function main() {
   const accuracyOk = passCount >= threshold;
 
   console.log('');
-  if (!accuracyOk || !latencyOk || !techIndependenceOk || !scoreSeparationOk) {
+  if (!accuracyOk || !latencyOk || !techIndependenceOk || !difficultyAwarenessOk || !scoreSeparationOk) {
     if (!accuracyOk)
       console.error(
         `❌ ACCURACY: only ${passCount}/${totalWithExpected} pass (need ≥ ${threshold})`
@@ -854,6 +1042,10 @@ async function main() {
       console.error(`❌ LATENCY:  p95 = ${p95} ms exceeds ${LATENCY_TARGET_MS} ms target`);
     if (!techIndependenceOk)
       console.error(`❌ TECHNOLOGY INDEPENDENCE: score difference exceeds 1.0 point limit (PN-8, DR-05)`);
+    if (!difficultyAwarenessOk)
+      console.error(
+        `❌ DIFFICULTY AWARENESS: basic answer did not earn full marks or advanced expectations not met (PN-3, DR-05)`
+      );
     if (!scoreSeparationOk)
       console.error(`❌ SCORE SEPARATION: filler-heavy answers did not maintain high technical scores (S-5, FR-21)`);
     process.exit(1);

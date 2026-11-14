@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Software Engineer interview. Can you explain what a hash table is, how it stores and retrieves data, and what its average time complexity is for lookups?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "A hash table is an associative data structure that maps keys to values for efficient lookup. When you insert a key-value pair, a hash function computes an integer hash code from the key, which is then mapped to an array bucket index using a modulo operation. To retrieve a value, the key is hashed again with the same function to directly locate the corresponding bucket. On average, lookups, insertions, and deletions take O(1) constant time because the bucket index is computed directly without scanning the array. If two different keys produce the same bucket index, a hash collision occurs, which is resolved using separate chaining with linked lists or open addressing with probing."
+  },
+  {
+    "speaker": "AI",
+    "text": "What is the primary difference between an Array and a Linked List, and when would you choose one over the other?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "The main difference is their memory layout and access patterns. An array stores elements in contiguous memory blocks, allowing instant O(1) random access by index and benefiting from CPU cache locality. However, inserting or deleting elements in the middle requires shifting elements, which takes O(N) time, and resizing dynamic arrays requires copying. A linked list stores elements as separate nodes where each node holds data and a pointer to the next node. Inserting or deleting at the head or tail takes O(1) time once located, without requiring contiguous memory. However, searching requires O(N) traversal, and pointers add memory overhead. I choose an array when index-based lookups and cache efficiency are important, and a linked list when frequent insertions and deletions at boundaries occur without needing random index access."
+  },
+  {
+    "speaker": "AI",
+    "text": "What is the purpose of HTTP status codes, and what do the 200, 400, 404, and 500 status codes signify?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "HTTP status codes provide standard three-digit numerical responses indicating whether an HTTP request completed successfully or encountered an error. A 200 OK status indicates that the request was successfully received, understood, and processed by the server. A 400 Bad Request status means the client sent an invalid request, such as malformed JSON syntax or missing required query parameters. A 404 Not Found indicates that the requested endpoint URL or resource does not exist on the server. Finally, a 500 Internal Server Error means the server encountered an unhandled exception or crash while processing a valid request. Using the correct status codes allows client applications to handle responses and user error messaging predictably."
+  },
+  {
+    "speaker": "AI",
+    "text": "What is unit testing, and why is it important in software development?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Unit testing is the practice of testing individual functions, methods, or components in isolation from the rest of the application. The goal is to verify that each isolated unit of code behaves correctly for expected inputs, boundary cases, and error conditions. Unit testing is important because it catches bugs early during development when they are easiest and cheapest to fix, prevents regressions when modifying existing code, and allows developers to refactor with confidence. It also serves as executable documentation showing how code is intended to be used. External dependencies such as databases or network APIs are typically mocked or stubbed out so unit tests remain fast, deterministic, and independent of external state."
+  }
+]

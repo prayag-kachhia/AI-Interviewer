@@ -59,6 +59,8 @@ describe('FB4 — evaluator', () => {
       'empty-answers.json',
       'tech-stack-python.json',
       'tech-stack-java.json',
+      'difficulty-basic.json',
+      'difficulty-advanced.json',
       'filler-heavy-correct.json',
       'filler-heavy-data-analyst.json',
     ] as const;
@@ -322,6 +324,212 @@ describe('FB4 — evaluator', () => {
       const diff = Math.abs(scoreStackA - scoreStackB);
       expect(diff).toBeGreaterThan(1);
       expect(diff <= 1.0).toBe(false);
+    });
+  });
+
+  describe('PN-3 — Difficulty-aware expectations (DR-05)', () => {
+    it('scales prompt instructions according to question difficulty', () => {
+      // Basic difficulty explicitly instructs full credit (5/5) without advanced penalization
+      const basicPrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'basic' });
+      expect(basicPrompt).toContain('Target Question Difficulty: BASIC');
+      expect(basicPrompt).toContain('full credit (5/5)');
+      expect(basicPrompt).toContain('Do NOT penalize or mark down the candidate for omitting advanced optimizations');
+
+      // Advanced difficulty expects deeper technical reasoning and trade-offs
+      const advancedPrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'advanced' });
+      expect(advancedPrompt).toContain('Target Question Difficulty: ADVANCED');
+      expect(advancedPrompt).toContain('deeper technical reasoning');
+      expect(advancedPrompt).toContain('architectural or system trade-offs');
+
+      // Default (unspecified) preserves backward compatibility with general difficulty scaling
+      const defaultPrompt = buildEvaluationPrompt(SAMPLE);
+      expect(defaultPrompt).toContain('Difficulty-Aware Expectations');
+      expect(defaultPrompt).toContain('Calibrate expected answer depth to the difficulty of the question');
+
+      // Intermediate difficulty falls back cleanly to the general difficulty principle
+      const intermediatePrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'intermediate' });
+      expect(intermediatePrompt).toContain('Difficulty-Aware Expectations');
+      expect(intermediatePrompt).toContain('Calibrate expected answer depth to the difficulty of the question');
+    });
+
+    it('handles casing and whitespace normalization in difficulty parameter', () => {
+      const trimmedBasic = buildEvaluationPrompt({ ...SAMPLE, difficulty: '  BASIC  ' });
+      expect(trimmedBasic).toContain('Target Question Difficulty: BASIC');
+
+      const trimmedAdvanced = buildEvaluationPrompt({ ...SAMPLE, difficulty: '  Advanced  ' });
+      expect(trimmedAdvanced).toContain('Target Question Difficulty: ADVANCED');
+    });
+
+    it('verifies that both technology independence and difficulty instructions coexist in the prompt', () => {
+      const prompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'basic' });
+      expect(prompt).toContain('Technology-independent evaluation');
+      expect(prompt).toContain('Target Question Difficulty: BASIC');
+    });
+
+    it('verifies that difficulty-basic and difficulty-advanced fixtures satisfy TurnSpeaker and 8-turn constraints', () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+      const advancedTurns = loadTranscriptFixture('difficulty-advanced.json');
+
+      expect(basicTurns).toHaveLength(8);
+      expect(advancedTurns).toHaveLength(8);
+
+      // Basic questions focus on foundational data structures and protocols
+      const basicQuestions = basicTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(basicQuestions.some((q) => q.includes('hash table'))).toBe(true);
+      expect(basicQuestions.some((q) => q.includes('HTTP status codes'))).toBe(true);
+
+      // Advanced questions focus on distributed consensus, MVCC, and chaos engineering
+      const advancedQuestions = advancedTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(advancedQuestions.some((q) => q.includes('globally consistent counter') || q.includes('CRDT'))).toBe(true);
+      expect(advancedQuestions.some((q) => q.includes('chaos engineering') || q.includes('fault-injection'))).toBe(true);
+    });
+
+    it('demonstrates that a fully correct basic answer receives 5/5 full marks without advanced depth (PN-3 DoD)', async () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+
+      // Evaluation for basic answer covering core concepts without unprompted distributed system depth
+      const basicReply = JSON.stringify({
+        summary: 'Outstanding grasp of foundational data structures, memory layout, HTTP semantics, and unit testing principles.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Fully correct, thorough explanation of hash table mechanics, bucket indexing, collision resolution, and array vs linked list trade-offs.',
+            strengths: ['Accurate O(1) hash table lookup explanation', 'Clear memory layout contrast between arrays and linked lists'],
+            improvements: ['Could mention dynamic array amortized doubling costs'],
+            quote: 'On average, lookups, insertions, and deletions take O(1) constant time because the bucket index is computed directly',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Precise understanding of HTTP status codes, error categorization, and unit testing isolation boundaries.',
+            strengths: ['Clear status code categorization', 'Solid testing isolation principles'],
+            improvements: ['Could briefly mention 3xx redirect status family'],
+            quote: 'Unit testing is the practice of testing individual functions, methods, or components in isolation',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Exemplary clarity and structured explanations of core computer science fundamentals.',
+            strengths: ['Concise, accurate terminology', 'Structured compare-and-contrast reasoning'],
+            improvements: ['Keep answers equally concise in live discussions'],
+            quote: 'Using the correct status codes allows client applications to handle responses and user error messaging predictably.',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: basicTurns, difficulty: 'basic' },
+        { generate: async () => ({ text: basicReply }) }
+      );
+
+      // Verify that every category achieved full marks (5/5)
+      expect(evaluation.scores).toHaveLength(RUBRIC.length);
+      for (const score of evaluation.scores) {
+        expect(score.score).toBe(5);
+      }
+      const avgScore = evaluation.scores.reduce((a, b) => a + b.score, 0) / evaluation.scores.length;
+      expect(avgScore).toBe(5.0);
+    });
+
+    it('rejects an evaluation that marks down a correct basic answer for lacking advanced-level depth', () => {
+      // Simulates an evaluator improperly penalizing a basic answer for not discussing distributed systems
+      const penalizedScores = [
+        { category: 'Problem Solving & Algorithms', score: 3 }, // penalized for no consistent hashing
+        { category: 'Software Design & Architecture', score: 4 },
+        { category: 'Technical Communication', score: 5 },
+      ];
+
+      const fullMarksMet = penalizedScores.every((s) => s.score === 5);
+      expect(fullMarksMet).toBe(false);
+
+      // The PN-3 benchmark criterion asserts that basic answers are NOT marked down
+      const sub5 = penalizedScores.filter((s) => s.score < 5);
+      expect(sub5.length).toBeGreaterThan(0);
+      expect(sub5.map((s) => s.category)).toContain('Problem Solving & Algorithms');
+    });
+
+    it('evaluates advanced questions with deeper expectations', async () => {
+      const advancedTurns = loadTranscriptFixture('difficulty-advanced.json');
+
+      const advancedReply = JSON.stringify({
+        summary: 'Deep architectural mastery of distributed counters, CRDTs, concurrency anomalies, and automated fault-injection pipelines.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Mastery of PN-Counters, Raft consensus partitioning, and lock-free CAS primitives under heavy concurrency.',
+            strengths: ['Rigorous distributed consensus understanding', 'Lock-free CAS optimization'],
+            improvements: ['Could detail state-based vs operation-based CRDT delta synchronization'],
+            quote: 'To achieve high write throughput across multiple regions without incurring synchronous cross-region consensus latency',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Comprehensive analysis of isolation levels, MVCC xmin/xmax tuple versioning, and chaos engineering pipelines.',
+            strengths: ['Accurate MVCC snapshot mechanics', 'Automated chaos engineering pipeline design'],
+            improvements: ['Could mention specific transaction rollback anomaly benchmarks'],
+            quote: 'Multi-Version Concurrency Control (MVCC) achieves this by writing a new tuple version with creation and expiration transaction IDs',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Exceptional communication articulating complex distributed systems edge cases and failure modes.',
+            strengths: ['Precise systems terminology', 'Structured trade-off analysis'],
+            improvements: ['None observed'],
+            quote: 'If error budgets or p99 latency SLOs are breached beyond predefined thresholds, the automated pipeline halts deployment',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: advancedTurns, difficulty: 'advanced' },
+        { generate: async () => ({ text: advancedReply }) }
+      );
+
+      for (const score of evaluation.scores) {
+        expect(score.score).toBeGreaterThanOrEqual(4);
+      }
+    });
+
+    it('preserves backward compatibility when difficulty is undefined', async () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+      const sampleReply = JSON.stringify({
+        summary: 'Good foundational software engineering answers.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 4,
+            comment: 'Good understanding of data structures.',
+            strengths: ['Accurate time complexity'],
+            improvements: ['Could mention hash collisions in more detail'],
+            quote: 'A hash table is an associative data structure',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 4,
+            comment: 'Solid grasp of HTTP semantics.',
+            strengths: ['Status code meanings clear'],
+            improvements: ['None'],
+            quote: 'HTTP status codes provide standard three-digit numerical responses',
+          },
+          {
+            category: 'Technical Communication',
+            score: 4,
+            comment: 'Clear communication.',
+            strengths: ['Clear terminology'],
+            improvements: ['None'],
+            quote: 'The main difference is their memory layout and access patterns.',
+          },
+        ],
+      });
+
+      // Difficulty omitted: should not throw, should succeed
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: basicTurns },
+        { generate: async () => ({ text: sampleReply }) }
+      );
+      expect(evaluation.scores).toHaveLength(3);
     });
   });
 

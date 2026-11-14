@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "difficulty": "advanced",
+  "scores": [
+    {
+      "category": "Problem Solving & Algorithms",
+      "min": 4,
+      "max": 5,
+      "reason": "Deep algorithmic reasoning on distributed PN-Counter CRDTs, consensus partitioning (Raft/Paxos), and lock-free CAS concurrency primitives."
+    },
+    {
+      "category": "Software Design & Architecture",
+      "min": 4,
+      "max": 5,
+      "reason": "Rigorous architectural trade-off analysis of isolation levels, MVCC snapshot concurrency, and automated chaos engineering pipelines."
+    },
+    {
+      "category": "Technical Communication",
+      "min": 4,
+      "max": 5,
+      "reason": "Exceptional articulation of subtle distributed system failure modes, write skew, lock acquisition ordering, and SLO budget enforcement."
+    }
+  ]
+}

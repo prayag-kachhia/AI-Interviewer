@@ -24,6 +24,8 @@ Each fixture is a JSON array of 6–10 turns between an interviewer (`AI`) and a
 | `tech-stack-java.json` | Software Engineer | 8 | Top-tier candidate answers | Java stack: PriorityQueue, BlockingQueue/ThreadPool, JVM GC (G1/ZGC), JUnit 5. |
 | `filler-heavy-correct.json` | Software Engineer | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): pauses and fillers affect Communication only, keeping high technical scores. |
 | `filler-heavy-data-analyst.json` | Data Analyst | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): SQL window functions and validation logic retain high scores despite disfluent delivery. |
+| `difficulty-basic.json` | Software Engineer | 8 | Top-tier basic answers | Hash table mechanics, array vs linked list, HTTP status codes, unit testing basics. |
+| `difficulty-advanced.json` | Software Engineer | 8 | Top-tier advanced answers | Distributed PN-Counter CRDTs, deadlock/data race triage, MVCC isolation anomalies, chaos engineering. |
 
 ---
 
@@ -96,6 +98,13 @@ The "representative" ranges below are rough hand estimates of the average score.
   - Role: Data Analyst.
   - Characteristics: The candidate details SQL rolling 7-day average using CTE and `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW`, deduplication via `ROW_NUMBER()` and `LAG`, structured metric decomposition (orders × AOV), multidimensional segmentation, and layered pipeline validation, spoken with frequent hesitation and fillers.
   - Expected ranges: SQL & Analytical Reasoning (4–5), Data Interpretation & Business Insights (4–5), Statistical Understanding & Data Quality (4–5). All three categories are technical/analytical; speech fillers and hesitation must never penalize technical depth or business interpretation.
+### 9. Difficulty-Aware Expectations Fixtures (PN-3 / DR-05)
+- **`difficulty-basic.json`**:
+  - Foundational Software Engineer questions (hash table lookup & collision handling, array vs linked list memory and complexity, HTTP status codes 200/400/404/500, unit testing isolation).
+  - Demonstrates that a fully correct, complete basic answer earns full marks (**5 / 5** across all categories) without penalization for omitting unasked advanced optimizations or distributed-system depth.
+- **`difficulty-advanced.json`**:
+  - Advanced Software Engineer questions (globally consistent distributed counters via PN-Counter CRDTs, deadlock/data race triage and lock-free CAS primitives, transaction isolation anomalies & MVCC snapshot mechanics, automated chaos engineering pipeline).
+  - Evaluated against deeper expectations of distributed constraints, concurrency anomalies, and trade-offs. Expected: **4 – 5** across all categories.
 
 The exact range per category is in each fixture's `*.expected.json`.
 
