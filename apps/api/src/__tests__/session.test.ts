@@ -106,6 +106,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           level: null,
           focus: null,
           mode: 'voice',
+          jobContext: null,
         },
       });
     });
@@ -147,6 +148,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           level: null,
           focus: null,
           mode: 'voice',
+          jobContext: null,
         },
       });
     });
@@ -169,8 +171,54 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           level: 'mid',
           focus: 'Databases',
           mode: 'typed',
+          jobContext: null,
         },
       });
+    });
+
+    it('stores jobContext when candidate pastes a target job description (PK-9, FR-11)', async () => {
+      (prisma.session.create as any).mockResolvedValueOnce({
+        id: 'sess-job-1',
+        role: 'software-engineer',
+        jobContext: 'We are seeking a Backend Engineer with experience in Go and PostgreSQL.',
+      });
+
+      const res = await request(app)
+        .post('/api/sessions')
+        .set('Authorization', authHeader())
+        .send({
+          roleId: 'software-engineer',
+          jobContext: '  We are seeking a Backend Engineer with experience in Go and PostgreSQL.  ',
+        });
+
+      expect(res.status).toBe(201);
+      expect(prisma.session.create).toHaveBeenCalledWith({
+        data: {
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          resumeId: null,
+          company: null,
+          level: null,
+          focus: null,
+          mode: 'voice',
+          jobContext: 'We are seeking a Backend Engineer with experience in Go and PostgreSQL.',
+        },
+      });
+    });
+
+    it('rejects jobContext exceeding 4,000 characters with HTTP 400 (PK-9, FR-11)', async () => {
+      const res = await request(app)
+        .post('/api/sessions')
+        .set('Authorization', authHeader())
+        .send({
+          roleId: 'software-engineer',
+          jobContext: 'x'.repeat(4001),
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toMatch(/jobContext|Job description/i);
+      expect(prisma.session.create).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown focus, level or mode with HTTP 400 (P-7)', async () => {

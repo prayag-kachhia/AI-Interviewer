@@ -76,7 +76,14 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
     include: { turns: { orderBy: { turnIndex: 'asc' } } },
   });
   try {
-    const evaluation = await evaluateTranscript({ roleId: session.role, turns: session.turns }, options);
+    const evaluation = await evaluateTranscript(
+      {
+        roleId: session.role,
+        turns: session.turns,
+        jobContext: session.jobContext ?? undefined,
+      },
+      options
+    );
     await saveFeedback({
       sessionId: session.id,
       status: 'ready',

@@ -60,6 +60,7 @@ export async function createSession(userId: string, input: CreateSessionInput) {
       level: input.level ?? null,
       focus: input.focus ?? null,
       mode: input.mode,
+      jobContext: input.jobContext ?? null,
     },
   });
 }
