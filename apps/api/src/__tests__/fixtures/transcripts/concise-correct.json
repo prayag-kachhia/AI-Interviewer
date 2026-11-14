@@ -1,0 +1,35 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Software Engineer interview. How would you implement a thread-safe in-memory LRU cache in a backend service, and what is the time complexity of its operations?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would combine a doubly linked list with a hash map. The hash map maps keys to list nodes for O(1) lookups, while the doubly linked list tracks recency so moving an accessed node to the head or evicting from the tail takes O(1). For thread safety, I'd synchronize operations with a read-write lock, or a mutex around node movements since reads also update access order."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you ensure idempotency when an API endpoint processes financial transactions or order placements?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "The client generates a unique idempotency key (like a UUID v4) passed via an HTTP header. On the server, a database transaction checks an idempotency table with a unique constraint on that key. If the key exists, it returns the cached result; if new, it writes a pending record, processes the charge, stores the final response, and commits. This prevents duplicate executions during network retries."
+  },
+  {
+    "speaker": "AI",
+    "text": "What is the difference between optimistic and pessimistic locking in relational databases, and when would you use each?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Optimistic locking assumes conflicts are rare: records have a version number, and updates check WHERE version = current_version; if no row updates, a conflict occurred and the application retries. Pessimistic locking acquires explicit database locks upfront using SELECT ... FOR UPDATE to block concurrent access. Optimistic locking maximizes throughput under low contention, whereas pessimistic locking protects high-contention, high-value operations like account balance debits."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you test code that depends on third-party external REST APIs without causing flaky tests or incurring costs?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "For unit tests, I mock the HTTP client interface or use MSW/nock to intercept requests and return deterministic simulated responses and errors in-process. For integration tests, I spin up an HTTP mock server like WireMock or use Testcontainers to validate client serialization, retries, and timeouts without invoking third-party production endpoints."
+  }
+]
+

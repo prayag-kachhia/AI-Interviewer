@@ -495,6 +495,119 @@ export function evaluateScoreSeparation(
   };
 }
 
+export interface ConciseAnswersResult {
+  pass: boolean;
+  conciseAvg?: number;
+  longVagueAvg?: number;
+  conciseTechnicalAvg?: number;
+  longVagueTechnicalAvg?: number;
+  diff?: number;
+  technicalDiff?: number;
+  error?: string;
+}
+
+/**
+ * Asserts that concise, accurate answers are not penalized for brevity and score
+ * at least as well as long, vague answers to the same questions (S-6, NFR-19).
+ * Verifies that:
+ * 1. Both concise-correct and long-vague fixtures exist and have valid runs.
+ * 2. concise-correct achieves high overall and technical averages (>= 3.5 / 5.0).
+ * 3. concise-correct scores at least as well as long-vague overall (conciseAvg >= longVagueAvg).
+ * 4. Crucially, concise-correct technical depth is at least as high as long-vague
+ *    (conciseTechnicalAvg >= longVagueTechnicalAvg), proving that substance and correctness
+ *    drive the comparison rather than communication scores alone.
+ */
+export function evaluateConciseAnswers(
+  fixtureResults: Array<{ name: string; runs: RunResult[] }>
+): ConciseAnswersResult {
+  const conciseResult = fixtureResults.find((f) => f.name === 'concise-correct');
+  const longVagueResult = fixtureResults.find((f) => f.name === 'long-vague');
+
+  if (!conciseResult || !longVagueResult) {
+    const missing = [
+      !conciseResult ? 'concise-correct' : null,
+      !longVagueResult ? 'long-vague' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `Missing required concise answer benchmark fixture(s): ${missing}`,
+    };
+  }
+
+  const validConciseRuns = conciseResult.runs.filter((r) => !r.error);
+  const validLongVagueRuns = longVagueResult.runs.filter((r) => !r.error);
+
+  if (validConciseRuns.length === 0 || validLongVagueRuns.length === 0) {
+    const emptyRuns = [
+      validConciseRuns.length === 0 ? 'concise-correct' : null,
+      validLongVagueRuns.length === 0 ? 'long-vague' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `No successful evaluated runs with scores for: ${emptyRuns}`,
+    };
+  }
+
+  const getScores = (runs: RunResult[], filter?: (cat: string) => boolean) =>
+    runs.flatMap((r) =>
+      r.scores
+        .filter((s) => (filter ? filter(s.category) : true))
+        .map((s) => s.score)
+    );
+
+  const conciseAllScores = getScores(validConciseRuns);
+  const longVagueAllScores = getScores(validLongVagueRuns);
+
+  if (conciseAllScores.length === 0 || longVagueAllScores.length === 0) {
+    return {
+      pass: false,
+      error: 'Missing scores for concise-correct or long-vague fixtures',
+    };
+  }
+
+  const isTechnical = (cat: string) => cat !== 'Technical Communication';
+  const conciseTechScores = getScores(validConciseRuns, isTechnical);
+  const longVagueTechScores = getScores(validLongVagueRuns, isTechnical);
+
+  const conciseAvg = conciseAllScores.reduce((a, b) => a + b, 0) / conciseAllScores.length;
+  const longVagueAvg = longVagueAllScores.reduce((a, b) => a + b, 0) / longVagueAllScores.length;
+
+  const conciseTechnicalAvg =
+    conciseTechScores.length > 0
+      ? conciseTechScores.reduce((a, b) => a + b, 0) / conciseTechScores.length
+      : conciseAvg;
+  const longVagueTechnicalAvg =
+    longVagueTechScores.length > 0
+      ? longVagueTechScores.reduce((a, b) => a + b, 0) / longVagueTechScores.length
+      : longVagueAvg;
+
+  const diff = conciseAvg - longVagueAvg;
+  const technicalDiff = conciseTechnicalAvg - longVagueTechnicalAvg;
+
+  // S-6:
+  // 1. Overall: concise answer scores at least as well as long vague answer.
+  // 2. Technical substance: concise answer's technical depth is at least as high as long vague answer.
+  // 3. Quality threshold: concise answer must achieve high technical marks (>= 3.50).
+  const pass =
+    conciseAvg >= longVagueAvg &&
+    conciseTechnicalAvg >= longVagueTechnicalAvg &&
+    conciseTechnicalAvg >= 3.5;
+
+  return {
+    pass,
+    conciseAvg,
+    longVagueAvg,
+    conciseTechnicalAvg,
+    longVagueTechnicalAvg,
+    diff,
+    technicalDiff,
+  };
+}
+
 const defaultPricing = resolveBenchmarkPricing();
 const INPUT_COST_USD_PER_1M = defaultPricing.inputCostPer1M;
 const OUTPUT_COST_USD_PER_1M = defaultPricing.outputCostPer1M;
@@ -1024,6 +1137,36 @@ async function main() {
     console.log(`  Score separation                 : ${scoreSeparationOk ? '✅ PASS' : '❌ FAIL'}`);
   }
 
+  // ── Concise vs. Vague Answers (S-6, NFR-19) ─────────────────────────────────
+  console.log('\nConcise Answers (S-6 / NFR-19):');
+  let conciseAnswersOk = false;
+  const conciseEval = evaluateConciseAnswers(fixtureResults);
+
+  if (conciseEval.error) {
+    console.log(`  ❌ FAIL — ${conciseEval.error}`);
+  } else if (conciseEval.conciseAvg !== undefined && conciseEval.longVagueAvg !== undefined) {
+    conciseAnswersOk = conciseEval.pass;
+    console.log(
+      `  concise-correct avg     : ${conciseEval.conciseAvg.toFixed(2)} / 5.00 (technical: ${conciseEval.conciseTechnicalAvg?.toFixed(2)}) (target: >= 3.50)  ${
+        conciseEval.conciseAvg >= 3.5 ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(
+      `  long-vague avg          : ${conciseEval.longVagueAvg.toFixed(2)} / 5.00 (technical: ${conciseEval.longVagueTechnicalAvg?.toFixed(2)})`
+    );
+    console.log(
+      `  Technical diff          : ${conciseEval.technicalDiff !== undefined && conciseEval.technicalDiff >= 0 ? '+' : ''}${conciseEval.technicalDiff?.toFixed(2)} pts (concise tech >= long-vague tech)  ${
+        (conciseEval.conciseTechnicalAvg ?? 0) >= (conciseEval.longVagueTechnicalAvg ?? 0) ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(
+      `  Score difference        : ${conciseEval.diff !== undefined && conciseEval.diff >= 0 ? '+' : ''}${conciseEval.diff?.toFixed(2)} pts (concise must score >= long-vague)  ${
+        conciseEval.conciseAvg >= conciseEval.longVagueAvg ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(`  Concise answer verdict  : ${conciseAnswersOk ? '✅ PASS' : '❌ FAIL'}`);
+  }
+
   // ── Accuracy verdict ─────────────────────────────────────────────────────────
 
   console.log('\nAccuracy:');
@@ -1033,7 +1176,14 @@ async function main() {
   const accuracyOk = passCount >= threshold;
 
   console.log('');
-  if (!accuracyOk || !latencyOk || !techIndependenceOk || !difficultyAwarenessOk || !scoreSeparationOk) {
+  if (
+    !accuracyOk ||
+    !latencyOk ||
+    !techIndependenceOk ||
+    !difficultyAwarenessOk ||
+    !scoreSeparationOk ||
+    !conciseAnswersOk
+  ) {
     if (!accuracyOk)
       console.error(
         `❌ ACCURACY: only ${passCount}/${totalWithExpected} pass (need ≥ ${threshold})`
@@ -1048,6 +1198,10 @@ async function main() {
       );
     if (!scoreSeparationOk)
       console.error(`❌ SCORE SEPARATION: filler-heavy answers did not maintain high technical scores (S-5, FR-21)`);
+    if (!conciseAnswersOk)
+      console.error(
+        `❌ CONCISE ANSWERS: concise and correct answer scored lower than long and vague answer (S-6, NFR-19)`
+      );
     process.exit(1);
   } else {
     console.log(

@@ -35,6 +35,18 @@ export const TECHNOLOGY_INDEPENDENCE_PRINCIPLE =
 export const SCORE_SEPARATION_PRINCIPLE =
   'Judge technical depth on content only; pauses, verbal fillers (such as "um", "uh", "like", "you know"), repetition, and hesitation affect Communication only, never technical scores. If the technical solution, algorithm, design, or reasoning is correct and sound, technical categories must receive high scores (4-5) regardless of hesitation or filler words. Every score comment must explicitly explain why its score was given.';
 
+/**
+ * Core principle for concise vs. verbose answer evaluation (S-6, NFR-19).
+ * Concise, accurate answers must not be penalized for brevity.
+ * Evaluate correctness, relevance, completeness against the question, and quality of reasoning.
+ * Do not reward verbosity, padding, or repetition, and never penalize a correct, well-reasoned answer
+ * simply because it is concise. A concise answer covering the essential points must score at least
+ * as well as a longer, rambling or vague answer to the same question. Answers that are short but
+ * incomplete or incorrect must still receive low scores.
+ */
+export const CONCISE_ANSWERS_PRINCIPLE =
+  'Evaluate answers on correctness, relevance, completeness, and reasoning rather than word count or length. Do not reward verbosity, padding, or repetition, and never penalize a correct, well-reasoned answer simply because it is concise. A concise answer covering the essential points must score at least as well as a longer, rambling or vague answer to the same question.';
+
 export class UnknownRoleError extends Error {
   constructor(roleId: string) {
     super(`Unsupported or unknown role: "${roleId}"`);
