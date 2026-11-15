@@ -5,8 +5,58 @@ import prisma from '../db';
 import { extractTextFromPdfBuffer } from '../services/pdf.service';
 import { analyzeResumeWithAI } from '../services/gemini.service';
 import { getUserResourceOr404 } from '../errors';
+import type { CandidateProfile } from '../types';
 
 const router = Router();
+
+function parseStoredProfile(rawJson: string): { profile: CandidateProfile; source?: 'ai' | 'heuristic' } {
+  try {
+    const parsed = JSON.parse(rawJson);
+    const rawProfile = parsed && typeof parsed === 'object' && parsed.profile ? parsed.profile : parsed;
+    let source: 'ai' | 'heuristic' | undefined;
+    if (parsed?.source === 'ai' || rawProfile?.source === 'ai') {
+      source = 'ai';
+    } else if (parsed?.source === 'heuristic' || rawProfile?.source === 'heuristic') {
+      source = 'heuristic';
+    }
+
+    const profile: CandidateProfile = {
+      name: rawProfile?.name || '',
+      email: rawProfile?.email || '',
+      phone: rawProfile?.phone || '',
+      summary: rawProfile?.summary || '',
+      education: Array.isArray(rawProfile?.education) ? rawProfile?.education : [],
+      skills: Array.isArray(rawProfile?.skills) ? rawProfile?.skills : [],
+      projects: Array.isArray(rawProfile?.projects) ? rawProfile?.projects : [],
+      experience: Array.isArray(rawProfile?.experience) ? rawProfile?.experience : [],
+      certifications: Array.isArray(rawProfile?.certifications) ? rawProfile?.certifications : [],
+      achievements: Array.isArray(rawProfile?.achievements) ? rawProfile?.achievements : [],
+      languages: Array.isArray(rawProfile?.languages) ? rawProfile?.languages : [],
+    };
+
+    return {
+      profile,
+      ...(source ? { source } : {}),
+    };
+  } catch {
+    return {
+      profile: {
+        name: '',
+        email: '',
+        phone: '',
+        summary: '',
+        education: [],
+        skills: [],
+        projects: [],
+        experience: [],
+        certifications: [],
+        achievements: [],
+        languages: [],
+      },
+      source: 'heuristic',
+    };
+  }
+}
 
 // Configure multer for memory storage (keep file in RAM instead of disk)
 // Max file size: 5MB
@@ -47,7 +97,7 @@ router.post('/analyze', authenticate, upload.single('resume'), async (req, res) 
   }
 
   // 2. Analyze with Gemini
-  const profile = await analyzeResumeWithAI(extractedText);
+  const { profile, source } = await analyzeResumeWithAI(extractedText);
 
   // 3. Save to database
   const resume = await prisma.resume.create({
@@ -55,7 +105,10 @@ router.post('/analyze', authenticate, upload.single('resume'), async (req, res) 
       userId,
       fileName,
       extractedText,
-      parsedProfile: JSON.stringify(profile),
+      parsedProfile: JSON.stringify({
+        ...profile,
+        source,
+      }),
     },
   });
 
@@ -64,7 +117,10 @@ router.post('/analyze', authenticate, upload.single('resume'), async (req, res) 
     message: 'Resume analyzed successfully',
     data: {
       resumeId: resume.id,
+      fileName: resume.fileName,
+      createdAt: resume.createdAt,
       profile,
+      source,
     },
   });
 });
@@ -79,8 +135,7 @@ router.get('/latest', authenticate, async (req, res) => {
     })
   );
 
-  // Parse the stored JSON string back to an object
-  const profile = JSON.parse(latestResume.parsedProfile);
+  const { profile, source } = parseStoredProfile(latestResume.parsedProfile);
 
   res.status(200).json({
     success: true,
@@ -89,6 +144,7 @@ router.get('/latest', authenticate, async (req, res) => {
       fileName: latestResume.fileName,
       createdAt: latestResume.createdAt,
       profile,
+      source,
     },
   });
 });
@@ -103,7 +159,7 @@ router.get('/:id', authenticate, async (req, res) => {
     })
   );
 
-  const profile = JSON.parse(resume.parsedProfile);
+  const { profile, source } = parseStoredProfile(resume.parsedProfile);
 
   res.status(200).json({
     success: true,
@@ -112,6 +168,7 @@ router.get('/:id', authenticate, async (req, res) => {
       fileName: resume.fileName,
       createdAt: resume.createdAt,
       profile,
+      source,
     },
   });
 });

@@ -32,6 +32,7 @@ export interface ResumeData {
   fileName: string;
   createdAt: string;
   profile: CandidateProfile;
+  source?: 'ai' | 'heuristic';
 }
 
 export interface ResumeResponse {
