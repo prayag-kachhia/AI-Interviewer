@@ -15,16 +15,20 @@ export class InterviewerTimeoutError extends AppError {
 export interface NextQuestionOptions {
   generate?: (prompt: string) => Promise<string>;
   timeoutMs?: number;
+  remainingSeconds?: number;
 }
 
 export function buildNextQuestionPrompt(
   briefing: string,
-  turns: Array<{ speaker: 'AI' | 'CANDIDATE'; text: string }>
+  turns: Array<{ speaker: 'AI' | 'CANDIDATE'; text: string }>,
+  options: { remainingSeconds?: number } = {}
 ): string {
   const formattedTurns =
     turns.length > 0
       ? turns.map((t) => `${t.speaker === 'AI' ? 'Interviewer' : 'Candidate'}: ${t.text}`).join('\n')
       : '(No turns yet. This is the start of the interview.)';
+
+  const isWrapUp = options.remainingSeconds !== undefined && options.remainingSeconds <= 120;
 
   return `${briefing}
 
@@ -33,8 +37,12 @@ ${formattedTurns}
 
 TASK:
 You are the technical interviewer. Based on the role briefing instructions and transcript history above:
-- If there are no turns yet, ask your opening warm-up question.
-- If the candidate just answered, ask a relevant follow-up question or transition to the next technical topic based on your briefing.
+${
+  isWrapUp
+    ? `- 2 MINUTES OR LESS REMAIN IN THE INTERVIEW: You MUST begin the closing wrap-up phase. Ask one final question, invite closing remarks or any questions from the candidate, and thank them warmly for their time. Do NOT introduce new technical deep-dive topics.`
+    : `- If there are no turns yet, ask your opening warm-up question.
+- If the candidate just answered, ask a relevant follow-up question or transition to the next technical topic based on your briefing.`
+}
 - Do NOT repeat questions already asked.
 - Ask exactly ONE clear, concise question to be spoken aloud or displayed to the candidate.
 - Return ONLY the question text. Do NOT include prefixes like 'Interviewer:', quotation marks, or markdown bullet points.`;
@@ -86,7 +94,9 @@ export async function generateNextQuestion(
   const turns = await listTurns(sessionId, userId);
 
   const briefing = await briefingFor(session);
-  const prompt = buildNextQuestionPrompt(briefing, turns);
+  const prompt = buildNextQuestionPrompt(briefing, turns, {
+    remainingSeconds: options.remainingSeconds,
+  });
   const timeoutMs = options.timeoutMs ?? NEXT_QUESTION_TIMEOUT_MS;
 
   const generate = options.generate ?? ((p: string) => callGemini(p, timeoutMs));

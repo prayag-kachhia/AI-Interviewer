@@ -885,4 +885,40 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
       });
     });
   });
+
+  describe('graceful 2-minute wrap-up (K-6, #151)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('sends 2-minute wrap-up cue when remaining time drops to <= 120s and does not repeat', async () => {
+      // 13 minutes elapsed out of 15 minutes limit -> exactly 120s remaining
+      const startedAt = new Date(Date.now() - 13 * 60 * 1000).toISOString();
+      vi.mocked(api.getSession).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 's-wrap',
+          userId: 'user-1',
+          role: 'software-engineer',
+          status: 'LIVE',
+          startedAt,
+          endedAt: null,
+          turns: [],
+        },
+      });
+
+      renderRoom('s-wrap');
+      await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+      const live = mockState.liveInstances[0];
+
+      await waitFor(() => {
+        expect(live.sendText).toHaveBeenCalledWith('2 minutes remain; start wrapping up');
+      });
+
+      expect(
+        live.sendText.mock.calls.filter(([arg]) => arg === '2 minutes remain; start wrapping up')
+      ).toHaveLength(1);
+    });
+  });
 });

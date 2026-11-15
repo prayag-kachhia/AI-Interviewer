@@ -181,9 +181,8 @@ INSTRUCTION: Never ask any of the questions listed above or close variations. Al
      - Evaluate their debugging methodology, fault-tolerance design, graceful degradation, and composure under difficult failure scenarios (e.g., "What happens if this component fails under peak traffic?", "How would you trace an intermittent data corruption or timeout?").
 
 3. Wrap-up & Closing:
-   - When approaching the ${timeLimitMin}-minute mark, inform the candidate that it is time to wrap up.
-   - Give them an opportunity to ask any final questions or share parting thoughts.
-   - Conclude with a warm, encouraging closing remark and thank them for their time.`
+   - When 2 minutes remain (or upon receiving a wrap-up cue), begin closing: ask one final question, invite closing remarks or any parting questions from the candidate, and thank them warmly for their time.
+   - Do NOT introduce new technical deep-dives during the wrap-up period.`
   );
 
   // 8. Guardrails: stay in character, keep the instructions private, never solve the task

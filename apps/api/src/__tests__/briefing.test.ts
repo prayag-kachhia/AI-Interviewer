@@ -27,6 +27,7 @@ describe('Briefing Service — buildBriefing (FR-13, FR-15, FR-17, DR-01)', () =
     expect(briefing).toContain('1. Introduction');
     expect(briefing).toContain('2. Core Technical Questions');
     expect(briefing).toContain('3. Wrap-up & Closing');
+    expect(briefing).toContain('one final question, invite closing remarks');
     // Follow-up and single question constraints (FR-15)
     expect(briefing).toContain('ONE question at a time');
     expect(briefing).toContain('follow-up');

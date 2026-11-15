@@ -96,9 +96,46 @@ describe('POST /api/sessions/:id/next-question (server-side interviewer)', () =>
       expect(prompt).toContain('Candidate: I have used TypeScript on several full-stack projects.');
       expect(prompt).toContain('ask a relevant follow-up question');
     });
+
+    it('formats wrap-up closing prompt when remainingSeconds <= 120 (K-6, #151)', () => {
+      const turns = [
+        { speaker: 'AI' as const, text: 'Tell me about your experience with TypeScript.' },
+        { speaker: 'CANDIDATE' as const, text: 'I have used TypeScript on several full-stack projects.' },
+      ];
+      const prompt = buildNextQuestionPrompt('Role: Software Engineer', turns, { remainingSeconds: 110 });
+      expect(prompt).toContain('2 MINUTES OR LESS REMAIN IN THE INTERVIEW');
+      expect(prompt).toContain('begin the closing wrap-up phase');
+      expect(prompt).toContain('one final question, invite closing remarks');
+      expect(prompt).not.toContain('ask a relevant follow-up question');
+    });
   });
 
   describe('Route: POST /api/sessions/:id/next-question', () => {
+    it('returns 200 and passes remainingSeconds to generateNextQuestion when provided in body (K-6, #151)', async () => {
+      const mockTurn = {
+        id: 'turn-wrap',
+        sessionId: OWN_LIVE_SESSION.id,
+        speaker: 'AI',
+        text: 'We have about two minutes left. Do you have any parting questions for me?',
+        timestampSec: 780.0,
+        turnIndex: 6,
+        createdAt: new Date().toISOString(),
+      };
+      (generateNextQuestion as any).mockResolvedValue(mockTurn);
+
+      const res = await request(app)
+        .post(`/api/sessions/${OWN_LIVE_SESSION.id}/next-question`)
+        .set('Authorization', authHeader())
+        .send({ remainingSeconds: 115 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toEqual(mockTurn);
+      expect(generateNextQuestion).toHaveBeenCalledWith(OWN_LIVE_SESSION.id, AUTH_USER.id, {
+        remainingSeconds: 115,
+      });
+    });
+
     it('returns 200 and the generated AI question turn for an active session', async () => {
       const mockTurn = {
         id: 'turn-1',

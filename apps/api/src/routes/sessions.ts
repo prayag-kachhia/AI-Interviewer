@@ -134,8 +134,12 @@ router.post('/:id/voice-token', authenticate, async (req, res) => {
 router.post('/:id/next-question', authenticate, async (req, res) => {
   const userId = req.user!.id;
   const id = req.params.id as string;
+  const { remainingSeconds } = req.body ?? {};
 
-  const turn = await generateNextQuestion(id, userId);
+  const turn =
+    typeof remainingSeconds === 'number'
+      ? await generateNextQuestion(id, userId, { remainingSeconds })
+      : await generateNextQuestion(id, userId);
   res.status(200).json({ success: true, data: turn });
 });
 
