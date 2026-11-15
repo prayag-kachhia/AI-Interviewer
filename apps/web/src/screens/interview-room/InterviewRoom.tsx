@@ -11,6 +11,7 @@ import { useInterview, formatClock } from './useInterview';
 import { InterviewerCard } from './InterviewerCard';
 import { MicrophoneCard } from './MicrophoneCard';
 import { TypedResponseCard } from './TypedResponseCard';
+import { VoiceFailureCard } from './VoiceFailureCard';
 import { TypedAnswerBox } from './TypedAnswerBox';
 import { TranscriptPanel } from './TranscriptPanel';
 import { InterviewCountdown } from './InterviewCountdown';
@@ -41,6 +42,9 @@ export const InterviewRoom: React.FC = () => {
     notFound,
     error,
     voiceWarning,
+    connectionFailed,
+    connectionError,
+    retryVoiceConnection,
     isAiSpeaking,
     isCandidateSpeaking,
     isListening,
@@ -168,7 +172,7 @@ export const InterviewRoom: React.FC = () => {
         </Alert>
       )}
 
-      {voiceWarning && status === 'LIVE' && !isReconnecting && (
+      {voiceWarning && status === 'LIVE' && !isReconnecting && !connectionFailed && (
         <Alert variant="info">
           <AlertCircle className="size-4" />
           <AlertDescription>{voiceWarning}</AlertDescription>
@@ -213,37 +217,46 @@ export const InterviewRoom: React.FC = () => {
       {status === 'LIVE' && (
         <>
           <InterviewCountdown elapsed={elapsed} timeLimitMin={timeLimitMin} />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-2">
-            <InterviewerCard
-              isAiSpeaking={isAiSpeaking}
-              interviewComplete={interviewComplete}
-              currentAiQuestion={currentAiQuestion}
-              onReplayAiQuestion={handleReplayAiQuestion}
+          {connectionFailed && mode === 'voice' ? (
+            <VoiceFailureCard
+              error={connectionError}
+              onRetry={retryVoiceConnection}
+              onTypeInstead={switchToTypedMode}
+              onEndInterview={() => setIsEndDialogOpen(true)}
             />
-            {mode === 'typed' ? (
-              <TypedResponseCard
-                value={typedAnswer}
-                onChange={setTypedAnswer}
-                onSubmit={handleTypedSubmit}
-                disabled={savingTurn || submittingTyped}
-                submitting={savingTurn || submittingTyped}
-                interviewComplete={interviewComplete}
-              />
-            ) : (
-              <MicrophoneCard
-                isMuted={isMuted}
-                isListening={isListening}
-                isCandidateSpeaking={isCandidateSpeaking}
-                audioLevel={audioLevel}
-                liveCandidateSpeech={liveCandidateSpeech}
-                interviewComplete={interviewComplete}
-                savingTurn={savingTurn}
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-2">
+              <InterviewerCard
                 isAiSpeaking={isAiSpeaking}
-                onToggleMute={handleToggleMute}
-                onFinishSpeaking={handleFinishSpeaking}
+                interviewComplete={interviewComplete}
+                currentAiQuestion={currentAiQuestion}
+                onReplayAiQuestion={handleReplayAiQuestion}
               />
-            )}
-          </div>
+              {mode === 'typed' ? (
+                <TypedResponseCard
+                  value={typedAnswer}
+                  onChange={setTypedAnswer}
+                  onSubmit={handleTypedSubmit}
+                  disabled={savingTurn || submittingTyped}
+                  submitting={savingTurn || submittingTyped}
+                  interviewComplete={interviewComplete}
+                />
+              ) : (
+                <MicrophoneCard
+                  isMuted={isMuted}
+                  isListening={isListening}
+                  isCandidateSpeaking={isCandidateSpeaking}
+                  audioLevel={audioLevel}
+                  liveCandidateSpeech={liveCandidateSpeech}
+                  interviewComplete={interviewComplete}
+                  savingTurn={savingTurn}
+                  isAiSpeaking={isAiSpeaking}
+                  onToggleMute={handleToggleMute}
+                  onFinishSpeaking={handleFinishSpeaking}
+                />
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -255,7 +268,7 @@ export const InterviewRoom: React.FC = () => {
       />
 
       {/* Collapsible Accessibility / Simulated Speech Trigger */}
-      {status === 'LIVE' && !interviewComplete && mode === 'voice' && (
+      {status === 'LIVE' && !interviewComplete && mode === 'voice' && !connectionFailed && (
         <TypedAnswerBox
           show={showAccessibilityFallback}
           onToggleShow={() => setShowAccessibilityFallback((prev) => !prev)}
