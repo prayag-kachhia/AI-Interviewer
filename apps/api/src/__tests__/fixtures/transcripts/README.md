@@ -20,6 +20,12 @@ Each fixture is a JSON array of 6–10 turns between an interviewer (`AI`) and a
 | `data-analyst-weak.json` | Data Analyst | 8 | Underprepared candidate answers | Vague SQL, no window functions, no data-quality checks. |
 | `backend-developer-good.json` | Backend Developer | 8 | Competent candidate answers | Cursor pagination, JWT refresh and revocation, trade-offs explained. |
 | `backend-developer-average.json` | Backend Developer | 8 | Mixed / intermediate answers | Workable but shallow designs (offset pagination, basic JWT) without trade-offs. |
+| `tech-stack-python.json` | Software Engineer | 8 | Top-tier candidate answers | Python stack: min-heap (heapq), asyncio queues, cyclic generational GC, pytest. |
+| `tech-stack-java.json` | Software Engineer | 8 | Top-tier candidate answers | Java stack: PriorityQueue, BlockingQueue/ThreadPool, JVM GC (G1/ZGC), JUnit 5. |
+| `filler-heavy-correct.json` | Software Engineer | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): pauses and fillers affect Communication only, keeping high technical scores. |
+| `filler-heavy-data-analyst.json` | Data Analyst | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): SQL window functions and validation logic retain high scores despite disfluent delivery. |
+| `difficulty-basic.json` | Software Engineer | 8 | Top-tier basic answers | Hash table mechanics, array vs linked list, HTTP status codes, unit testing basics. |
+| `difficulty-advanced.json` | Software Engineer | 8 | Top-tier advanced answers | Distributed PN-Counter CRDTs, deadlock/data race triage, MVCC isolation anomalies, chaos engineering. |
 
 ---
 
@@ -74,6 +80,31 @@ The "representative" ranges below are rough hand estimates of the average score.
 - **`off-topic.json`**: the candidate talks about teamwork and the internet instead of answering a URL-shortener design question. Expected **1 – 2** in every category.
 - **`data-analyst-strong.json`** / **`data-analyst-weak.json`**: the same Data Analyst questions answered well (expected **4 – 5**) and poorly (expected **1 – 3**).
 - **`backend-developer-good.json`** / **`backend-developer-average.json`**: the same Backend Developer questions answered well (expected **3 – 5**) and adequately (expected **2 – 4**).
+
+### 7. Technology-Independent Scoring Fixtures (PN-8 / DR-05)
+- **`tech-stack-python.json`** vs. **`tech-stack-java.json`**:
+  - The exact same four Software Engineer technical interview questions (algorithmic top-K elements, asynchronous worker queue design, runtime memory management & GC, automated testing strategy).
+  - One candidate responds using Python (with `heapq`, `asyncio.Queue`, reference counting & generational GC tuning, `pytest`).
+  - The other candidate responds using Java (with `PriorityQueue`, `BlockingQueue` & `ThreadPoolExecutor`, JVM generational GC & G1/ZGC, `JUnit 5`).
+  - Both candidates exhibit equivalent technical correctness, algorithmic depth ($O(N + U \log K)$), system architecture principles, and communication clarity.
+  - Acceptance criterion (DR-05): both variants score within 1.0 point of each other across all categories. Expected: **4 – 5** in every category for both fixtures.
+
+### 8. Score Separation Fixtures (S-5 / FR-21 / NFR-19)
+- **`filler-heavy-correct.json`**:
+  - Role: Software Engineer.
+  - Characteristics: Validates that pauses, speech fillers ("um", "uh", "like", "you know"), repetition, and verbal hesitation affect Communication only, never technical scores. The candidate describes an asynchronous notification service with message queues, exponential backoff with jitter, dead-letter queues, PostgreSQL idempotency keys, and Testcontainers integration tests with heavy disfluencies.
+  - Expected ranges: Problem Solving & Algorithms (3–5), Software Design & Architecture (3–5), Technical Communication (1–3).
+- **`filler-heavy-data-analyst.json`**:
+  - Role: Data Analyst.
+  - Characteristics: The candidate details SQL rolling 7-day average using CTE and `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW`, deduplication via `ROW_NUMBER()` and `LAG`, structured metric decomposition (orders × AOV), multidimensional segmentation, and layered pipeline validation, spoken with frequent hesitation and fillers.
+  - Expected ranges: SQL & Analytical Reasoning (4–5), Data Interpretation & Business Insights (4–5), Statistical Understanding & Data Quality (4–5). All three categories are technical/analytical; speech fillers and hesitation must never penalize technical depth or business interpretation.
+### 9. Difficulty-Aware Expectations Fixtures (PN-3 / DR-05)
+- **`difficulty-basic.json`**:
+  - Foundational Software Engineer questions (hash table lookup & collision handling, array vs linked list memory and complexity, HTTP status codes 200/400/404/500, unit testing isolation).
+  - Demonstrates that a fully correct, complete basic answer earns full marks (**5 / 5** across all categories) without penalization for omitting unasked advanced optimizations or distributed-system depth.
+- **`difficulty-advanced.json`**:
+  - Advanced Software Engineer questions (globally consistent distributed counters via PN-Counter CRDTs, deadlock/data race triage and lock-free CAS primitives, transaction isolation anomalies & MVCC snapshot mechanics, automated chaos engineering pipeline).
+  - Evaluated against deeper expectations of distributed constraints, concurrency anomalies, and trade-offs. Expected: **4 – 5** across all categories.
 
 The exact range per category is in each fixture's `*.expected.json`.
 

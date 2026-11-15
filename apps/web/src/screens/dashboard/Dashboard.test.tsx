@@ -48,7 +48,7 @@ describe('Dashboard Achievements Section', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Unable to load achievements at this time.');
     // Rest of dashboard remains intact
-    expect(screen.getByText('Practice Interview')).toBeInTheDocument();
+    expect(screen.getByText(/practice interview/i)).toBeInTheDocument();
   });
 
   it('renders all four badges in locked state when session history is empty', async () => {

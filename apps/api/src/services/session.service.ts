@@ -1,6 +1,6 @@
 import prisma from '../db';
-import { NotFoundError } from '../errors';
-import { FeedbackStatus, ROLES } from '@interview/contracts';
+import { AppError, NotFoundError } from '../errors';
+import { FeedbackStatus, ROLES, type CreateSessionInput } from '@interview/contracts';
 
 // The role list lives in @interview/contracts so the API and the web app share it.
 const VALID_ROLE_IDS = new Set(ROLES.map((r) => r.id));
@@ -9,41 +9,38 @@ export function isValidRoleId(roleId: string): boolean {
   return typeof roleId === 'string' && VALID_ROLE_IDS.has(roleId);
 }
 
-export class InvalidRoleError extends Error {
+export class InvalidRoleError extends AppError {
   constructor(message: string = 'Invalid role') {
-    super(message);
-    this.name = 'InvalidRoleError';
+    super(400, message);
   }
 }
 
 export const MAX_TURN_TEXT_LENGTH = 4000;
 
-export class TurnTextTooLongError extends Error {
+export class TurnTextTooLongError extends AppError {
   constructor(message: string = `Turn text exceeds maximum allowed length of ${MAX_TURN_TEXT_LENGTH} characters`) {
-    super(message);
-    this.name = 'TurnTextTooLongError';
+    super(400, message);
   }
 }
 
-export class InvalidTimestampError extends Error {
+export class InvalidTimestampError extends AppError {
   constructor(message: string = 'Turn timestamp is ahead of the session\'s elapsed time') {
-    super(message);
-    this.name = 'InvalidTimestampError';
+    super(400, message);
   }
 }
 
-export class SessionEndedError extends Error {
+export class SessionEndedError extends AppError {
   constructor(message: string = 'This session has already ended') {
-    super(message);
-    this.name = 'SessionEndedError';
+    super(409, message);
   }
 }
 
 /**
- * Create a session for a signed-in candidate + a validated role.
+ * Create a session for a signed-in candidate with the setup they chose
+ * (role, and optionally focus, company, level and mode).
  */
-
-export async function createSession(userId: string, roleId: string) {
+export async function createSession(userId: string, input: CreateSessionInput) {
+  const { roleId } = input;
   if (!isValidRoleId(roleId)) {
     throw new InvalidRoleError(`Unknown role id: ${roleId}`);
   }
@@ -59,6 +56,10 @@ export async function createSession(userId: string, roleId: string) {
       userId,
       role: roleId,
       resumeId: latestResume?.id ?? null,
+      company: input.company ?? null,
+      level: input.level ?? null,
+      focus: input.focus ?? null,
+      mode: input.mode,
     },
   });
 }

@@ -1,14 +1,14 @@
 import { GoogleGenAI } from '@google/genai';
+import { AppError } from '../errors';
 import { getOwnedSession, addTurn, listTurns, SessionEndedError } from './session.service';
 import { briefingFor } from './briefing.service';
 
 export const NEXT_QUESTION_TIMEOUT_MS = 15_000;
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 
-export class InterviewerTimeoutError extends Error {
+export class InterviewerTimeoutError extends AppError {
   constructor(message = 'Question generation timed out, please try again') {
-    super(message);
-    this.name = 'InterviewerTimeoutError';
+    super(503, message);
   }
 }
 

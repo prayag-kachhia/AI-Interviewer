@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "difficulty": "basic",
+  "scores": [
+    {
+      "category": "Problem Solving & Algorithms",
+      "min": 5,
+      "max": 5,
+      "reason": "Complete, accurate explanations of hash tables, array vs linked list memory layouts, and asymptotic lookup/insertion complexities without requiring unasked advanced optimizations."
+    },
+    {
+      "category": "Software Design & Architecture",
+      "min": 5,
+      "max": 5,
+      "reason": "Accurately articulates HTTP semantics, status code categories, and unit testing modularity principles covering all essential requirements."
+    },
+    {
+      "category": "Technical Communication",
+      "min": 5,
+      "max": 5,
+      "reason": "Clear, structured, and concise articulation of foundational software engineering concepts and trade-offs."
+    }
+  ]
+}

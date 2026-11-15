@@ -2,10 +2,11 @@
 // It mints single-use, short-lived tokens so the browser never receives the
 // API key itself.
 
-export class VoiceProviderTimeoutError extends Error {
+import { AppError } from '../errors';
+
+export class VoiceProviderTimeoutError extends AppError {
   constructor(message = 'Voice service unavailable, try again') {
-    super(message);
-    this.name = 'VoiceProviderTimeoutError';
+    super(503, message);
   }
 }
 

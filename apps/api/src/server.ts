@@ -5,6 +5,7 @@ import resumeRoutes from './routes/resume';
 import sessionRoutes from './routes/sessions';
 import feedbackRoutes from './routes/feedback';
 import { runWorker } from './worker';
+import { AppError } from './errors';
 
 // No dotenv here: Bun loads apps/api/.env itself (ADR-0009).
 const app: Express = express();
@@ -34,7 +35,16 @@ app.use('/api', (_req: Request, res: Response) => {
 // Last stop for errors no handler caught: a malformed JSON body, a file over multer's limit,
 // or (in Express 5) a rejected promise in an async handler. Without this, Express replies
 // with an HTML page that includes the stack trace.
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+export function errorHandler(
+  err: unknown,
+  _req: Request,
+  res: Response,
+  _next: NextFunction
+): void {
+  if (err instanceof AppError) {
+    res.status(err.status).json({ success: false, message: err.message });
+    return;
+  }
   const status =
     typeof err === 'object' && err !== null && 'status' in err && typeof err.status === 'number'
       ? err.status
@@ -45,7 +55,9 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     return;
   }
   res.status(status).json({ success: false, message: 'Invalid request' });
-});
+}
+
+app.use(errorHandler);
 
 // Start server
 if (process.env.NODE_ENV !== 'test') {

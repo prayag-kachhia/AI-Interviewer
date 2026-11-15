@@ -14,6 +14,7 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
   const runId = randomUUID().slice(0, 8);
   let userId: string;
   let sessionId: string;
+  const retentionDates: string[] = [];
 
   beforeAll(async () => {
     process.env.DATABASE_URL = TEST_DATABASE_URL;
@@ -33,6 +34,17 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
 
   afterAll(async () => {
     await prisma.job.deleteMany({ where: { OR: [{ type: { startsWith: `test.${runId}` } }, { sessionId }] } });
+    for (const scheduledDate of retentionDates) {
+      await prisma.job.deleteMany({
+        where: {
+          type: queue.JOB_TYPES.RETENTION_PURGE,
+          payload: {
+            path: ['scheduledDate'],
+            equals: scheduledDate,
+          },
+        },
+      });
+    }
     await prisma.feedback.deleteMany({ where: { sessionId } });
     await prisma.session.deleteMany({ where: { id: sessionId } });
     await prisma.user.deleteMany({ where: { id: userId } });
@@ -170,5 +182,47 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
     const rows = await prisma.feedback.findMany({ where: { sessionId } });
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe('ready');
+  });
+
+  it('queues exactly one retention purge job per UTC calendar day', async () => {
+    const offsetDays = parseInt(runId, 16) % 36500;
+
+    const firstDate = new Date(
+      Date.UTC(2100, 0, 1) + offsetDays * 24 * 60 * 60 * 1000
+    );
+
+    const nextDate = new Date(firstDate.getTime() + 24 * 60 * 60 * 1000);
+
+    const firstKey = firstDate.toISOString().slice(0, 10);
+    const nextKey = nextDate.toISOString().slice(0, 10);
+
+    retentionDates.push(firstKey, nextKey);
+
+    await queue.enqueueDailyRetentionPurge(firstDate);
+    await queue.enqueueDailyRetentionPurge(firstDate);
+    await queue.enqueueDailyRetentionPurge(nextDate);
+
+    const firstDayJobs = await prisma.job.count({
+      where: {
+        type: queue.JOB_TYPES.RETENTION_PURGE,
+        payload: {
+          path: ['scheduledDate'],
+          equals: firstKey,
+        },
+      },
+    });
+
+    const nextDayJobs = await prisma.job.count({
+      where: {
+        type: queue.JOB_TYPES.RETENTION_PURGE,
+        payload: {
+          path: ['scheduledDate'],
+          equals: nextKey,
+        },
+      },
+    });
+
+    expect(firstDayJobs).toBe(1);
+    expect(nextDayJobs).toBe(1);
   });
 });

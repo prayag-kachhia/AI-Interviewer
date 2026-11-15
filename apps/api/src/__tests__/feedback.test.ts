@@ -97,6 +97,13 @@ describe('FB3 — session.ended job handler', () => {
       create: { sessionId: 'sess-1', status: 'ready', summary: 'Solid.', scores: SCORES, error: null },
       update: { status: 'ready', summary: 'Solid.', scores: SCORES, error: null },
     });
+    expect(prisma.job.create).toHaveBeenCalledWith({
+      data: {
+        type: 'insights.refresh',
+        sessionId: 'sess-1',
+        payload: { userId: 'user-1' },
+      },
+    });
   });
 
   it('given a permanent evaluator failure, feedback is marked failed immediately and error rethrown (NFR-04)', async () => {
@@ -135,6 +142,7 @@ describe('FB3 — session.ended job handler', () => {
 
     // Feedback should NOT be marked failed on transient retry
     expect(prisma.feedback.upsert).not.toHaveBeenCalled();
+    expect(prisma.job.create).not.toHaveBeenCalled();
   });
 
   it('given a transient error on attempt >= MAX_ATTEMPTS, feedback is marked failed on the final attempt', async () => {
@@ -143,6 +151,8 @@ describe('FB3 — session.ended job handler', () => {
     vi.mocked(evaluateTranscript).mockRejectedValueOnce(new Error('Evaluation timed out after 12000 ms'));
 
     await expect(handleSessionEnded(finalJob)).rejects.toThrow('timed out');
+
+    expect(prisma.job.create).not.toHaveBeenCalled();
 
     expect(prisma.feedback.upsert).toHaveBeenCalledWith({
       where: { sessionId: 'sess-1' },

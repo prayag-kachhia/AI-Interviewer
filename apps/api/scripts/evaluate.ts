@@ -27,6 +27,7 @@ const TranscriptObjectSchema = z.object({
 export function parseArgs(argv: string[]) {
   let filePath: string | undefined;
   let roleId = 'software-engineer';
+  let difficulty: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -37,6 +38,13 @@ export function parseArgs(argv: string[]) {
       roleId = argv[++i];
     } else if (arg.startsWith('--role=')) {
       roleId = arg.slice('--role='.length);
+    } else if (arg === '--difficulty') {
+      if (i + 1 >= argv.length) {
+        throw new Error('Missing value for --difficulty flag');
+      }
+      difficulty = argv[++i];
+    } else if (arg.startsWith('--difficulty=')) {
+      difficulty = arg.slice('--difficulty='.length);
     } else if (arg.startsWith('-')) {
       throw new Error(`Unknown flag "${arg}"`);
     } else {
@@ -48,7 +56,7 @@ export function parseArgs(argv: string[]) {
     }
   }
 
-  return { filePath, roleId };
+  return { filePath, roleId, difficulty };
 }
 
 export function loadTranscript(filePath: string): TranscriptTurn[] {
@@ -102,12 +110,12 @@ export function resolveRole(roleId: string) {
 
 export async function runCLI(argv: string[] = process.argv.slice(2)) {
   try {
-    const { filePath, roleId } = parseArgs(argv);
+    const { filePath, roleId, difficulty } = parseArgs(argv);
 
     if (!filePath) {
       const available = ROLES.map((r) => r.id).join(', ');
       console.error(
-        `Usage: bun scripts/evaluate.ts <path/to/transcript.json> [--role <role>]\nValid roles: ${available}`
+        `Usage: bun scripts/evaluate.ts <path/to/transcript.json> [--role <role>] [--difficulty <basic|advanced>]\nValid roles: ${available}`
       );
       process.exit(1);
     }
@@ -119,6 +127,7 @@ export async function runCLI(argv: string[] = process.argv.slice(2)) {
     const evaluation = await evaluateTranscript({
       roleId: role.id,
       turns,
+      difficulty,
     });
     const wallTimeMs = Math.round(performance.now() - start);
 

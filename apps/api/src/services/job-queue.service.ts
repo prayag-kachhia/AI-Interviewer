@@ -5,8 +5,16 @@ import prisma from '../db';
 // this many times; after that it is marked failed so it can't loop forever.
 export const MAX_ATTEMPTS = 3;
 
+export const JOB_TYPES = {
+  SESSION_ENDED: 'session.ended',
+  INSIGHTS_REFRESH: 'insights.refresh',
+  RETENTION_PURGE: 'retention.purge',
+} as const;
+
+export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES] | (string & {});
+
 export interface EnqueueJobParams {
-  type: string;
+  type: JobType;
   sessionId?: string;
   payload?: Prisma.InputJsonObject;
 }
@@ -167,10 +175,53 @@ export async function processNextJob(
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (isTransientError(err) && job.attempts < MAX_ATTEMPTS) {
+      console.warn(
+        `[${workerId}] transient evaluation error for job ${job.id}. ` +
+        `Attempt ${job.attempts}/${MAX_ATTEMPTS}. Requeuing: ${message}`
+      );
       await requeueJob(job.id, message);
       return null;
     }
     await failJob(job.id, message);
     throw err;
   }
+}
+
+/**
+ * Ensures exactly one retention purge job is queued per UTC calendar day.
+ * PostgreSQL advisory locking prevents duplicate jobs across multiple workers.
+ */
+export async function enqueueDailyRetentionPurge(now: Date = new Date()): Promise<void> {
+  const scheduledDate = now.toISOString().slice(0, 10);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT 1::int AS locked
+      FROM (
+        SELECT pg_advisory_xact_lock(190, hashtext(${scheduledDate}))
+      ) AS advisory_lock
+    `;
+
+    const existingJob = await tx.job.findFirst({
+      where: {
+        type: JOB_TYPES.RETENTION_PURGE,
+        payload: {
+          path: ['scheduledDate'],
+          equals: scheduledDate,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existingJob) {
+      return;
+    }
+
+    await tx.job.create({
+      data: {
+        type: JOB_TYPES.RETENTION_PURGE,
+        payload: { scheduledDate },
+      },
+    });
+  });
 }

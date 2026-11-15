@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to the Software Engineer interview. How would you design and implement an algorithm to find the top K most frequent elements from a large stream of items?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would first build a frequency map using a HashMap<String, Integer>, iterating through the stream in O(N) time where N is the total number of items. Next, to retrieve the top K frequent elements without sorting all unique entries in O(U log U), I would use a min-heap implemented via PriorityQueue<Map.Entry<String, Integer>>, configured with a comparator comparing entry values. I iterate through the entry set of the map and insert entries into the PriorityQueue. Once the queue size exceeds K, I poll the smallest element using queue.poll(). This guarantees that the PriorityQueue holds only the top K frequent elements at any time. The total time complexity is O(N + U log K) where U is the number of unique elements, and auxiliary space is O(U) for the HashMap plus O(K) for the PriorityQueue. For edge cases where K is greater than or equal to the unique element count, we can return the key set directly."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you build an asynchronous worker service that consumes tasks from a queue and executes them with rate limiting and retry handling?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would implement a worker service using an ExecutorService with a fixed thread pool backed by a thread-safe BlockingQueue, such as ArrayBlockingQueue or an external message broker like RabbitMQ via the Java AMQP client. Worker threads continuously dequeue task objects and process them concurrently. For rate limiting, I use a token bucket algorithm implemented via Guava's RateLimiter or an atomic Redis Lua script using Redisson to coordinate across instances. When an external call fails with a transient error or HTTP 429, the worker catches the exception and reschedules the task with exponential backoff and randomized jitter to avoid thundering herds. Once a task exhausts a maximum retry limit of five attempts, it routes to a dead-letter queue for developer triage."
+  },
+  {
+    "speaker": "AI",
+    "text": "How does the runtime's memory management and garbage collection model impact your design when handling high throughput?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "The Java Virtual Machine uses generational garbage collection—such as the G1 or ZGC collector—dividing the heap into Eden, Survivor, and Tenured spaces. High throughput generates high allocation rates in Eden space, which triggers frequent minor collections. If short-lived objects prematurely tenure into the old generation, this causes longer major GC pauses that degrade latency percentiles. To mitigate this, I minimize object churn by pooling large reusable buffers, using primitive collections where appropriate to avoid boxing overhead, and sizing the Young Generation appropriately so transient objects die in Eden. In latency-sensitive services, using ZGC or tuning G1 max pause targets ensures pause times stay under a few milliseconds."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you approach automated testing for these services to guarantee correctness and prevent regressions?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I use JUnit 5 as the core testing framework. For unit testing, I write parameterized tests using @ParameterizedTest and @ValueSource to verify algorithms with normal datasets, boundary conditions, and empty collections. For isolating dependencies, I use Mockito to mock HTTP clients and repositories, simulating edge cases such as network timeouts and 429 rate limits. For integration tests, I use Testcontainers with Spring Boot Test or standard JUnit extensions to boot real PostgreSQL and RabbitMQ containers, confirming that the entire pipeline processes messages and commits transactional state correctly. In CI, we run Checkstyle, SpotBugs, and enforce compiler warnings to ensure high code quality."
+  }
+]

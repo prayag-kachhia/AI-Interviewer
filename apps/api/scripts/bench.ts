@@ -158,6 +158,343 @@ export function calculateBenchmarkCost(
   };
 }
 
+/**
+ * Asserts that two technology stack variants score within acceptable parity (PN-8, DR-05).
+ * Definition of Done: both stacks score within 1.0 point of each other.
+ */
+export function checkTechnologyParity(
+  scoreA: number,
+  scoreB: number,
+  maxAllowedDiff = 1.0
+): { diff: number; pass: boolean } {
+  const diff = Math.abs(scoreA - scoreB);
+  const roundedDiff = Math.round(diff * 100) / 100;
+  return {
+    diff: roundedDiff,
+    pass: roundedDiff <= maxAllowedDiff,
+  };
+}
+
+export interface TechnologyIndependenceResult {
+  pass: boolean;
+  pyAvg?: number;
+  javaAvg?: number;
+  diff?: number;
+  error?: string;
+}
+
+/**
+ * Evaluates parity between tech-stack-python and tech-stack-java fixtures (PN-8, DR-05).
+ * Defaults to failing unless both fixtures exist and have successful runs with valid scores.
+ */
+export function evaluateTechnologyIndependence(
+  fixtureResults: Array<{ name: string; runs: RunResult[] }>
+): TechnologyIndependenceResult {
+  const pythonResult = fixtureResults.find((f) => f.name === 'tech-stack-python');
+  const javaResult = fixtureResults.find((f) => f.name === 'tech-stack-java');
+
+  if (!pythonResult || !javaResult) {
+    const missing = [
+      !pythonResult ? 'tech-stack-python' : null,
+      !javaResult ? 'tech-stack-java' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `Missing required technology stack fixture(s): ${missing}`,
+    };
+  }
+
+  const getValidScores = (runs: RunResult[]) =>
+    runs
+      .filter((r) => !r.error)
+      .flatMap((r) => r.scores.map((s) => s.score));
+
+  const pyScores = getValidScores(pythonResult.runs);
+  const javaScores = getValidScores(javaResult.runs);
+
+  if (pyScores.length === 0 || javaScores.length === 0) {
+    const emptyRuns = [
+      pyScores.length === 0 ? 'tech-stack-python' : null,
+      javaScores.length === 0 ? 'tech-stack-java' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `No successful evaluated runs with scores for: ${emptyRuns}`,
+    };
+  }
+
+  const pyAvg = pyScores.reduce((a, b) => a + b, 0) / pyScores.length;
+  const javaAvg = javaScores.reduce((a, b) => a + b, 0) / javaScores.length;
+  const parity = checkTechnologyParity(pyAvg, javaAvg, 1.0);
+
+  return {
+    pass: parity.pass,
+    pyAvg,
+    javaAvg,
+    diff: parity.diff,
+  };
+}
+
+export interface DifficultyAwarenessResult {
+  pass: boolean;
+  basicAvg?: number;
+  advancedAvg?: number;
+  basicScoresByCategory?: Record<string, number>;
+  advancedScoresByCategory?: Record<string, number>;
+  error?: string;
+}
+
+const REQUIRED_DIFFICULTY_RUBRIC_CATEGORIES = [
+  'Problem Solving & Algorithms',
+  'Software Design & Architecture',
+  'Technical Communication',
+];
+
+/**
+ * Asserts that a fully correct basic answer earns full marks (5/5) without being marked down
+ * for lacking advanced-level depth, and verifies that all expected rubric categories are present (PN-3, DR-05).
+ */
+export function evaluateDifficultyAwareness(
+  fixtureResults: Array<{ name: string; runs: RunResult[]; expected?: FixtureExpected }>
+): DifficultyAwarenessResult {
+  const basicResult = fixtureResults.find((f) => f.name === 'difficulty-basic');
+  const advancedResult = fixtureResults.find((f) => f.name === 'difficulty-advanced');
+
+  if (!basicResult || !advancedResult) {
+    const missing = [
+      !basicResult ? 'difficulty-basic' : null,
+      !advancedResult ? 'difficulty-advanced' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `Missing required difficulty benchmark fixture(s): ${missing}`,
+    };
+  }
+
+  const getValidRuns = (res: { runs: RunResult[] }) => res.runs.filter((r) => !r.error);
+  const basicValid = getValidRuns(basicResult);
+  const advancedValid = getValidRuns(advancedResult);
+
+  if (basicValid.length === 0 || advancedValid.length === 0) {
+    const empty = [
+      basicValid.length === 0 ? 'difficulty-basic' : null,
+      advancedValid.length === 0 ? 'difficulty-advanced' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `No successful evaluated runs with scores for: ${empty}`,
+    };
+  }
+
+  // Determine required categories from fixture expected config or fallback to required SE categories
+  const expectedBasicCategories =
+    basicResult.expected?.scores && basicResult.expected.scores.length > 0
+      ? basicResult.expected.scores.map((s) => s.category)
+      : REQUIRED_DIFFICULTY_RUBRIC_CATEGORIES;
+
+  const expectedAdvancedCategories =
+    advancedResult.expected?.scores && advancedResult.expected.scores.length > 0
+      ? advancedResult.expected.scores.map((s) => s.category)
+      : REQUIRED_DIFFICULTY_RUBRIC_CATEGORIES;
+
+  // Validate that all expected categories are present in evaluated runs
+  const missingBasicCategories = expectedBasicCategories.filter((cat) =>
+    basicValid.every((r) => !r.scores.some((s) => s.category === cat))
+  );
+  if (missingBasicCategories.length > 0) {
+    return {
+      pass: false,
+      error: `Basic fixture missing required rubric category/categories: ${missingBasicCategories.join(', ')}`,
+    };
+  }
+
+  const missingAdvancedCategories = expectedAdvancedCategories.filter((cat) =>
+    advancedValid.every((r) => !r.scores.some((s) => s.category === cat))
+  );
+  if (missingAdvancedCategories.length > 0) {
+    return {
+      pass: false,
+      error: `Advanced fixture missing required rubric category/categories: ${missingAdvancedCategories.join(', ')}`,
+    };
+  }
+
+  // Calculate per-category averages for basic fixture across expected categories
+  const basicCategoryAverages: Record<string, number> = {};
+  for (const cat of expectedBasicCategories) {
+    const catScores = basicValid
+      .flatMap((r) => r.scores.filter((s) => s.category === cat).map((s) => s.score));
+    basicCategoryAverages[cat] =
+      catScores.length > 0 ? catScores.reduce((a, b) => a + b, 0) / catScores.length : 0;
+  }
+
+  // Calculate per-category averages for advanced fixture across expected categories
+  const advancedCategoryAverages: Record<string, number> = {};
+  for (const cat of expectedAdvancedCategories) {
+    const catScores = advancedValid
+      .flatMap((r) => r.scores.filter((s) => s.category === cat).map((s) => s.score));
+    advancedCategoryAverages[cat] =
+      catScores.length > 0 ? catScores.reduce((a, b) => a + b, 0) / catScores.length : 0;
+  }
+
+  const basicAllScores = basicValid.flatMap((r) => r.scores.map((s) => s.score));
+  const basicAvg = basicAllScores.reduce((a, b) => a + b, 0) / basicAllScores.length;
+
+  const advancedAllScores = advancedValid.flatMap((r) => r.scores.map((s) => s.score));
+  const advancedAvg = advancedAllScores.reduce((a, b) => a + b, 0) / advancedAllScores.length;
+
+  // Acceptance criteria (PN-3, DR-05):
+  // 1. Fully correct basic answer must achieve 5/5 in all categories (not marked down for lacking advanced depth).
+  // 2. Advanced answer must meet high advanced expectations (avg >= 4.00).
+  const basicHasFullMarks = Object.values(basicCategoryAverages).every((avg) => avg >= 5.0);
+  const advancedMeetsExpectations = advancedAvg >= 4.0;
+
+  if (!basicHasFullMarks) {
+    const sub5 = Object.entries(basicCategoryAverages)
+      .filter(([, avg]) => avg < 5.0)
+      .map(([cat, avg]) => `${cat} (${avg.toFixed(2)})`)
+      .join(', ');
+    return {
+      pass: false,
+      basicAvg,
+      advancedAvg,
+      basicScoresByCategory: basicCategoryAverages,
+      advancedScoresByCategory: advancedCategoryAverages,
+      error: `Basic question did not achieve full marks (5/5) in: ${sub5}. Basic answers must not be penalized for lacking advanced depth.`,
+    };
+  }
+
+  if (!advancedMeetsExpectations) {
+    return {
+      pass: false,
+      basicAvg,
+      advancedAvg,
+      basicScoresByCategory: basicCategoryAverages,
+      advancedScoresByCategory: advancedCategoryAverages,
+      error: `Advanced question average (${advancedAvg.toFixed(2)}) fell below expectations (>= 4.00).`,
+    };
+  }
+
+  return {
+    pass: true,
+    basicAvg,
+    advancedAvg,
+    basicScoresByCategory: basicCategoryAverages,
+    advancedScoresByCategory: advancedCategoryAverages,
+  };
+}
+
+export interface ScoreSeparationResult {
+  pass: boolean;
+  technicalAvg?: number;
+  communicationScore?: number;
+  dataAnalystAvg?: number;
+  dataInterpretationScore?: number;
+  error?: string;
+}
+
+/**
+ * Evaluates that pauses and fillers affect communication only, never the technical score (S-5, FR-21, NFR-19).
+ * Verifies that:
+ * 1. For SWE (filler-heavy-correct), technical categories maintain a high average (>= 3.5 / 5.0)
+ *    while communication reflects the verbal disfluency.
+ * 2. For Data Analyst (filler-heavy-data-analyst), all categories—specifically including
+ *    Data Interpretation & Business Insights—are recognized as technical/analytical and maintain
+ *    high scores (>= 3.5 / 5.0) unaffected by verbal disfluencies.
+ */
+export function evaluateScoreSeparation(
+  fixtureResults: Array<{ name: string; runs: RunResult[] }>
+): ScoreSeparationResult {
+  const sweResult = fixtureResults.find((f) => f.name === 'filler-heavy-correct');
+  const daResult = fixtureResults.find((f) => f.name === 'filler-heavy-data-analyst');
+
+  if (!sweResult || !daResult) {
+    const missing = [
+      !sweResult ? 'filler-heavy-correct' : null,
+      !daResult ? 'filler-heavy-data-analyst' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `Missing required score separation fixture(s): ${missing}`,
+    };
+  }
+
+  const validSweRuns = sweResult.runs.filter((r) => !r.error);
+  const validDaRuns = daResult.runs.filter((r) => !r.error);
+
+  if (validSweRuns.length === 0 || validDaRuns.length === 0) {
+    const emptyRuns = [
+      validSweRuns.length === 0 ? 'filler-heavy-correct' : null,
+      validDaRuns.length === 0 ? 'filler-heavy-data-analyst' : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    return {
+      pass: false,
+      error: `No successful evaluated runs with scores for: ${emptyRuns}`,
+    };
+  }
+
+  const techScores = validSweRuns.flatMap((r) =>
+    r.scores
+      .filter((s) => s.category !== 'Technical Communication')
+      .map((s) => s.score)
+  );
+  const commScores = validSweRuns.flatMap((r) =>
+    r.scores
+      .filter((s) => s.category === 'Technical Communication')
+      .map((s) => s.score)
+  );
+
+  if (techScores.length === 0 || commScores.length === 0) {
+    return {
+      pass: false,
+      error: 'Missing technical or communication categories for: filler-heavy-correct',
+    };
+  }
+
+  const daScores = validDaRuns.flatMap((r) => r.scores.map((s) => s.score));
+  const daInterpretationScores = validDaRuns.flatMap((r) =>
+    r.scores
+      .filter((s) => s.category === 'Data Interpretation & Business Insights')
+      .map((s) => s.score)
+  );
+
+  if (daScores.length === 0 || daInterpretationScores.length === 0) {
+    return {
+      pass: false,
+      error: 'Missing technical categories for: filler-heavy-data-analyst',
+    };
+  }
+
+  const technicalAvg = techScores.reduce((a, b) => a + b, 0) / techScores.length;
+  const communicationScore = commScores.reduce((a, b) => a + b, 0) / commScores.length;
+  const dataAnalystAvg = daScores.reduce((a, b) => a + b, 0) / daScores.length;
+  const dataInterpretationScore =
+    daInterpretationScores.reduce((a, b) => a + b, 0) / daInterpretationScores.length;
+
+  // Technical depth must remain high (>= 3.5 / 5.00) in both roles despite heavy verbal fillers.
+  // Data Interpretation & Business Insights is explicitly evaluated as a technical category (>= 3.5 / 5.00).
+  const pass = technicalAvg >= 3.5 && dataAnalystAvg >= 3.5 && dataInterpretationScore >= 3.5;
+
+  return {
+    pass,
+    technicalAvg,
+    communicationScore,
+    dataAnalystAvg,
+    dataInterpretationScore,
+  };
+}
+
 const defaultPricing = resolveBenchmarkPricing();
 const INPUT_COST_USD_PER_1M = defaultPricing.inputCostPer1M;
 const OUTPUT_COST_USD_PER_1M = defaultPricing.outputCostPer1M;
@@ -174,6 +511,7 @@ interface ExpectedScore {
 
 interface FixtureExpected {
   role: string;
+  difficulty?: string;
   scores: ExpectedScore[];
 }
 
@@ -419,7 +757,7 @@ async function main() {
         const result = await runWithRetry(
           () =>
             evaluateTranscript(
-              { roleId: role.id, turns },
+              { roleId: role.id, turns, difficulty: expected?.difficulty },
               generateFn ? { generate: generateFn, timeoutMs: BENCH_TIMEOUT_MS } : { timeoutMs: BENCH_TIMEOUT_MS }
             ),
           MAX_RETRIES,
@@ -601,6 +939,91 @@ async function main() {
     );
   }
 
+  // ── Technology Independence (PN-8, DR-05) ──────────────────────────────────
+  console.log('\nTechnology Independence (PN-8 / DR-05):');
+  let techIndependenceOk = false;
+  const techEval = evaluateTechnologyIndependence(fixtureResults);
+
+  if (techEval.error) {
+    console.log(`  ❌ FAIL — ${techEval.error}`);
+  } else if (techEval.pyAvg !== undefined && techEval.javaAvg !== undefined && techEval.diff !== undefined) {
+    techIndependenceOk = techEval.pass;
+    console.log(`  tech-stack-python avg : ${techEval.pyAvg.toFixed(2)} / 5.00`);
+    console.log(`  tech-stack-java   avg : ${techEval.javaAvg.toFixed(2)} / 5.00`);
+    console.log(
+      `  Difference            : ${techEval.diff.toFixed(2)} pts (target: <= 1.00 pt)  ${
+        techIndependenceOk ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+  }
+
+  // ── Difficulty-Aware Expectations (PN-3, DR-05) ───────────────────────────
+  console.log('\nDifficulty-Aware Expectations (PN-3 / DR-05):');
+  let difficultyAwarenessOk = false;
+  const diffEval = evaluateDifficultyAwareness(fixtureResults);
+
+  if (diffEval.error) {
+    console.log(`  ❌ FAIL — ${diffEval.error}`);
+  } else if (diffEval.basicAvg !== undefined && diffEval.advancedAvg !== undefined) {
+    difficultyAwarenessOk = diffEval.pass;
+    const basicOk =
+      diffEval.basicAvg >= 5.0 &&
+      (diffEval.basicScoresByCategory
+        ? Object.values(diffEval.basicScoresByCategory).every((avg) => avg >= 5.0)
+        : false);
+    const advancedOk = diffEval.advancedAvg >= 4.0;
+
+    console.log(
+      `  difficulty-basic    avg : ${diffEval.basicAvg.toFixed(2)} / 5.00  (requires full marks 5.00/5.00)  ${
+        basicOk ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(
+      `  difficulty-advanced avg : ${diffEval.advancedAvg.toFixed(2)} / 5.00  (requires >= 4.00/5.00)          ${
+        advancedOk ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(
+      `  Verdict                 : ${
+        difficultyAwarenessOk
+          ? '✅ PASS — Basic answer earns full marks without advanced-level depth'
+          : '❌ FAIL — ' + (diffEval.error ?? 'Difficulty awareness criteria not met')
+      }`
+    );
+  }
+
+  // ── Score Separation (S-5, FR-21, NFR-19) ──────────────────────────────────
+  console.log('\nScore Separation (S-5 / FR-21):');
+  let scoreSeparationOk = false;
+  const sepEval = evaluateScoreSeparation(fixtureResults);
+
+  if (sepEval.error) {
+    console.log(`  ❌ FAIL — ${sepEval.error}`);
+  } else if (sepEval.technicalAvg !== undefined && sepEval.communicationScore !== undefined) {
+    scoreSeparationOk = sepEval.pass;
+    console.log(
+      `  SWE filler-heavy technical avg   : ${sepEval.technicalAvg.toFixed(2)} / 5.00 (target: >= 3.50)  ${
+        sepEval.technicalAvg >= 3.5 ? '✅ PASS' : '❌ FAIL'
+      }`
+    );
+    console.log(`  SWE filler-heavy comm score      : ${sepEval.communicationScore.toFixed(2)} / 5.00`);
+    if (sepEval.dataAnalystAvg !== undefined) {
+      console.log(
+        `  DA filler-heavy technical avg    : ${sepEval.dataAnalystAvg.toFixed(2)} / 5.00 (target: >= 3.50)  ${
+          sepEval.dataAnalystAvg >= 3.5 ? '✅ PASS' : '❌ FAIL'
+        }`
+      );
+    }
+    if (sepEval.dataInterpretationScore !== undefined) {
+      console.log(
+        `  DA Data Interpretation score     : ${sepEval.dataInterpretationScore.toFixed(2)} / 5.00 (target: >= 3.50)  ${
+          sepEval.dataInterpretationScore >= 3.5 ? '✅ PASS' : '❌ FAIL'
+        }`
+      );
+    }
+    console.log(`  Score separation                 : ${scoreSeparationOk ? '✅ PASS' : '❌ FAIL'}`);
+  }
+
   // ── Accuracy verdict ─────────────────────────────────────────────────────────
 
   console.log('\nAccuracy:');
@@ -610,13 +1033,21 @@ async function main() {
   const accuracyOk = passCount >= threshold;
 
   console.log('');
-  if (!accuracyOk || !latencyOk) {
+  if (!accuracyOk || !latencyOk || !techIndependenceOk || !difficultyAwarenessOk || !scoreSeparationOk) {
     if (!accuracyOk)
       console.error(
         `❌ ACCURACY: only ${passCount}/${totalWithExpected} pass (need ≥ ${threshold})`
       );
     if (!latencyOk)
       console.error(`❌ LATENCY:  p95 = ${p95} ms exceeds ${LATENCY_TARGET_MS} ms target`);
+    if (!techIndependenceOk)
+      console.error(`❌ TECHNOLOGY INDEPENDENCE: score difference exceeds 1.0 point limit (PN-8, DR-05)`);
+    if (!difficultyAwarenessOk)
+      console.error(
+        `❌ DIFFICULTY AWARENESS: basic answer did not earn full marks or advanced expectations not met (PN-3, DR-05)`
+      );
+    if (!scoreSeparationOk)
+      console.error(`❌ SCORE SEPARATION: filler-heavy answers did not maintain high technical scores (S-5, FR-21)`);
     process.exit(1);
   } else {
     console.log(
