@@ -107,6 +107,7 @@ export const Session = z.object({
   mode: InterviewMode.optional(),
   jobContext: z.string().nullable().optional(),
   status: SessionStatus,
+  keep: z.boolean().optional(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   createdAt: z.string().optional(),
