@@ -11,6 +11,7 @@ interface TypedAnswerBoxProps {
   onSubmit: (e: React.FormEvent) => void;
   disabled: boolean;
   savingTurn: boolean;
+  onSwitchToTyped?: () => void;
 }
 
 export const TypedAnswerBox: React.FC<TypedAnswerBoxProps> = ({
@@ -21,9 +22,10 @@ export const TypedAnswerBox: React.FC<TypedAnswerBoxProps> = ({
   onSubmit,
   disabled,
   savingTurn,
+  onSwitchToTyped,
 }) => {
   return (
-    <div className="mb-6">
+    <div className="mb-6 flex flex-wrap items-center gap-3">
       <Button
         type="button"
         variant="ghost"
@@ -39,6 +41,21 @@ export const TypedAnswerBox: React.FC<TypedAnswerBoxProps> = ({
         </span>
         {show ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
       </Button>
+
+      {onSwitchToTyped && (
+        <>
+          <span className="text-xs text-muted-foreground">•</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onSwitchToTyped}
+            className="h-auto p-0 text-xs text-muted-foreground hover:text-foreground font-normal underline underline-offset-2"
+          >
+            Type instead
+          </Button>
+        </>
+      )}
 
       {show && (
         <Card className="mt-2.5 p-3.5 gap-0">

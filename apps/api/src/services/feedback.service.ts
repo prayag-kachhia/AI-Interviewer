@@ -102,7 +102,11 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
   });
   try {
     const evaluation = await evaluateTranscript(
-      { roleId: session.role, turns: session.turns },
+      {
+        roleId: session.role,
+        turns: session.turns,
+        jobContext: session.jobContext ?? undefined,
+      },
       options
     );
     await saveFeedback({

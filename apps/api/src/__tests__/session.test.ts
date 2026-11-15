@@ -106,6 +106,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           level: null,
           focus: null,
           mode: 'voice',
+          jobContext: null,
         },
       });
     });
@@ -147,6 +148,7 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           level: null,
           focus: null,
           mode: 'voice',
+          jobContext: null,
         },
       });
     });
@@ -169,8 +171,54 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
           level: 'mid',
           focus: 'Databases',
           mode: 'typed',
+          jobContext: null,
         },
       });
+    });
+
+    it('stores jobContext when candidate pastes a target job description (PK-9, FR-11)', async () => {
+      (prisma.session.create as any).mockResolvedValueOnce({
+        id: 'sess-job-1',
+        role: 'software-engineer',
+        jobContext: 'We are seeking a Backend Engineer with experience in Go and PostgreSQL.',
+      });
+
+      const res = await request(app)
+        .post('/api/sessions')
+        .set('Authorization', authHeader())
+        .send({
+          roleId: 'software-engineer',
+          jobContext: '  We are seeking a Backend Engineer with experience in Go and PostgreSQL.  ',
+        });
+
+      expect(res.status).toBe(201);
+      expect(prisma.session.create).toHaveBeenCalledWith({
+        data: {
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          resumeId: null,
+          company: null,
+          level: null,
+          focus: null,
+          mode: 'voice',
+          jobContext: 'We are seeking a Backend Engineer with experience in Go and PostgreSQL.',
+        },
+      });
+    });
+
+    it('rejects jobContext exceeding 4,000 characters with HTTP 400 (PK-9, FR-11)', async () => {
+      const res = await request(app)
+        .post('/api/sessions')
+        .set('Authorization', authHeader())
+        .send({
+          roleId: 'software-engineer',
+          jobContext: 'x'.repeat(4001),
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toMatch(/jobContext|Job description/i);
+      expect(prisma.session.create).not.toHaveBeenCalled();
     });
 
     it('rejects an unknown focus, level or mode with HTTP 400 (P-7)', async () => {
@@ -881,6 +929,65 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
 
       expect(res.status).toBe(401);
       expect(prisma.session.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('PATCH /api/sessions/:id/keep (VM-7)', () => {
+    it('updates keep status for the authenticated session owner', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+      });
+
+      (prisma.session.update as any).mockResolvedValueOnce({
+        id: 'sess-1',
+        userId: AUTH_USER.id,
+        keep: true,
+      });
+
+      const res = await request(app)
+        .patch('/api/sessions/sess-1/keep')
+        .set('Authorization', authHeader())
+        .send({ keep: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.keep).toBe(true);
+      expect(prisma.session.update).toHaveBeenCalledWith({
+        where: { id: 'sess-1' },
+        data: { keep: true },
+      });
+    });
+
+    it('returns 400 when keep is not a boolean', async () => {
+      const res = await request(app)
+        .patch('/api/sessions/sess-1/keep')
+        .set('Authorization', authHeader())
+        .send({ keep: 'true' });
+
+      expect(res.status).toBe(400);
+      expect(prisma.session.update).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when another user attempts to update keep status', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .patch('/api/sessions/sess-1/keep')
+        .set('Authorization', authHeader())
+        .send({ keep: true });
+
+      expect(res.status).toBe(404);
+      expect(prisma.session.update).not.toHaveBeenCalled();
+    });
+
+    it('requires authentication', async () => {
+      const res = await request(app)
+        .patch('/api/sessions/sess-1/keep')
+        .send({ keep: true });
+
+      expect(res.status).toBe(401);
+      expect(prisma.session.update).not.toHaveBeenCalled();
     });
   });
 });

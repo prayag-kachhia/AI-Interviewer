@@ -66,6 +66,8 @@ BENCH_USD_TO_INR=84.0               # default USD to INR conversion rate
 | `tech-stack-java` | Software Engineer | Top-tier (Java stack) | ✅ (DR-05 parity) |
 | `filler-heavy-correct` | Software Engineer | Competent, heavy speech fillers | ✅ (FR-21 separation) |
 | `filler-heavy-data-analyst` | Data Analyst | Competent, heavy speech fillers | ✅ (FR-21 separation) |
+| `concise-correct` | Software Engineer | Competent, concise & accurate | ✅ (NFR-19 conciseness) |
+| `long-vague` | Software Engineer | Underprepared, long & vague | ✅ (NFR-19 conciseness) |
 
 Each `*.expected.json` file stores the fixture's role and, per rubric category, the acceptable score range `[min, max]` with a one-line reason. The benchmark averages scores across all runs and fails a fixture if a category's average is outside its range or the category is missing.
 
@@ -74,7 +76,9 @@ The expected files use per-role rubric categories from `rubrics.ts`:
 - **Data Analyst**: SQL & Analytical Reasoning · Data Interpretation & Business Insights · Statistical Understanding & Data Quality
 - **Backend Developer**: API Design & Architecture · Database Modeling & Performance · System Reliability & Scalability
 
-**Acceptance criterion:** ≥ 8 of 10 fixtures pass _and_ p95 wall time < 15 000 ms.
+**Acceptance criteria:**
+- Accuracy & Latency: ≥ 8 of 10 fixtures pass _and_ p95 wall time < 15 000 ms.
+- Concise vs. Vague Answers (S-6 / NFR-19): `concise-correct` must score at least as well as `long-vague` overall (`conciseAvg >= longVagueAvg`) and in technical depth (`conciseTechnicalAvg >= longVagueTechnicalAvg`), with `conciseTechnicalAvg >= 3.50 / 5.00`.
 
 ---
 

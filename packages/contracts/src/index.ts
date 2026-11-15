@@ -58,6 +58,13 @@ export const CreateSessionInput = z
       .transform((c) => c || undefined),
     level: Level.optional(),
     mode: InterviewMode.default("voice"),
+    // Candidate-supplied job description text (FR-11). Max 4,000 characters.
+    jobContext: z
+      .string()
+      .trim()
+      .max(4000, "Job description must not exceed 4,000 characters")
+      .optional()
+      .transform((jc) => jc || undefined),
   })
   .superRefine((input, ctx) => {
     const role = ROLES.find((r) => r.id === input.roleId);
@@ -98,13 +105,16 @@ export const Session = z.object({
   level: Level.nullable().optional(),
   focus: z.string().nullable().optional(),
   mode: InterviewMode.optional(),
+  jobContext: z.string().nullable().optional(),
   status: SessionStatus,
+  keep: z.boolean().optional(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   createdAt: z.string().optional(),
   turns: z.array(Turn).optional(),
   feedbackStatus: FeedbackStatus.nullable().optional(),
   endedEarly: z.boolean().optional(),
+  overallScore: z.number().nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
