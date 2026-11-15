@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, test, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { InterviewRoom } from './InterviewRoom';
 import { InterviewCountdown } from './InterviewCountdown';
@@ -752,6 +752,135 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
 
       await waitFor(() => {
         expect(api.endSession).toHaveBeenCalledWith('typed-end');
+        expect(screen.getByText('Feedback page')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Interview failure screen with Retry and Type instead (K-3, #148)', () => {
+    it('shows failure screen when Live fails and fallback also fails, and allows Type instead', async () => {
+      vi.mocked(api.postNextQuestion).mockResolvedValueOnce({
+        success: true,
+        data: makeTurn({ id: 'ai-typed-1', text: 'Typed mode question: Explain ACID properties.' }),
+      });
+
+      renderRoom();
+      await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+      // 1. Live fails
+      const live = mockState.liveInstances[0];
+      await act(async () => {
+        live.callbacks.onError?.('Live token timeout');
+      });
+
+      await waitFor(() => expect(mockState.browserInstances).toHaveLength(1));
+      const browser = mockState.browserInstances[0];
+
+      // 2. Fallback also fails
+      await act(async () => {
+        browser.callbacks.onError?.('Microphone permission denied');
+      });
+
+      // 3. Failure screen is shown
+      await waitFor(() => {
+        expect(screen.getByTestId('voice-failure-screen')).toBeInTheDocument();
+        expect(screen.getByText('Voice Connection Unavailable')).toBeInTheDocument();
+        expect(screen.getByText('Microphone permission denied')).toBeInTheDocument();
+      });
+
+      const failureScreen = screen.getByTestId('voice-failure-screen');
+      expect(within(failureScreen).getByRole('button', { name: /^Retry$/i })).toBeInTheDocument();
+      expect(within(failureScreen).getByRole('button', { name: /Type instead/i })).toBeInTheDocument();
+      expect(within(failureScreen).getByRole('button', { name: /End Interview/i })).toBeInTheDocument();
+
+      // 4. Test "Type instead"
+      await act(async () => {
+        fireEvent.click(within(failureScreen).getByRole('button', { name: /Type instead/i }));
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('voice-failure-screen')).not.toBeInTheDocument();
+        expect(screen.getByText('Typed Mode')).toBeInTheDocument();
+        expect(screen.getByRole('textbox', { name: /Type your interview answer/i })).toBeInTheDocument();
+      });
+    });
+
+    it('allows candidate to Retry connection from failure screen', async () => {
+      renderRoom();
+      await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+      // 1. Live fails
+      await act(async () => {
+        mockState.liveInstances[0].callbacks.onError?.('WebSocket dropped');
+      });
+
+      await waitFor(() => expect(mockState.browserInstances).toHaveLength(1));
+
+      // 2. Fallback fails
+      await act(async () => {
+        mockState.browserInstances[0].callbacks.onError?.('Speech recognition unsupported');
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('voice-failure-screen')).toBeInTheDocument();
+      });
+
+      // 3. Click Retry
+      const failureScreen = screen.getByTestId('voice-failure-screen');
+      await act(async () => {
+        fireEvent.click(within(failureScreen).getByRole('button', { name: /^Retry$/i }));
+      });
+
+      // Live instance is created again
+      await waitFor(() => {
+        expect(mockState.liveInstances.length).toBeGreaterThanOrEqual(2);
+        expect(screen.queryByTestId('voice-failure-screen')).not.toBeInTheDocument();
+      });
+    });
+
+    it('allows candidate to End Interview from failure screen with confirmation dialog', async () => {
+      vi.mocked(api.endSession).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 's1',
+          userId: 'u1',
+          role: 'software-engineer',
+          status: 'ENDED',
+          startedAt: new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+          turns: [],
+        },
+      });
+
+      renderRoom();
+      await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+      // 1. Live fails
+      await act(async () => {
+        mockState.liveInstances[0].callbacks.onError?.('Connection aborted');
+      });
+
+      await waitFor(() => expect(mockState.browserInstances).toHaveLength(1));
+
+      // 2. Fallback fails
+      await act(async () => {
+        mockState.browserInstances[0].callbacks.onError?.('Audio capture failed');
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('voice-failure-screen')).toBeInTheDocument();
+      });
+
+      // 3. Click End Interview inside failure screen
+      const failureScreen = screen.getByTestId('voice-failure-screen');
+      fireEvent.click(within(failureScreen).getByRole('button', { name: /End Interview/i }));
+
+      // Opens confirmation dialog
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Yes, End Interview/i }));
+
+      await waitFor(() => {
+        expect(api.endSession).toHaveBeenCalledWith('s1');
         expect(screen.getByText('Feedback page')).toBeInTheDocument();
       });
     });

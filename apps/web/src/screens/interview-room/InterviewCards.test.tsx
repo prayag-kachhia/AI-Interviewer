@@ -6,6 +6,7 @@ import { MicrophoneCard } from './MicrophoneCard';
 import { TranscriptPanel } from './TranscriptPanel';
 import { TypedAnswerBox } from './TypedAnswerBox';
 import { TypedResponseCard } from './TypedResponseCard';
+import { VoiceFailureCard } from './VoiceFailureCard';
 import type { TurnData } from '../../types';
 
 describe('Interview Room Cards Restyled (PK-5, #157)', () => {
@@ -283,6 +284,64 @@ describe('Interview Room Cards Restyled (PK-5, #157)', () => {
 
       expect(screen.getByText('Saving transcript...')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Submit Answer/i })).toBeDisabled();
+    });
+  });
+
+  describe('VoiceFailureCard (K-3, #148)', () => {
+    test('renders voice connection failure alert and all recovery buttons', () => {
+      const onRetry = vi.fn();
+      const onTypeInstead = vi.fn();
+      const onEndInterview = vi.fn();
+
+      render(
+        <VoiceFailureCard
+          error="Microphone access denied"
+          onRetry={onRetry}
+          onTypeInstead={onTypeInstead}
+          onEndInterview={onEndInterview}
+        />
+      );
+
+      expect(screen.getByTestId('voice-failure-screen')).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByText('Voice Connection Unavailable')).toBeInTheDocument();
+      expect(screen.getByText('Microphone access denied')).toBeInTheDocument();
+
+      const retryBtn = screen.getByRole('button', { name: /^Retry$/i });
+      const typeBtn = screen.getByRole('button', { name: /Type instead/i });
+      const endBtn = screen.getByRole('button', { name: /End Interview/i });
+
+      expect(retryBtn).toBeEnabled();
+      expect(typeBtn).toBeEnabled();
+      expect(endBtn).toBeEnabled();
+
+      fireEvent.click(retryBtn);
+      expect(onRetry).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(typeBtn);
+      expect(onTypeInstead).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(endBtn);
+      expect(onEndInterview).toHaveBeenCalledTimes(1);
+    });
+
+    test('renders default error message when no error prop and handles isRetrying disabled state', () => {
+      render(
+        <VoiceFailureCard
+          onRetry={vi.fn()}
+          onTypeInstead={vi.fn()}
+          onEndInterview={vi.fn()}
+          isRetrying={true}
+        />
+      );
+
+      expect(
+        screen.getByText(
+          /Unable to establish a voice connection with the AI interviewer or the browser speech fallback\./i
+        )
+      ).toBeInTheDocument();
+      const retryBtn = screen.getByRole('button', { name: /^Retry$/i });
+      expect(retryBtn).toBeDisabled();
     });
   });
 });

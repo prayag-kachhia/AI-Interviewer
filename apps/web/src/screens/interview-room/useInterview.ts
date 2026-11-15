@@ -68,6 +68,9 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const [elapsed, setElapsed] = useState(0);
   const [showAccessibilityFallback, setShowAccessibilityFallback] = useState(false);
   const [fallbackSpeechInput, setFallbackSpeechInput] = useState('');
+  const [connectionFailed, setConnectionFailed] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
+  const [retryAttempt, setRetryAttempt] = useState(0);
 
   const adapterRef = useRef<VoiceSessionAdapter | null>(null);
   const turnsRef = useRef<TurnData[]>([]);
@@ -340,42 +343,60 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
 
       setVoiceWarning(`Live voice unavailable (${reason}). Switched to browser speech fallback.`);
 
-      await fallbackAdapter.connect(sessionId, {
-        onStateChange: (nextState) => {
-          if (!cancelled && activeAdapter === fallbackAdapter) updateVoiceState(nextState);
-        },
-        onTranscript: (evt) => {
-          if (!cancelled && activeAdapter === fallbackAdapter) {
-            void handleAdapterTranscript(evt);
-          }
-        },
-        onAudioLevel: (lvl) => {
-          if (!cancelled && activeAdapter === fallbackAdapter) setAudioLevel(lvl);
-        },
-        onError: (msg) => {
-          if (!cancelled && activeAdapter === fallbackAdapter) {
-            setVoiceWarning(msg);
-            setShowAccessibilityFallback(true);
-          }
-        },
-      });
+      try {
+        await fallbackAdapter.connect(sessionId, {
+          onStateChange: (nextState) => {
+            if (!cancelled && activeAdapter === fallbackAdapter) {
+              updateVoiceState(nextState);
+              if (nextState === 'ERROR') {
+                setConnectionFailed(true);
+                setConnectionError('Both live voice and browser speech fallback encountered an error.');
+              }
+            }
+          },
+          onTranscript: (evt) => {
+            if (!cancelled && activeAdapter === fallbackAdapter) {
+              void handleAdapterTranscript(evt);
+            }
+          },
+          onAudioLevel: (lvl) => {
+            if (!cancelled && activeAdapter === fallbackAdapter) setAudioLevel(lvl);
+          },
+          onError: (msg) => {
+            if (!cancelled && activeAdapter === fallbackAdapter) {
+              setVoiceWarning(msg);
+              setShowAccessibilityFallback(true);
+              setConnectionFailed(true);
+              setConnectionError(msg || 'Browser speech fallback failed.');
+              updateVoiceState('ERROR');
+            }
+          },
+        });
 
-      if (cancelled || activeAdapter !== fallbackAdapter) return;
+        if (cancelled || activeAdapter !== fallbackAdapter) return;
 
-      if (isMutedRef.current) {
-        fallbackAdapter.setMuted(true);
-      }
+        if (isMutedRef.current) {
+          fallbackAdapter.setMuted(true);
+        }
 
-      if (!fallbackAdapter.isSpeechRecognitionSupported) {
-        setShowAccessibilityFallback(true);
-      }
+        if (!fallbackAdapter.isSpeechRecognitionSupported) {
+          setShowAccessibilityFallback(true);
+        }
 
-      const lastTurn = turnsRef.current[turnsRef.current.length - 1];
-      if (lastTurn?.speaker === 'AI') {
-        setCurrentAiQuestion(lastTurn.text);
-        await fallbackAdapter.speakAiQuestion(lastTurn.text);
-      } else {
-        await requestNextQuestion();
+        const lastTurn = turnsRef.current[turnsRef.current.length - 1];
+        if (lastTurn?.speaker === 'AI') {
+          setCurrentAiQuestion(lastTurn.text);
+          await fallbackAdapter.speakAiQuestion(lastTurn.text);
+        } else {
+          await requestNextQuestion();
+        }
+      } catch (err: unknown) {
+        if (!cancelled && activeAdapter === fallbackAdapter) {
+          const errorMsg = getErrorMessage(err, 'Browser speech fallback connection failed');
+          setConnectionFailed(true);
+          setConnectionError(errorMsg);
+          updateVoiceState('ERROR');
+        }
       }
     };
 
@@ -446,6 +467,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     mode,
     sessionId,
     startedAt,
+    retryAttempt,
     handleAdapterTranscript,
     requestNextQuestion,
     clearThinkingTimer,
@@ -467,6 +489,8 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
 
   const switchToTypedMode = useCallback(() => {
     setMode('typed');
+    setConnectionFailed(false);
+    setConnectionError('');
     clearThinkingTimer();
     adapterRef.current?.disconnect();
     adapterRef.current = null;
@@ -474,6 +498,15 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     setLiveCandidateSpeech('');
     setAudioLevel(0);
   }, [clearThinkingTimer, updateVoiceState]);
+
+  const retryVoiceConnection = useCallback(() => {
+    setConnectionFailed(false);
+    setConnectionError('');
+    setError('');
+    setVoiceWarning('');
+    updateVoiceState('IDLE');
+    setRetryAttempt((prev) => prev + 1);
+  }, [updateVoiceState]);
 
   const handleTypedSubmit = useCallback(
     async (e?: React.FormEvent) => {
@@ -630,6 +663,9 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     notFound,
     error,
     voiceWarning,
+    connectionFailed,
+    connectionError,
+    retryVoiceConnection,
     isAiSpeaking,
     isCandidateSpeaking,
     isListening,
