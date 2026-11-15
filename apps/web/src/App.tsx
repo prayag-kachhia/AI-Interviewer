@@ -7,6 +7,7 @@ import { NewInterview } from './screens/new-interview/NewInterview';
 import { InterviewRoom } from './screens/interview-room/InterviewRoom';
 import { ResultsScreen } from './screens/results/ResultsScreen';
 import { HistoryPage } from './screens/history/HistoryPage';
+import { GuidePage } from './screens/guide/GuidePage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -25,6 +26,7 @@ function App() {
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/history" element={<HistoryPage />} />
+              <Route path="/guide" element={<GuidePage />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/new-interview" element={<NewInterview />} />
               <Route path="/interview/:sessionId" element={<InterviewRoom />} />

@@ -4,6 +4,7 @@ import authRoutes from './routes/auth';
 import resumeRoutes from './routes/resume';
 import sessionRoutes from './routes/sessions';
 import feedbackRoutes from './routes/feedback';
+import insightsRoutes from './routes/insights';
 import meRoutes from './routes/me';
 import { runWorker } from './worker';
 import { AppError } from './errors';
@@ -22,6 +23,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/resume', resumeRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/sessions', feedbackRoutes);
+app.use('/api/insights', insightsRoutes);
 app.use('/api/me', meRoutes);
 
 // Health check endpoint
