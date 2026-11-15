@@ -44,7 +44,7 @@ export interface ResumeResponse {
 // Slice A — Live Session
 // ---------------------------------------------------------------------------
 
-export type { Role, SessionStatus, TurnSpeaker } from '@interview/contracts';
+export type { Role, SessionStatus, TurnSpeaker, InterviewMode } from '@interview/contracts';
 import type { Role, Session, Turn } from '@interview/contracts';
 
 export type InterviewVoiceState =
@@ -58,12 +58,16 @@ export type InterviewVoiceState =
 
 export type TurnData = Turn;
 
-export type SessionData = Session;
+export interface HistorySession extends Session {
+  overallScore?: number | null;
+}
+
+export type SessionData = HistorySession;
 
 export interface SessionsListResponse {
   success: boolean;
   message?: string;
-  data?: SessionData[];
+  data?: HistorySession[];
 }
 
 export interface RolesResponse {

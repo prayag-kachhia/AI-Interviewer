@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "scores": [
+    {
+      "category": "Problem Solving & Algorithms",
+      "min": 4,
+      "max": 5,
+      "reason": "Optimal data structure selection (hash map + doubly linked list) and exact O(1) complexity analysis; concise answers directly cover essential algorithmic requirements without filler."
+    },
+    {
+      "category": "Software Design & Architecture",
+      "min": 4,
+      "max": 5,
+      "reason": "Solid distributed design using unique idempotency keys, transactional persistence, optimistic locking versioning, and deterministic client/server test isolation."
+    },
+    {
+      "category": "Technical Communication",
+      "min": 4,
+      "max": 5,
+      "reason": "Clear, structured, and concise technical explanations covering all prompt questions directly and without superfluous verbosity or rambling."
+    }
+  ]
+}
+
