@@ -14,6 +14,42 @@ export const LIVE_INPUT_SAMPLE_RATE = 16000;
 /** AudioWorkletProcessor registration name for mic PCM capture. */
 export const PCM_CAPTURE_PROCESSOR = "pcm-capture-processor";
 
+/** Storage key for the candidate's preferred microphone deviceId (VI-4, #143). */
+export const PREFERRED_MIC_STORAGE_KEY = 'ai_interviewer_preferred_mic';
+
+/** Returns the stored preferred microphone deviceId, or null if none saved. */
+export function getPreferredMicId(): string | null {
+  try {
+    return typeof sessionStorage !== 'undefined'
+      ? sessionStorage.getItem(PREFERRED_MIC_STORAGE_KEY)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stores the candidate's preferred microphone deviceId in sessionStorage. */
+export function setPreferredMicId(deviceId: string): void {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(PREFERRED_MIC_STORAGE_KEY, deviceId);
+    }
+  } catch {
+    // Gracefully handle disabled storage or quota exceptions
+  }
+}
+
+/** Clears any stored preferred microphone deviceId from sessionStorage. */
+export function clearPreferredMicId(): void {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(PREFERRED_MIC_STORAGE_KEY);
+    }
+  } catch {
+    // Gracefully handle storage errors
+  }
+}
+
 /**
  * Downsamples mono Float32 audio from `inputSampleRate` to `outputSampleRate` using box averaging.
  */

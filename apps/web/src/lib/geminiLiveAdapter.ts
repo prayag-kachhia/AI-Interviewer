@@ -1,5 +1,11 @@
 import { getVoiceToken } from './api';
-import { base64Decode, base64Encode, PCM_CAPTURE_PROCESSOR, PlaybackQueue } from './audio';
+import {
+  base64Decode,
+  base64Encode,
+  getPreferredMicId,
+  PCM_CAPTURE_PROCESSOR,
+  PlaybackQueue,
+} from './audio';
 import pcmCaptureWorkletUrl from './pcmCaptureWorklet.ts?worker&url';
 import type { VoiceAdapterCallbacks, VoiceSessionAdapter } from './voiceAdapter';
 
@@ -81,7 +87,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
       }
       if (this.abandoned()) return;
 
-      const audioOutCtx = new AudioContext({ sampleRate: 24000 });
+      const audioOutCtx = new AudioContext();
       this.audioOutCtx = audioOutCtx;
       this.playbackQueue = new PlaybackQueue(audioOutCtx, 24000);
       if (audioOutCtx.state === 'suspended') {
@@ -89,15 +95,34 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
         if (this.abandoned()) return;
       }
 
-      const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      const preferredDeviceId = getPreferredMicId();
+      let micStream: MediaStream;
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 16000,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            ...(preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : {}),
+          },
+        });
+      } catch (err) {
+        if (preferredDeviceId && err instanceof DOMException && err.name === 'OverconstrainedError') {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              channelCount: 1,
+              sampleRate: 16000,
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+        } else {
+          throw err;
+        }
+      }
       this.micStream = micStream;
       if (this.abandoned()) return;
 

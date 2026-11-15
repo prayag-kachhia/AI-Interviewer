@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   floatTo16BitPCM,
   pcm16ToFloat,
@@ -6,6 +6,10 @@ import {
   base64Decode,
   downsampleBuffer,
   PlaybackQueue,
+  PREFERRED_MIC_STORAGE_KEY,
+  getPreferredMicId,
+  setPreferredMicId,
+  clearPreferredMicId,
 } from "./audio";
 
 describe("audio helpers (Issue #81)", () => {
@@ -196,6 +200,30 @@ describe("audio helpers (Issue #81)", () => {
       // Trigger playback finished
       mockCtx._sources[0].onended?.();
       expect(queue.pendingCount).toBe(0);
+    });
+  });
+
+  describe("preferred microphone storage helpers (VI-4, #143)", () => {
+    beforeEach(() => {
+      sessionStorage.clear();
+    });
+
+    it("returns null when no mic is saved in sessionStorage", () => {
+      expect(getPreferredMicId()).toBeNull();
+    });
+
+    it("saves and retrieves preferred microphone deviceId", () => {
+      setPreferredMicId("test-mic-device-123");
+      expect(sessionStorage.getItem(PREFERRED_MIC_STORAGE_KEY)).toBe("test-mic-device-123");
+      expect(getPreferredMicId()).toBe("test-mic-device-123");
+    });
+
+    it("clears stored preferred microphone deviceId", () => {
+      setPreferredMicId("test-mic-device-123");
+      expect(getPreferredMicId()).toBe("test-mic-device-123");
+      clearPreferredMicId();
+      expect(getPreferredMicId()).toBeNull();
+      expect(sessionStorage.getItem(PREFERRED_MIC_STORAGE_KEY)).toBeNull();
     });
   });
 });

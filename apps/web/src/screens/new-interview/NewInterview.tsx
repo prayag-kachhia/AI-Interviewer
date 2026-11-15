@@ -9,12 +9,12 @@ import {
   Code2,
   BarChart3,
   Server,
-  Mic,
   CheckCircle2,
   FileText,
 } from 'lucide-react';
 import { createSession, getRoles, getLatestResume } from '../../lib/api';
 import { RoleList, ROLES, type Role } from '@interview/contracts';
+import { MicCheck } from './MicCheck';
 
 const ROLE_ICONS: Record<string, React.ReactNode> = {
   'software-engineer': <Code2 size={22} color="var(--primary-color)" />,
@@ -238,25 +238,7 @@ export const NewInterview: React.FC = () => {
           </Link>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.6rem',
-            padding: '0.75rem 1rem',
-            borderRadius: '10px',
-            background: 'var(--bg-color)',
-            border: '1px solid var(--border-color)',
-            marginBottom: '1.5rem',
-            fontSize: '0.85rem',
-            color: 'var(--text-muted)',
-          }}
-        >
-          <Mic size={16} color="var(--primary-color)" style={{ flexShrink: 0 }} />
-          <span>
-            This is a live spoken audio interview. Make sure your speakers and microphone are enabled.
-          </span>
-        </div>
+        <MicCheck className="mb-6" />
 
         <button
           type="button"

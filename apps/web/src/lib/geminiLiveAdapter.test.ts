@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GeminiLiveVoiceAdapter } from './geminiLiveAdapter';
+import { setPreferredMicId } from './audio';
 import { getVoiceToken } from './api';
 import type { VoiceAdapterCallbacks } from './voiceAdapter';
 
@@ -455,6 +456,46 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
 
       expect(MockWebSocket.instances).toHaveLength(1);
       expect(callbacks.onStateChange).toHaveBeenLastCalledWith('IDLE');
+    });
+  });
+
+  describe('preferred microphone device selection (VI-4, #143)', () => {
+    it('passes preferred deviceId to getUserMedia when saved in sessionStorage', async () => {
+      setPreferredMicId('mic-device-abc');
+      const adapter = new GeminiLiveVoiceAdapter();
+      const callbacks = makeCallbacks();
+      await adapter.connect('session-mic-1', callbacks);
+
+      expect(getUserMedia).toHaveBeenCalledWith({
+        audio: expect.objectContaining({
+          deviceId: { exact: 'mic-device-abc' },
+        }),
+      });
+    });
+
+    it('falls back to default microphone if preferred device triggers OverconstrainedError', async () => {
+      setPreferredMicId('disconnected-mic');
+      getUserMedia.mockRejectedValueOnce(new DOMException('Device not found', 'OverconstrainedError'));
+
+      const adapter = new GeminiLiveVoiceAdapter();
+      const callbacks = makeCallbacks();
+      await adapter.connect('session-mic-2', callbacks);
+
+      expect(getUserMedia).toHaveBeenCalledTimes(2);
+      expect(getUserMedia).toHaveBeenNthCalledWith(1, {
+        audio: expect.objectContaining({
+          deviceId: { exact: 'disconnected-mic' },
+        }),
+      });
+      expect(getUserMedia).toHaveBeenNthCalledWith(2, {
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
     });
   });
 });
