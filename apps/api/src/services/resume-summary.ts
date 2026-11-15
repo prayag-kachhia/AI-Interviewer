@@ -1,4 +1,4 @@
-import type { CandidateProfile } from '../types';
+import type { CandidateProfile } from '@interview/contracts';
 
 export function summarizeProfile(p: CandidateProfile): string {
   const lines = [`Name: ${p.name}`];

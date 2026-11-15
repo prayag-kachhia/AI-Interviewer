@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { getResumeAnalysisPrompt } from '../prompts/resume.prompt';
-import { CandidateProfile } from '../types';
+import { CandidateProfile } from '@interview/contracts';
 import { extractResumeHeuristically } from './heuristic.service';
 
 export const analyzeResumeWithAI = async (extractedText: string): Promise<CandidateProfile> => {
@@ -21,23 +21,9 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Candid
       });
       const responseText = result.text ?? '';
       
-      // Parse the JSON safely
-      const profileData: CandidateProfile = JSON.parse(responseText);
-      
-      // Basic validation to ensure required fields exist
-      return {
-        name: profileData.name || '',
-        email: profileData.email || '',
-        phone: profileData.phone || '',
-        summary: profileData.summary || '',
-        education: Array.isArray(profileData.education) ? profileData.education : [],
-        skills: Array.isArray(profileData.skills) ? profileData.skills : [],
-        projects: Array.isArray(profileData.projects) ? profileData.projects : [],
-        experience: Array.isArray(profileData.experience) ? profileData.experience : [],
-        certifications: Array.isArray(profileData.certifications) ? profileData.certifications : [],
-        achievements: Array.isArray(profileData.achievements) ? profileData.achievements : [],
-        languages: Array.isArray(profileData.languages) ? profileData.languages : [],
-      };
+      // Validate Gemini's JSON with CandidateProfile contract
+      const raw = JSON.parse(responseText);
+      return CandidateProfile.parse(raw);
     } catch (error: any) {
       // Logged as an error so a broken key or retired model is visible in the logs, not hidden.
       console.error('[AI Service] Gemini resume analysis failed; using the heuristic parser instead:', error.message || error);

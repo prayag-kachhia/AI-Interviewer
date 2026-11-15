@@ -1,17 +1,3 @@
-export interface CandidateProfile {
-  name: string;
-  email: string;
-  phone: string;
-  summary: string;
-  education: string[];
-  skills: string[];
-  projects: string[];
-  experience: string[];
-  certifications: string[];
-  achievements: string[];
-  languages: string[];
-}
-
 export interface AuthUser {
   id: string;
   supabaseUserId?: string | null;

@@ -1,4 +1,4 @@
-import { CandidateProfile } from '../types';
+import type { CandidateProfile } from '@interview/contracts';
 
 const COMMON_SKILLS = [
   'JavaScript', 'TypeScript', 'Python', 'Java', 'C++', 'C#', 'Go', 'Rust', 'Ruby', 'PHP', 'Swift', 'Kotlin',

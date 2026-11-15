@@ -37,6 +37,25 @@ export const ROLES: RoleList = [
   },
 ];
 
+// Parsed candidate resume profile (POST /api/resume/analyze, GET /api/resume/latest).
+const profileString = z.string().nullish().transform((v) => v ?? "").default("");
+const profileStringArray = z.array(z.string()).nullish().transform((v) => v ?? []).default([]);
+
+export const CandidateProfile = z.object({
+  name: profileString,
+  email: profileString,
+  phone: profileString,
+  summary: profileString,
+  education: profileStringArray,
+  skills: profileStringArray,
+  projects: profileStringArray,
+  experience: profileStringArray,
+  certifications: profileStringArray,
+  achievements: profileStringArray,
+  languages: profileStringArray,
+});
+export type CandidateProfile = z.infer<typeof CandidateProfile>;
+
 export const Level = z.enum(["entry", "mid", "senior"]);
 export type Level = z.infer<typeof Level>;
 
