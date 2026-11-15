@@ -40,6 +40,8 @@ export const DEFAULT_TIME_LIMIT_MIN = 15;
 const THINKING_SILENCE_MS = 9000;
 const THINKING_AUDIO_THRESHOLD = 0.03;
 const THINKING_PROMPT_CUE = '[the candidate is thinking; offer brief encouragement]';
+export const WRAP_UP_CUE = '2 minutes remain; start wrapping up';
+export const WRAP_UP_THRESHOLD_SECONDS = 120;
 
 export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -183,15 +185,19 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   );
 
   // Ask PK-3 for the next AI question (server saves the AI turn before returning it).
-  const requestNextQuestion = useCallback(async () => {
-    if (!sessionId || !startedAtRef.current || statusRef.current !== 'LIVE') {
-      return;
-    }
+  const requestNextQuestion = useCallback(
+    async (remainingSec?: number) => {
+      if (!sessionId || !startedAtRef.current || statusRef.current !== 'LIVE') {
+        return;
+      }
 
-    setError('');
-    try {
-      const res = await postNextQuestion(sessionId);
-      if (statusRef.current !== 'LIVE') return;
+      setError('');
+      try {
+        const res =
+          typeof remainingSec === 'number'
+            ? await postNextQuestion(sessionId, remainingSec)
+            : await postNextQuestion(sessionId);
+        if (statusRef.current !== 'LIVE') return;
 
       if (res.success && res.data) {
         const aiTurn = res.data;
@@ -266,7 +272,10 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
         const savedCandidateTurn = await persistTurnToServer('CANDIDATE', event.text);
         if (!savedCandidateTurn || statusRef.current !== 'LIVE') return;
 
-        await requestNextQuestion();
+        const rem = startedAtRef.current
+          ? Math.max(0, timeLimitMin * 60 - computeElapsedSeconds(startedAtRef.current))
+          : undefined;
+        await requestNextQuestion(rem);
       }
     },
     [markAiQuestionActive, markCandidateSpoke, persistTurnToServer, requestNextQuestion]
@@ -542,6 +551,15 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   }, [sessionId, navigate, clearThinkingTimer, updateVoiceState]);
 
   const remainingSeconds = Math.max(0, timeLimitMin * 60 - elapsed);
+  const hasSentWrapUpCueRef = useRef(false);
+
+  useEffect(() => {
+    if (status !== 'LIVE' || !startedAt || hasSentWrapUpCueRef.current) return;
+    if (remainingSeconds <= WRAP_UP_THRESHOLD_SECONDS && remainingSeconds > 0) {
+      hasSentWrapUpCueRef.current = true;
+      adapterRef.current?.sendText(WRAP_UP_CUE);
+    }
+  }, [status, startedAt, remainingSeconds]);
 
   useEffect(() => {
     if (status !== 'LIVE' || !startedAt || hasAutoEndedRef.current) return;
