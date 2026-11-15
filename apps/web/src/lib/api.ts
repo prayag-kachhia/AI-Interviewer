@@ -74,6 +74,13 @@ export const deleteUserAccount = async (): Promise<{
   const { data } = await api.delete('/auth/account');
   return data;
 };
+// Download the authenticated user's personal data export.
+export const exportMyData = async (): Promise<Blob> => {
+  const { data } = await api.get<Blob>('/me/export', {
+    responseType: 'blob',
+  });
+  return data;
+};
 
 // ---------------------------------------------------------------------------
 // Slice A — Live Session Endpoints
