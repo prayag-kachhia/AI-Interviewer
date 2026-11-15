@@ -175,6 +175,10 @@ export async function processNextJob(
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (isTransientError(err) && job.attempts < MAX_ATTEMPTS) {
+      console.warn(
+        `[${workerId}] transient evaluation error for job ${job.id}. ` +
+        `Attempt ${job.attempts}/${MAX_ATTEMPTS}. Requeuing: ${message}`
+      );
       await requeueJob(job.id, message);
       return null;
     }

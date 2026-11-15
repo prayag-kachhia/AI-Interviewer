@@ -1,0 +1,35 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Software Engineer interview. How would you implement a thread-safe in-memory LRU cache in a backend service, and what is the time complexity of its operations?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Well, building an in-memory cache is very important for many modern web applications and microservices to make sure our response times are fast and scalable. In my previous company, we always talked about performance and caching strategies because users don't like waiting for database queries to finish. For an LRU cache, which stands for Least Recently Used cache, the basic concept is that you keep track of items that are used recently and remove things that aren't used. To implement this, you could use a collection like an array or a list, or maybe some key-value store in memory. Whenever you get an item, you look through the collection to find it, and then you have to update the time when it was accessed, maybe with a timestamp. When the cache gets full, you find the oldest timestamp and remove that item. For concurrency, in a multi-threaded environment you definitely need synchronization, so you can just put synchronized blocks or global locks across the whole service so multiple threads don't corrupt the data at the same time."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you ensure idempotency when an API endpoint processes financial transactions or order placements?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Idempotency is really critical in banking and e-commerce applications because if a user clicks the submit button twice or their mobile phone loses internet connection, you don't want to charge their credit card two times because that causes chargebacks and angry customer support calls. So what we usually do is make sure that our backend has good validation and error handling. You can have the frontend disable the payment button after the first click so the user can't click it again. Then on the backend, you can check if an order with the user's name or cart was recently created within the last few minutes. If you see an order already exists, you can log a warning or prevent creating another one. You should also make sure your database has good foreign keys and maybe check with the payment gateway like Stripe or PayPal to see if the customer already has a pending charge before proceeding."
+  },
+  {
+    "speaker": "AI",
+    "text": "What is the difference between optimistic and pessimistic locking in relational databases, and when would you use each?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Locking is something that every database administrator and software engineer has to think about when multiple users or processes are reading and writing to the database simultaneously. When you have transactions, ACID properties are very important, especially consistency and isolation levels like read committed or serializable. Pessimistic locking is basically when you are pessimistic about things, so you assume that bad things will happen and there will be collisions between transactions, so the database locks the rows or tables so nobody else can touch them until the transaction finishes. Optimistic locking is more optimistic, so you don't lock things immediately, but you kind of hope that nobody else updated the record while you were reading it. You might check something before saving. In general, locking can cause deadlocks if you aren't careful, so you have to be careful with database timeouts and monitor query performance in production with tools like Datadog or New Relic."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you test code that depends on third-party external REST APIs without causing flaky tests or incurring costs?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Testing external APIs is always a major challenge because external services might go down, or they might change their endpoints, or they might rate limit you or charge you money every time you call their sandbox environment. In software engineering, testing is super important, so we always emphasize writing good tests, including unit tests, integration tests, and end-to-end tests in CI/CD pipelines like GitHub Actions or Jenkins. To test external APIs, you shouldn't just call the real live production API from your automated test suite because that would be slow and might spam real users or create fake records in the live system. What you should do is write tests that verify your logic, and maybe have some configuration flag or environment variable that switches between test mode and live mode. You can also manually test endpoints with Postman or curl to make sure the responses look good before deploying your changes."
+  }
+]
+

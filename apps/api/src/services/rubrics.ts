@@ -8,6 +8,17 @@ export interface RubricCategory {
 export type Rubric = readonly RubricCategory[];
 
 /**
+ * Core principle for difficulty-aware expectations (PN-3, DR-05).
+ * Calibrate expected answer depth to the difficulty of the question: a basic question receives
+ * full credit (5/5) when the candidate understands the core concept and provides a correct,
+ * complete explanation, without penalization for omitting advanced optimizations, complex edge
+ * cases, or architectural depth not asked for. Advanced questions expect correspondingly deeper
+ * technical reasoning, trade-offs, and failure mode analysis.
+ */
+export const DIFFICULTY_AWARE_PRINCIPLE =
+  'Calibrate expected answer depth to the difficulty of the question. A correct, thorough answer to a basic question must earn full credit without penalization for omitting unprompted advanced optimizations or architectural complexity. Advanced questions expect correspondingly deeper reasoning, trade-offs, and edge cases.';
+
+/**
  * Core principle for technology-independent scoring (PN-8, DR-05).
  * Any valid language, framework, library, or architectural approach earns full credit
  * when the underlying concept, correctness, and reasoning satisfy the criteria.
@@ -23,6 +34,18 @@ export const TECHNOLOGY_INDEPENDENCE_PRINCIPLE =
  */
 export const SCORE_SEPARATION_PRINCIPLE =
   'Judge technical depth on content only; pauses, verbal fillers (such as "um", "uh", "like", "you know"), repetition, and hesitation affect Communication only, never technical scores. If the technical solution, algorithm, design, or reasoning is correct and sound, technical categories must receive high scores (4-5) regardless of hesitation or filler words. Every score comment must explicitly explain why its score was given.';
+
+/**
+ * Core principle for concise vs. verbose answer evaluation (S-6, NFR-19).
+ * Concise, accurate answers must not be penalized for brevity.
+ * Evaluate correctness, relevance, completeness against the question, and quality of reasoning.
+ * Do not reward verbosity, padding, or repetition, and never penalize a correct, well-reasoned answer
+ * simply because it is concise. A concise answer covering the essential points must score at least
+ * as well as a longer, rambling or vague answer to the same question. Answers that are short but
+ * incomplete or incorrect must still receive low scores.
+ */
+export const CONCISE_ANSWERS_PRINCIPLE =
+  'Evaluate answers on correctness, relevance, completeness, and reasoning rather than word count or length. Do not reward verbosity, padding, or repetition, and never penalize a correct, well-reasoned answer simply because it is concise. A concise answer covering the essential points must score at least as well as a longer, rambling or vague answer to the same question.';
 
 export class UnknownRoleError extends Error {
   constructor(roleId: string) {

@@ -24,6 +24,10 @@ Each fixture is a JSON array of 6–10 turns between an interviewer (`AI`) and a
 | `tech-stack-java.json` | Software Engineer | 8 | Top-tier candidate answers | Java stack: PriorityQueue, BlockingQueue/ThreadPool, JVM GC (G1/ZGC), JUnit 5. |
 | `filler-heavy-correct.json` | Software Engineer | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): pauses and fillers affect Communication only, keeping high technical scores. |
 | `filler-heavy-data-analyst.json` | Data Analyst | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): SQL window functions and validation logic retain high scores despite disfluent delivery. |
+| `difficulty-basic.json` | Software Engineer | 8 | Top-tier basic answers | Hash table mechanics, array vs linked list, HTTP status codes, unit testing basics. |
+| `difficulty-advanced.json` | Software Engineer | 8 | Top-tier advanced answers | Distributed PN-Counter CRDTs, deadlock/data race triage, MVCC isolation anomalies, chaos engineering. |
+| `concise-correct.json` | Software Engineer | 8 | Competent, concise & accurate answers | Validates S-6 (NFR-19): concise answers covering essential requirements score at least as well as verbose ones without brevity penalty. |
+| `long-vague.json` | Software Engineer | 8 | Verbose, rambling & vague answers | Validates S-6 (NFR-19): long answers full of conversational padding and shallow reasoning do not score higher merely due to length. |
 
 ---
 
@@ -96,6 +100,27 @@ The "representative" ranges below are rough hand estimates of the average score.
   - Role: Data Analyst.
   - Characteristics: The candidate details SQL rolling 7-day average using CTE and `ROWS BETWEEN 6 PRECEDING AND CURRENT ROW`, deduplication via `ROW_NUMBER()` and `LAG`, structured metric decomposition (orders × AOV), multidimensional segmentation, and layered pipeline validation, spoken with frequent hesitation and fillers.
   - Expected ranges: SQL & Analytical Reasoning (4–5), Data Interpretation & Business Insights (4–5), Statistical Understanding & Data Quality (4–5). All three categories are technical/analytical; speech fillers and hesitation must never penalize technical depth or business interpretation.
+### 9. Difficulty-Aware Expectations Fixtures (PN-3 / DR-05)
+- **`difficulty-basic.json`**:
+  - Foundational Software Engineer questions (hash table lookup & collision handling, array vs linked list memory and complexity, HTTP status codes 200/400/404/500, unit testing isolation).
+  - Demonstrates that a fully correct, complete basic answer earns full marks (**5 / 5** across all categories) without penalization for omitting unasked advanced optimizations or distributed-system depth.
+- **`difficulty-advanced.json`**:
+  - Advanced Software Engineer questions (globally consistent distributed counters via PN-Counter CRDTs, deadlock/data race triage and lock-free CAS primitives, transaction isolation anomalies & MVCC snapshot mechanics, automated chaos engineering pipeline).
+  - Evaluated against deeper expectations of distributed constraints, concurrency anomalies, and trade-offs. Expected: **4 – 5** across all categories.
+
+### 10. Concise vs. Verbose Answers Fixtures (S-6 / NFR-19)
+- **`concise-correct.json`**:
+  - Four Software Engineer technical interview questions (in-memory LRU cache, financial API idempotency, optimistic vs pessimistic locking, external API testing).
+  - The candidate gives concise, dense, technically complete answers (hash map + doubly linked list with O(1) ops, UUID idempotency keys + unique DB constraint, version checks vs SELECT FOR UPDATE, MSW/nock/WireMock mocking).
+  - Expected ranges: Problem Solving & Algorithms (4–5), Software Design & Architecture (4–5), Technical Communication (4–5).
+- **`long-vague.json`**:
+  - The exact same four Software Engineer technical interview questions.
+  - The candidate responds with lengthy (~2.5x word count), conversational, rambling answers that repeat truisms, omit crucial mechanisms, and propose flawed patterns (linear timestamp scanning, frontend-only button disabling, manual Postman tests).
+  - Expected ranges: Problem Solving & Algorithms (1–3), Software Design & Architecture (1–3), Technical Communication (1–3).
+  - Acceptance criteria (S-6):
+    - Overall score parity: concise answers score at least as well as long vague answers (`conciseAvg >= longVagueAvg`).
+    - Technical score parity: concise answers match or exceed long vague answers in non-communication technical categories (`conciseTechnicalAvg >= longVagueTechnicalAvg`).
+    - Technical quality threshold: concise answers achieve a high technical average (`conciseTechnicalAvg >= 3.50 / 5.00`).
 
 The exact range per category is in each fixture's `*.expected.json`.
 

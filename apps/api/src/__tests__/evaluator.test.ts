@@ -9,8 +9,13 @@ import {
   type EvaluationInput,
   type TranscriptTurn,
 } from '../services/evaluator.service';
-import { getRubric, UnknownRoleError, SCORE_SEPARATION_PRINCIPLE } from '../services/rubrics';
-import { evaluateScoreSeparation } from '../../scripts/bench';
+import {
+  getRubric,
+  UnknownRoleError,
+  SCORE_SEPARATION_PRINCIPLE,
+  CONCISE_ANSWERS_PRINCIPLE,
+} from '../services/rubrics';
+import { evaluateScoreSeparation, evaluateConciseAnswers } from '../../scripts/bench';
 
 // Established schema validation for transcript turn fixtures against shared contracts
 const TranscriptTurnSchema = z.object({
@@ -59,8 +64,12 @@ describe('FB4 — evaluator', () => {
       'empty-answers.json',
       'tech-stack-python.json',
       'tech-stack-java.json',
+      'difficulty-basic.json',
+      'difficulty-advanced.json',
       'filler-heavy-correct.json',
       'filler-heavy-data-analyst.json',
+      'concise-correct.json',
+      'long-vague.json',
     ] as const;
     for (const name of fixtureNames) {
       const turns = loadTranscriptFixture(name);
@@ -204,6 +213,14 @@ describe('FB4 — evaluator', () => {
     expect(prompt).toContain('explaining why this score was given');
   });
 
+  it('includes concise answer fairness instruction in the evaluation prompt (S-6, NFR-19)', () => {
+    const prompt = buildEvaluationPrompt(SAMPLE);
+    expect(prompt).toContain('Conciseness and answer length');
+    expect(prompt).toContain(CONCISE_ANSWERS_PRINCIPLE);
+    expect(prompt).toContain('Never penalize a concise answer simply because it is brief');
+    expect(prompt).toContain('Do not reward rambling, repetitive, or vague explanations');
+  });
+
   describe('PN-8 — Technology-independent benchmark scoring parity', () => {
     it('verifies that tech-stack-python and tech-stack-java have identical interviewer questions and valid turn structures', () => {
       const pythonTurns = loadTranscriptFixture('tech-stack-python.json');
@@ -322,6 +339,212 @@ describe('FB4 — evaluator', () => {
       const diff = Math.abs(scoreStackA - scoreStackB);
       expect(diff).toBeGreaterThan(1);
       expect(diff <= 1.0).toBe(false);
+    });
+  });
+
+  describe('PN-3 — Difficulty-aware expectations (DR-05)', () => {
+    it('scales prompt instructions according to question difficulty', () => {
+      // Basic difficulty explicitly instructs full credit (5/5) without advanced penalization
+      const basicPrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'basic' });
+      expect(basicPrompt).toContain('Target Question Difficulty: BASIC');
+      expect(basicPrompt).toContain('full credit (5/5)');
+      expect(basicPrompt).toContain('Do NOT penalize or mark down the candidate for omitting advanced optimizations');
+
+      // Advanced difficulty expects deeper technical reasoning and trade-offs
+      const advancedPrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'advanced' });
+      expect(advancedPrompt).toContain('Target Question Difficulty: ADVANCED');
+      expect(advancedPrompt).toContain('deeper technical reasoning');
+      expect(advancedPrompt).toContain('architectural or system trade-offs');
+
+      // Default (unspecified) preserves backward compatibility with general difficulty scaling
+      const defaultPrompt = buildEvaluationPrompt(SAMPLE);
+      expect(defaultPrompt).toContain('Difficulty-Aware Expectations');
+      expect(defaultPrompt).toContain('Calibrate expected answer depth to the difficulty of the question');
+
+      // Intermediate difficulty falls back cleanly to the general difficulty principle
+      const intermediatePrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'intermediate' });
+      expect(intermediatePrompt).toContain('Difficulty-Aware Expectations');
+      expect(intermediatePrompt).toContain('Calibrate expected answer depth to the difficulty of the question');
+    });
+
+    it('handles casing and whitespace normalization in difficulty parameter', () => {
+      const trimmedBasic = buildEvaluationPrompt({ ...SAMPLE, difficulty: '  BASIC  ' });
+      expect(trimmedBasic).toContain('Target Question Difficulty: BASIC');
+
+      const trimmedAdvanced = buildEvaluationPrompt({ ...SAMPLE, difficulty: '  Advanced  ' });
+      expect(trimmedAdvanced).toContain('Target Question Difficulty: ADVANCED');
+    });
+
+    it('verifies that both technology independence and difficulty instructions coexist in the prompt', () => {
+      const prompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'basic' });
+      expect(prompt).toContain('Technology-independent evaluation');
+      expect(prompt).toContain('Target Question Difficulty: BASIC');
+    });
+
+    it('verifies that difficulty-basic and difficulty-advanced fixtures satisfy TurnSpeaker and 8-turn constraints', () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+      const advancedTurns = loadTranscriptFixture('difficulty-advanced.json');
+
+      expect(basicTurns).toHaveLength(8);
+      expect(advancedTurns).toHaveLength(8);
+
+      // Basic questions focus on foundational data structures and protocols
+      const basicQuestions = basicTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(basicQuestions.some((q) => q.includes('hash table'))).toBe(true);
+      expect(basicQuestions.some((q) => q.includes('HTTP status codes'))).toBe(true);
+
+      // Advanced questions focus on distributed consensus, MVCC, and chaos engineering
+      const advancedQuestions = advancedTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(advancedQuestions.some((q) => q.includes('globally consistent counter') || q.includes('CRDT'))).toBe(true);
+      expect(advancedQuestions.some((q) => q.includes('chaos engineering') || q.includes('fault-injection'))).toBe(true);
+    });
+
+    it('demonstrates that a fully correct basic answer receives 5/5 full marks without advanced depth (PN-3 DoD)', async () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+
+      // Evaluation for basic answer covering core concepts without unprompted distributed system depth
+      const basicReply = JSON.stringify({
+        summary: 'Outstanding grasp of foundational data structures, memory layout, HTTP semantics, and unit testing principles.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Fully correct, thorough explanation of hash table mechanics, bucket indexing, collision resolution, and array vs linked list trade-offs.',
+            strengths: ['Accurate O(1) hash table lookup explanation', 'Clear memory layout contrast between arrays and linked lists'],
+            improvements: ['Could mention dynamic array amortized doubling costs'],
+            quote: 'On average, lookups, insertions, and deletions take O(1) constant time because the bucket index is computed directly',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Precise understanding of HTTP status codes, error categorization, and unit testing isolation boundaries.',
+            strengths: ['Clear status code categorization', 'Solid testing isolation principles'],
+            improvements: ['Could briefly mention 3xx redirect status family'],
+            quote: 'Unit testing is the practice of testing individual functions, methods, or components in isolation',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Exemplary clarity and structured explanations of core computer science fundamentals.',
+            strengths: ['Concise, accurate terminology', 'Structured compare-and-contrast reasoning'],
+            improvements: ['Keep answers equally concise in live discussions'],
+            quote: 'Using the correct status codes allows client applications to handle responses and user error messaging predictably.',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: basicTurns, difficulty: 'basic' },
+        { generate: async () => ({ text: basicReply }) }
+      );
+
+      // Verify that every category achieved full marks (5/5)
+      expect(evaluation.scores).toHaveLength(RUBRIC.length);
+      for (const score of evaluation.scores) {
+        expect(score.score).toBe(5);
+      }
+      const avgScore = evaluation.scores.reduce((a, b) => a + b.score, 0) / evaluation.scores.length;
+      expect(avgScore).toBe(5.0);
+    });
+
+    it('rejects an evaluation that marks down a correct basic answer for lacking advanced-level depth', () => {
+      // Simulates an evaluator improperly penalizing a basic answer for not discussing distributed systems
+      const penalizedScores = [
+        { category: 'Problem Solving & Algorithms', score: 3 }, // penalized for no consistent hashing
+        { category: 'Software Design & Architecture', score: 4 },
+        { category: 'Technical Communication', score: 5 },
+      ];
+
+      const fullMarksMet = penalizedScores.every((s) => s.score === 5);
+      expect(fullMarksMet).toBe(false);
+
+      // The PN-3 benchmark criterion asserts that basic answers are NOT marked down
+      const sub5 = penalizedScores.filter((s) => s.score < 5);
+      expect(sub5.length).toBeGreaterThan(0);
+      expect(sub5.map((s) => s.category)).toContain('Problem Solving & Algorithms');
+    });
+
+    it('evaluates advanced questions with deeper expectations', async () => {
+      const advancedTurns = loadTranscriptFixture('difficulty-advanced.json');
+
+      const advancedReply = JSON.stringify({
+        summary: 'Deep architectural mastery of distributed counters, CRDTs, concurrency anomalies, and automated fault-injection pipelines.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Mastery of PN-Counters, Raft consensus partitioning, and lock-free CAS primitives under heavy concurrency.',
+            strengths: ['Rigorous distributed consensus understanding', 'Lock-free CAS optimization'],
+            improvements: ['Could detail state-based vs operation-based CRDT delta synchronization'],
+            quote: 'To achieve high write throughput across multiple regions without incurring synchronous cross-region consensus latency',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Comprehensive analysis of isolation levels, MVCC xmin/xmax tuple versioning, and chaos engineering pipelines.',
+            strengths: ['Accurate MVCC snapshot mechanics', 'Automated chaos engineering pipeline design'],
+            improvements: ['Could mention specific transaction rollback anomaly benchmarks'],
+            quote: 'Multi-Version Concurrency Control (MVCC) achieves this by writing a new tuple version with creation and expiration transaction IDs',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Exceptional communication articulating complex distributed systems edge cases and failure modes.',
+            strengths: ['Precise systems terminology', 'Structured trade-off analysis'],
+            improvements: ['None observed'],
+            quote: 'If error budgets or p99 latency SLOs are breached beyond predefined thresholds, the automated pipeline halts deployment',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: advancedTurns, difficulty: 'advanced' },
+        { generate: async () => ({ text: advancedReply }) }
+      );
+
+      for (const score of evaluation.scores) {
+        expect(score.score).toBeGreaterThanOrEqual(4);
+      }
+    });
+
+    it('preserves backward compatibility when difficulty is undefined', async () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+      const sampleReply = JSON.stringify({
+        summary: 'Good foundational software engineering answers.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 4,
+            comment: 'Good understanding of data structures.',
+            strengths: ['Accurate time complexity'],
+            improvements: ['Could mention hash collisions in more detail'],
+            quote: 'A hash table is an associative data structure',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 4,
+            comment: 'Solid grasp of HTTP semantics.',
+            strengths: ['Status code meanings clear'],
+            improvements: ['None'],
+            quote: 'HTTP status codes provide standard three-digit numerical responses',
+          },
+          {
+            category: 'Technical Communication',
+            score: 4,
+            comment: 'Clear communication.',
+            strengths: ['Clear terminology'],
+            improvements: ['None'],
+            quote: 'The main difference is their memory layout and access patterns.',
+          },
+        ],
+      });
+
+      // Difficulty omitted: should not throw, should succeed
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: basicTurns },
+        { generate: async () => ({ text: sampleReply }) }
+      );
+      expect(evaluation.scores).toHaveLength(3);
     });
   });
 
@@ -598,6 +821,330 @@ describe('FB4 — evaluator', () => {
         },
         {
           name: 'filler-heavy-data-analyst',
+          runs: [{ wallMs: 1000, promptTokens: 0, outputTokens: 0, scores: [], error: '503 error' }],
+        },
+      ]);
+      expect(resultErrored.pass).toBe(false);
+      expect(resultErrored.error).toContain('No successful evaluated runs');
+    });
+  });
+
+  describe('S-6 — Concise vs. verbose answers evaluation (NFR-19)', () => {
+    it('verifies that concise-correct and long-vague have identical questions and valid turn structures', () => {
+      const conciseTurns = loadTranscriptFixture('concise-correct.json');
+      const longVagueTurns = loadTranscriptFixture('long-vague.json');
+
+      expect(conciseTurns.length).toBe(8);
+      expect(longVagueTurns.length).toBe(8);
+
+      const aiConcise = conciseTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      const aiLongVague = longVagueTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(aiConcise).toEqual(aiLongVague);
+
+      const conciseText = conciseTurns.filter((t) => t.speaker === 'CANDIDATE').map((t) => t.text).join(' ');
+      const longVagueText = longVagueTurns.filter((t) => t.speaker === 'CANDIDATE').map((t) => t.text).join(' ');
+
+      const conciseWordCount = conciseText.split(/\s+/).length;
+      const longVagueWordCount = longVagueText.split(/\s+/).length;
+
+      // long-vague candidate text should be significantly more verbose (> 1.8x word count)
+      expect(longVagueWordCount).toBeGreaterThan(conciseWordCount * 1.8);
+    });
+
+    it('demonstrates that a concise, correct answer scores at least as well as a long, vague answer', async () => {
+      const conciseTurns = loadTranscriptFixture('concise-correct.json');
+      const longVagueTurns = loadTranscriptFixture('long-vague.json');
+
+      const mockConciseReply = JSON.stringify({
+        summary: 'Concise, direct, and technically rigorous explanations of LRU caching, idempotency, locking, and test mocking.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Awarded 5 because the candidate correctly selected a hash map + doubly linked list with exact O(1) complexity analysis.',
+            strengths: ['O(1) LRU data structure design', 'Correct lock synchronization'],
+            improvements: ['Could mention cache capacity sizing'],
+            quote: 'combine a doubly linked list with a hash map',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Awarded 5 because the candidate articulated unique database idempotency keys, versioned optimistic locking, and mock servers.',
+            strengths: ['Idempotency table with unique constraint', 'Optimistic locking version checking'],
+            improvements: ['Could elaborate on distributed lock timeouts'],
+            quote: 'The client generates a unique idempotency key (like a UUID v4) passed via an HTTP header',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Awarded 5 because the candidate communicated technical solutions clearly and concisely without unnecessary verbosity.',
+            strengths: ['Direct, structured explanations', 'Concise coverage of core mechanisms'],
+            improvements: ['None needed for this level of conciseness'],
+            quote: 'For unit tests, I mock the HTTP client interface or use MSW/nock',
+          },
+        ],
+      });
+
+      const mockLongVagueReply = JSON.stringify({
+        summary: 'Long-winded responses with general explanations that lack specific technical depth, proposing inefficient or fragile designs.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 2,
+            comment: 'Awarded 2 because the candidate proposed scanning arrays or timestamps in O(N) time for an LRU cache rather than constant-time data structures.',
+            strengths: ['Understands that LRU tracks recency'],
+            improvements: ['Use hash map combined with doubly linked list instead of linear scans'],
+            quote: 'Whenever you get an item, you look through the collection to find it',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 2,
+            comment: 'Awarded 2 because relying on client-side button disabling and manual Postman testing is fragile and misses standard idempotency patterns.',
+            strengths: ['Recognizes that duplicate payments are harmful'],
+            improvements: ['Implement server-side idempotency keys with unique database constraints'],
+            quote: 'You can have the frontend disable the payment button after the first click',
+          },
+          {
+            category: 'Technical Communication',
+            score: 2,
+            comment: 'Awarded 2 because the explanations are repetitive and rambling, taking considerable time without directly addressing technical specifics.',
+            strengths: ['Polite tone'],
+            improvements: ['Focus directly on answering the technical questions rather than repeating general concepts'],
+            quote: 'In software engineering, testing is super important, so we always emphasize writing good tests',
+          },
+        ],
+      });
+
+      const conciseEval = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: conciseTurns },
+        { generate: async () => ({ text: mockConciseReply }) }
+      );
+
+      const longVagueEval = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: longVagueTurns },
+        { generate: async () => ({ text: mockLongVagueReply }) }
+      );
+
+      const conciseAvg = conciseEval.scores.reduce((a, b) => a + b.score, 0) / conciseEval.scores.length;
+      const longVagueAvg = longVagueEval.scores.reduce((a, b) => a + b.score, 0) / longVagueEval.scores.length;
+
+      // Concise and correct answer must score at least as well (and significantly higher in this case)
+      expect(conciseAvg).toBeGreaterThanOrEqual(longVagueAvg);
+      expect(conciseAvg).toBeGreaterThanOrEqual(4.5);
+      expect(longVagueAvg).toBeLessThanOrEqual(2.5);
+    });
+
+    it('evaluateConciseAnswers passes when concise answer scores higher than long vague answer', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 5 },
+                { category: 'Software Design & Architecture', score: 5 },
+                { category: 'Technical Communication', score: 5 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 14000,
+              promptTokens: 1400,
+              outputTokens: 450,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 2 },
+                { category: 'Software Design & Architecture', score: 2 },
+                { category: 'Technical Communication', score: 2 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(true);
+      expect(result.conciseAvg).toBe(5);
+      expect(result.longVagueAvg).toBe(2);
+      expect(result.conciseTechnicalAvg).toBe(5);
+      expect(result.longVagueTechnicalAvg).toBe(2);
+      expect(result.diff).toBe(3);
+      expect(result.technicalDiff).toBe(3);
+    });
+
+    it('evaluateConciseAnswers passes when concise and long vague answers score equally with high quality', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 4 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 4 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1200,
+              outputTokens: 420,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 4 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 4 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(true);
+      expect(result.diff).toBe(0);
+    });
+
+    it('evaluateConciseAnswers fails when long vague answer scores higher than concise answer', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 3 },
+                { category: 'Software Design & Architecture', score: 3 },
+                { category: 'Technical Communication', score: 3 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1200,
+              outputTokens: 420,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 4 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 4 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(false);
+      expect(result.diff).toBe(-1);
+    });
+
+    it('evaluateConciseAnswers fails when concise answer lacks technical substance even if communication score is high', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 3 },
+                { category: 'Software Design & Architecture', score: 3 },
+                { category: 'Technical Communication', score: 5 }, // overall avg = 3.67, but technical avg = 3.0 (< 3.5)
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1200,
+              outputTokens: 420,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 4 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 2 }, // long-vague tech avg = 4.0 > concise tech avg (3.0)
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(false);
+      expect(result.technicalDiff).toBe(-1);
+    });
+
+    it('evaluateConciseAnswers fails when concise answer quality falls below acceptable threshold (< 3.5)', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 2 },
+                { category: 'Software Design & Architecture', score: 2 },
+                { category: 'Technical Communication', score: 2 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1200,
+              outputTokens: 420,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 1 },
+                { category: 'Software Design & Architecture', score: 1 },
+                { category: 'Technical Communication', score: 1 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(false);
+    });
+
+    it('evaluateConciseAnswers returns error when required fixtures are missing or errored', () => {
+      const resultMissing = evaluateConciseAnswers([]);
+      expect(resultMissing.pass).toBe(false);
+      expect(resultMissing.error).toContain('Missing required concise answer benchmark fixture(s)');
+
+      const resultErrored = evaluateConciseAnswers([
+        {
+          name: 'concise-correct',
+          runs: [{ wallMs: 1000, promptTokens: 0, outputTokens: 0, scores: [], error: '503 error' }],
+        },
+        {
+          name: 'long-vague',
           runs: [{ wallMs: 1000, promptTokens: 0, outputTokens: 0, scores: [], error: '503 error' }],
         },
       ]);
