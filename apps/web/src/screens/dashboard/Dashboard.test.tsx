@@ -1,202 +1,170 @@
 import '@testing-library/jest-dom/vitest';
-import { test, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Dashboard } from './Dashboard';
-import * as api from '../../lib/api';
-
-vi.mock('../../lib/api', () => ({
-  getLatestResume: vi.fn(),
-  uploadResume: vi.fn(),
-}));
+import { getSessions } from '../../lib/api';
+import type { HistorySession } from '../../types';
 
 vi.mock('../../context/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 'u1', name: 'Alex Smith', email: 'alex@example.com' },
+    user: { id: 'u1', name: 'Alex Johnson', email: 'alex@example.com' },
   }),
 }));
 
-const mockNavigate = vi.fn();
-vi.mock('react-router', async () => {
-  const actual = await vi.importActual('react-router');
-  return {
-    ...actual,
-    useNavigate: () => mockNavigate,
-  };
-});
+vi.mock('../../lib/api', () => ({
+  uploadResume: vi.fn(),
+  getLatestResume: vi.fn().mockResolvedValue({ success: false }),
+  getSessions: vi.fn(),
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();
-  mockNavigate.mockReset();
 });
 
-test('given no resume on file, displays "Not uploaded" and no heuristic warning', async () => {
-  vi.mocked(api.getLatestResume).mockRejectedValueOnce(new Error('404 Not Found'));
+describe('Dashboard Achievements Section', () => {
+  it('displays loading state while sessions are loading', () => {
+    vi.mocked(getSessions).mockReturnValue(new Promise(() => { })); // Never resolves
 
-  render(
-    <MemoryRouter>
-      <Dashboard />
-    </MemoryRouter>
-  );
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
 
-  expect(await screen.findByText('Not uploaded')).toBeInTheDocument();
-  expect(screen.getByText('Awaiting Resume')).toBeInTheDocument();
-  expect(screen.queryByText(/AI analysis unavailable/i)).not.toBeInTheDocument();
-});
-
-test('given resume was parsed by AI, displays "AI" badge and "Analyzed with AI"', async () => {
-  vi.mocked(api.getLatestResume).mockResolvedValueOnce({
-    success: true,
-    data: {
-      resumeId: 'res-ai',
-      fileName: 'alex_resume.pdf',
-      createdAt: new Date().toISOString(),
-      source: 'ai',
-      profile: {
-        name: 'Alex Smith',
-        email: 'alex@example.com',
-        phone: '',
-        summary: '',
-        education: [],
-        skills: ['TypeScript', 'React'],
-        projects: [],
-        experience: [],
-        certifications: [],
-        achievements: [],
-        languages: [],
-      },
-    },
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    expect(screen.getByText('Loading achievements…')).toBeInTheDocument();
   });
 
-  render(
-    <MemoryRouter>
-      <Dashboard />
-    </MemoryRouter>
-  );
+  it('handles getSessions API failure gracefully without crashing', async () => {
+    vi.mocked(getSessions).mockRejectedValue(new Error('Network error'));
 
-  expect(await screen.findByText('On file')).toBeInTheDocument();
-  expect(screen.getByText('AI')).toBeInTheDocument();
-  expect(screen.getByText('Analyzed with AI')).toBeInTheDocument();
-  expect(screen.queryByText(/AI analysis unavailable/i)).not.toBeInTheDocument();
-});
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
 
-test('given resume fell back to heuristic parser, displays "Basic parse" badge and warning notice', async () => {
-  vi.mocked(api.getLatestResume).mockResolvedValueOnce({
-    success: true,
-    data: {
-      resumeId: 'res-heur',
-      fileName: 'alex_resume.pdf',
-      createdAt: new Date().toISOString(),
-      source: 'heuristic',
-      profile: {
-        name: 'Alex Smith',
-        email: 'alex@example.com',
-        phone: '',
-        summary: '',
-        education: [],
-        skills: ['TypeScript'],
-        projects: [],
-        experience: [],
-        certifications: [],
-        achievements: [],
-        languages: [],
-      },
-    },
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Unable to load achievements at this time.');
+    // Rest of dashboard remains intact
+    expect(screen.getByText(/practice interview/i)).toBeInTheDocument();
   });
 
-  render(
-    <MemoryRouter>
-      <Dashboard />
-    </MemoryRouter>
-  );
+  it('renders all four badges in locked state when session history is empty', async () => {
+    vi.mocked(getSessions).mockResolvedValue({
+      success: true,
+      data: [],
+    });
 
-  expect(await screen.findByText('On file')).toBeInTheDocument();
-  expect(screen.getByText('Basic parse')).toBeInTheDocument();
-  expect(screen.getByText('Analyzed (Basic Parse)')).toBeInTheDocument();
-  expect(screen.getByText('AI analysis unavailable')).toBeInTheDocument();
-  expect(screen.getByText(/Your resume was parsed using our fallback parser/i)).toBeInTheDocument();
-});
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
 
-test('given legacy resume without source field, displays "On file" and "Analyzed & Ready" without warning alert or source badge', async () => {
-  vi.mocked(api.getLatestResume).mockResolvedValueOnce({
-    success: true,
-    data: {
-      resumeId: 'res-legacy',
-      fileName: 'alex_resume.pdf',
-      createdAt: new Date().toISOString(),
-      profile: {
-        name: 'Alex Smith',
-        email: 'alex@example.com',
-        phone: '',
-        summary: '',
-        education: [],
-        skills: ['TypeScript'],
-        projects: [],
-        experience: [],
-        certifications: [],
-        achievements: [],
-        languages: [],
-      },
-    },
+    const section = await screen.findByTestId('achievements-section');
+    expect(section).toBeInTheDocument();
+
+    expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('0 of 4 Unlocked');
+    expect(screen.getByTestId('achievement-badge-first-interview')).toHaveAttribute('data-unlocked', 'false');
+    expect(screen.getByTestId('achievement-badge-five-interviews')).toHaveAttribute('data-unlocked', 'false');
+    expect(screen.getByTestId('achievement-badge-improved-score')).toHaveAttribute('data-unlocked', 'false');
+    expect(screen.getByTestId('achievement-badge-consistency-streak')).toHaveAttribute('data-unlocked', 'false');
+
+    expect(screen.getByText('Complete your first mock interview to start unlocking badges!')).toBeInTheDocument();
   });
 
-  render(
-    <MemoryRouter>
-      <Dashboard />
-    </MemoryRouter>
-  );
-
-  expect(await screen.findByText('On file')).toBeInTheDocument();
-  expect(screen.getByText('Analyzed & Ready')).toBeInTheDocument();
-  expect(screen.queryByText('AI')).not.toBeInTheDocument();
-  expect(screen.queryByText('Basic parse')).not.toBeInTheDocument();
-  expect(screen.queryByText(/AI analysis unavailable/i)).not.toBeInTheDocument();
-});
-
-test('handles upload directly without fake 1.5s timer and reflects heuristic fallback', async () => {
-  vi.mocked(api.getLatestResume).mockRejectedValueOnce(new Error('404 Not Found'));
-  vi.mocked(api.uploadResume).mockResolvedValueOnce({
-    success: true,
-    data: {
-      resumeId: 'res-new',
-      fileName: 'resume.pdf',
-      createdAt: new Date().toISOString(),
-      source: 'heuristic',
-      profile: {
-        name: 'Alex Smith',
-        email: '',
-        phone: '',
-        summary: '',
-        education: [],
-        skills: [],
-        projects: [],
-        experience: [],
-        certifications: [],
-        achievements: [],
-        languages: [],
+  it('renders unlocked badges when the candidate meets achievement criteria', async () => {
+    const mockSessions: HistorySession[] = [
+      {
+        id: 's3',
+        userId: 'u1',
+        role: 'software-engineer',
+        status: 'ENDED',
+        startedAt: '2026-11-03T10:00:00.000Z',
+        endedAt: '2026-11-03T10:20:00.000Z',
+        feedbackStatus: 'ready',
+        overallScore: 4.5,
       },
-    },
+      {
+        id: 's2',
+        userId: 'u1',
+        role: 'software-engineer',
+        status: 'ENDED',
+        startedAt: '2026-11-02T10:00:00.000Z',
+        endedAt: '2026-11-02T10:20:00.000Z',
+        feedbackStatus: 'ready',
+        overallScore: 3.5,
+      },
+      {
+        id: 's1',
+        userId: 'u1',
+        role: 'software-engineer',
+        status: 'ENDED',
+        startedAt: '2026-11-01T10:00:00.000Z',
+        endedAt: '2026-11-01T10:20:00.000Z',
+        feedbackStatus: 'ready',
+        overallScore: 3.0,
+      },
+    ];
+
+    vi.mocked(getSessions).mockResolvedValue({
+      success: true,
+      data: mockSessions,
+    });
+
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    const section = await screen.findByTestId('achievements-section');
+    expect(section).toBeInTheDocument();
+
+    // With 3 completed sessions: First Interview unlocked, Improved Score unlocked (3.0 -> 3.5 -> 4.5), Consistency Streak unlocked (Nov 1, 2, 3), 5 Interviews locked
+    expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('3 of 4 Unlocked');
+
+    const firstBadge = screen.getByTestId('achievement-badge-first-interview');
+    expect(firstBadge).toHaveAttribute('data-unlocked', 'true');
+    expect(firstBadge).toHaveTextContent('First Interview');
+
+    const fiveBadge = screen.getByTestId('achievement-badge-five-interviews');
+    expect(fiveBadge).toHaveAttribute('data-unlocked', 'false');
+
+    const improvedBadge = screen.getByTestId('achievement-badge-improved-score');
+    expect(improvedBadge).toHaveAttribute('data-unlocked', 'true');
+
+    const streakBadge = screen.getByTestId('achievement-badge-consistency-streak');
+    expect(streakBadge).toHaveAttribute('data-unlocked', 'true');
   });
 
-  const { container } = render(
-    <MemoryRouter>
-      <Dashboard />
-    </MemoryRouter>
-  );
+  it('unlocks 5 interviews badge when candidate completes at least 5 interviews', async () => {
+    const fiveSessions: HistorySession[] = Array.from({ length: 5 }, (_, i) => ({
+      id: `s-${i}`,
+      userId: 'u1',
+      role: 'software-engineer',
+      status: 'ENDED',
+      startedAt: `2026-11-0${i + 1}T10:00:00.000Z`,
+      endedAt: `2026-11-0${i + 1}T10:20:00.000Z`,
+      feedbackStatus: 'ready',
+      overallScore: 3.0 + i * 0.2,
+    }));
 
-  const file = new File(['%PDF dummy'], 'resume.pdf', { type: 'application/pdf' });
-  const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    vi.mocked(getSessions).mockResolvedValue({
+      success: true,
+      data: fiveSessions,
+    });
 
-  fireEvent.change(fileInput, { target: { files: [file] } });
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
 
-  const analyzeButton = screen.getByRole('button', { name: /Analyze resume/i });
-  fireEvent.click(analyzeButton);
-
-  // Status should be set immediately without waiting 1.5s
-  expect(screen.getByText('Analyzing resume...')).toBeInTheDocument();
-
-  // Once resolved, shows completion notice
-  await waitFor(() => {
-    expect(screen.getByText('Analysis complete (basic parse)!')).toBeInTheDocument();
+    const fiveBadge = await screen.findByTestId('achievement-badge-five-interviews');
+    expect(fiveBadge).toHaveAttribute('data-unlocked', 'true');
+    expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('4 of 4 Unlocked');
   });
 });

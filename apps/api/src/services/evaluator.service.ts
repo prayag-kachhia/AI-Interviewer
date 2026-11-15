@@ -8,6 +8,7 @@ import {
   DIFFICULTY_AWARE_PRINCIPLE,
   TECHNOLOGY_INDEPENDENCE_PRINCIPLE,
   SCORE_SEPARATION_PRINCIPLE,
+  CONCISE_ANSWERS_PRINCIPLE,
 } from './rubrics';
 
 // Leaves room inside the 15-second feedback budget for polling and the database.
@@ -25,6 +26,7 @@ export interface EvaluationInput {
   roleId: string;
   turns: TranscriptTurn[];
   difficulty?: 'basic' | 'intermediate' | 'advanced' | string;
+  jobContext?: string;
 }
 
 export interface EvaluationUsageMetadata {
@@ -52,7 +54,7 @@ export interface EvaluatorOptions {
   timeoutMs?: number;
 }
 
-export function buildEvaluationPrompt({ roleId, turns, difficulty }: EvaluationInput): string {
+export function buildEvaluationPrompt({ roleId, turns, difficulty, jobContext }: EvaluationInput): string {
   const roleLabel = ROLES.find((r) => r.id === roleId)?.label ?? roleId;
   const rubric = getRubric(roleId)
     .map((r) => `- ${r.category}: ${r.criteria}`)
@@ -60,6 +62,10 @@ export function buildEvaluationPrompt({ roleId, turns, difficulty }: EvaluationI
   const transcript = turns
     .map((t) => `${t.speaker === 'AI' ? 'Interviewer' : 'Candidate'}: ${t.text}`)
     .join('\n');
+
+  const jobContextSection = jobContext?.trim()
+    ? `\nTarget Job Context (Candidate-Supplied):\n"""\n${jobContext.trim()}\n"""\nCalibrate your assessment of technical fit and strengths against the requirements and competencies outlined in this job context.\n`
+    : '';
 
   const normalizedDifficulty = difficulty?.trim().toLowerCase();
   let difficultyInstruction: string;
@@ -77,7 +83,7 @@ export function buildEvaluationPrompt({ roleId, turns, difficulty }: EvaluationI
       `- Difficulty-Aware Expectations (PN-3, DR-05): ${DIFFICULTY_AWARE_PRINCIPLE}`;
   }
 
-  return `You are evaluating a mock job interview for the role "${roleLabel}".
+  return `You are evaluating a mock job interview for the role "${roleLabel}".${jobContextSection}
 Score ONLY the candidate's answers, using this rubric. Each score is an integer from 1 (poor) to 5 (excellent).
 ${rubric}
 
@@ -89,6 +95,8 @@ Evaluation Instructions:
    - Score separation (technical depth vs. communication): ${SCORE_SEPARATION_PRINCIPLE}
    - Technical categories (e.g. Problem Solving & Algorithms, Software Design & Architecture, SQL & Analytical Reasoning, Data Interpretation & Business Insights, Statistical Understanding & Data Quality, API Design & Architecture, Database Modeling & Performance, System Reliability & Scalability) must be evaluated based on the substance, correctness, analytical depth, and architectural/algorithmic validity of the candidate's solution, ignoring speech disfluencies.
    - Pauses, fillers, and hesitation must be evaluated solely under communication categories (e.g., Technical Communication). If a role rubric does not contain a dedicated communication category (such as Data Analyst or Backend Developer), pauses, verbal fillers, and speech disfluencies must NEVER reduce any category score; all categories must be judged strictly on content and correctness.
+   - Conciseness and answer length (concise vs. verbose answers): ${CONCISE_ANSWERS_PRINCIPLE}
+   - Evaluate whether the candidate addresses the core question correctly and completely. Never penalize a concise answer simply because it is brief if the technical reasoning and substance are sound. Do not reward rambling, repetitive, or vague explanations simply because they are lengthy.
    ${difficultyInstruction}
 
 2. Behavioural Evaluation (STAR Methodology):

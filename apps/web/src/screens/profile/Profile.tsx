@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { getLatestResume } from '../../lib/api';
+import { exportMyData, getLatestResume } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import type { ResumeData } from '../../types';
 import { 
   Mail, Phone, Briefcase, GraduationCap, 
   FolderGit2, Code2, Award, Languages, Loader2, ArrowLeft,
-  Trash2, ShieldAlert, AlertTriangle, AlertCircle, X
+  Trash2, ShieldAlert, AlertTriangle, AlertCircle, X, Download
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,8 @@ export const Profile: React.FC = () => {
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   
   // Account deletion states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -47,6 +49,41 @@ export const Profile: React.FC = () => {
     fetchProfile();
   }, []);
 
+  const handleExportData = async () => {
+    setExporting(true);
+    setExportError('');
+
+    try {
+      const blob = await exportMyData();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+
+      link.href = url;
+      link.download = 'my-data-export.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+    } catch (err: any) {
+      let message = 'Failed to download your data. Please try again.';
+
+      if (err.response?.data instanceof Blob) {
+        try {
+          const errorData = JSON.parse(await err.response.data.text());
+          message = errorData.message || message;
+        } catch {
+          // Keep the default error message.
+        }
+      } else {
+        message = err.response?.data?.message || message;
+      }
+
+      setExportError(message);
+    } finally {
+      setExporting(false);
+    }
+  };
   const handleDeleteAccount = async () => {
     setDeleting(true);
     setDeleteError('');
@@ -90,6 +127,52 @@ export const Profile: React.FC = () => {
         However, if you wish to permanently remove yourself and all uploaded data, you may delete your account below.
       </p>
 
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '1.25rem',
+        borderRadius: 'var(--radius-md)',
+        background: 'var(--surface-color)',
+        border: '1px solid var(--border-color)',
+        flexWrap: 'wrap',
+        gap: '1rem',
+        marginBottom: '1rem'
+      }}>
+        <div>
+          <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.25rem' }}>
+            Download Your Personal Data
+          </div>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Get a JSON copy of your profile, resumes, interview sessions, turns and feedback.
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn btn-outline"
+          onClick={handleExportData}
+          disabled={exporting}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+        >
+          {exporting ? (
+            <>
+              <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+              Preparing...
+            </>
+          ) : (
+            <>
+              <Download size={16} /> Download my data
+            </>
+          )}
+        </button>
+      </div>
+
+      {exportError && (
+        <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
+          <AlertTriangle size={18} />
+          <span>{exportError}</span>
+        </div>
+      )}
       <div style={{
         display: 'flex',
         alignItems: 'center',

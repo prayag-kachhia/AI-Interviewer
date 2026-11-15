@@ -60,6 +60,7 @@ export async function createSession(userId: string, input: CreateSessionInput) {
       level: input.level ?? null,
       focus: input.focus ?? null,
       mode: input.mode,
+      jobContext: input.jobContext ?? null,
     },
   });
 }
@@ -260,7 +261,21 @@ export async function deleteSession(sessionId: string, userId: string) {
     where: { id: sessionId },
   });
 }
+/**
+ * Protect or unprotect an interview session from retention cleanup.
+ */
+export async function updateSessionKeep(
+  sessionId: string,
+  userId: string,
+  keep: boolean
+) {
+  await getOwnedSession(sessionId, userId);
 
+  return prisma.session.update({
+    where: { id: sessionId },
+    data: { keep },
+  });
+}
 /**
  * Query AI questions from the candidate's last N ended sessions for a given role (FR-16).
  * Capped at 30 questions to fit within context limits.

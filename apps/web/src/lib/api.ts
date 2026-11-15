@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Feedback, VoiceToken } from '@interview/contracts';
+import { CreateSessionInput, Feedback, VoiceToken } from '@interview/contracts';
 import { supabase } from './supabase';
 import type {
   ResumeResponse,
@@ -74,6 +74,13 @@ export const deleteUserAccount = async (): Promise<{
   const { data } = await api.delete('/auth/account');
   return data;
 };
+// Download the authenticated user's personal data export.
+export const exportMyData = async (): Promise<Blob> => {
+  const { data } = await api.get<Blob>('/me/export', {
+    responseType: 'blob',
+  });
+  return data;
+};
 
 // ---------------------------------------------------------------------------
 // Slice A — Live Session Endpoints
@@ -89,8 +96,11 @@ export const getSessions = async (): Promise<SessionsListResponse> => {
   return data;
 };
 
-export const createSession = async (roleId: string): Promise<SessionResponse> => {
-  const { data } = await api.post<SessionResponse>('/sessions', { roleId });
+export const createSession = async (
+  input: string | (Partial<CreateSessionInput> & { roleId: string })
+): Promise<SessionResponse> => {
+  const payload = typeof input === 'string' ? { roleId: input } : input;
+  const { data } = await api.post<SessionResponse>('/sessions', payload);
   return data;
 };
 
@@ -134,6 +144,17 @@ export const deleteSession = async (
 ): Promise<{ success: boolean; message?: string }> => {
   const { data } = await api.delete<{ success: boolean; message?: string }>(
     `/sessions/${sessionId}`
+  );
+  return data;
+};
+
+export const updateSessionKeep = async (
+  sessionId: string,
+  keep: boolean
+): Promise<SessionResponse> => {
+  const { data } = await api.patch<SessionResponse>(
+    `/sessions/${sessionId}/keep`,
+    { keep }
   );
   return data;
 };
