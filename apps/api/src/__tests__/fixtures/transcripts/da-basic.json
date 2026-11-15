@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Data Analyst interview. Can you explain the difference between an INNER JOIN, a LEFT JOIN, and a FULL OUTER JOIN in SQL, and give an example of when you would use a LEFT JOIN?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "An INNER JOIN returns only the rows where there is a match in both tables based on the join condition. Any record in either table without a corresponding match is filtered out. A LEFT JOIN returns all rows from the left table, along with matching rows from the right table; if there is no match on the right, NULL values are returned for the right table's columns. A FULL OUTER JOIN returns all rows from both tables, filling with NULLs on either side wherever a match does not exist. I use a LEFT JOIN frequently when auditing user behavior—for instance, joining a Customers table on the left with an Orders table on the right to find all customers, including those who have never placed an order, by filtering WHERE Orders.order_id IS NULL."
+  },
+  {
+    "speaker": "AI",
+    "text": "What is the difference between the WHERE clause and the HAVING clause in a SQL query, and what is their order of execution?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "The fundamental difference is that WHERE filters individual rows before any aggregation takes place, whereas HAVING filters grouped summary rows after the GROUP BY aggregation has been computed. In SQL query execution order, the database engine first processes FROM and JOIN, then applies the WHERE clause to eliminate rows that do not meet the row-level criteria. Next, it groups the remaining rows according to GROUP BY and evaluates aggregate expressions like COUNT(), SUM(), or AVG(). Finally, the HAVING clause filters out entire groups that do not meet the aggregate condition. For example, to find regions where total sales exceeded $10,000 in the year 2024, the filter year = 2024 belongs in the WHERE clause, while SUM(sales) > 10000 belongs in the HAVING clause."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you detect and handle duplicate rows and missing or NULL values in a raw dataset before performing an analysis?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "To identify duplicates, I use GROUP BY on primary business keys combined with HAVING COUNT(*) > 1, or use the ROW_NUMBER() window function partitioned by the key columns to flag duplicate row ranks greater than 1. For handling duplicates, I deduplicate by filtering for rank = 1 or using DISTINCT when full rows are identical. For NULL values, I first quantify the missingness rate across columns: COUNT(column) / COUNT(*) gives the fill rate. Then I investigate why the data is missing—is it genuinely unknown, or does NULL imply a zero or false? Depending on the context, I either impute using domain defaults like COALESCE(discount, 0), use statistical medians for continuous numerical variables to resist outliers, or exclude incomplete records if the missing data is not missing at random and would skew the analysis."
+  },
+  {
+    "speaker": "AI",
+    "text": "When presenting customer order amounts to marketing stakeholders, how do you decide whether to report the mean or the median, and how do you explain the difference clearly?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I examine the shape of the data distribution. If customer order values are roughly symmetrical and bell-shaped without extreme outliers, the mean and median will be very close, and the mean is intuitive. However, e-commerce order values are almost always right-skewed: a few wholesale buyers or enterprise clients placing $50,000 orders will artificially pull the arithmetic mean up to $500, even if 90% of everyday retail shoppers only spend $50. In that situation, reporting only the average is misleading. I explain to stakeholders that the median represents the exact middle customer—50% spent more and 50% spent less—which accurately reflects typical consumer behavior. I usually report both: the median as the typical customer spend, and the mean alongside total volume to explain total revenue contribution."
+  }
+]
