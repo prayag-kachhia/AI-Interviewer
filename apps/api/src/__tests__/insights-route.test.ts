@@ -262,21 +262,4 @@ describe('V-6 · PATCH /api/insights/progress (Track progress on the roadmap)', 
     expect(res.body.success).toBe(true);
     expect(res.body.data.plan[0].actions[0].completed).toBe(false);
   });
-
-  it('supports PATCH /api/insights/progress/:actionId with parameter in URL', async () => {
-    (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(MOCK_PLAN);
-    (prisma.improvementPlan.update as any).mockImplementationOnce(async ({ data }: any) => ({
-      ...MOCK_PLAN,
-      plan: data.plan,
-    }));
-
-    const res = await request(app)
-      .patch('/api/insights/progress/act-1')
-      .set('Authorization', 'Bearer valid-token')
-      .send({ completed: true });
-
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.data.plan[0].actions[0].completed).toBe(true);
-  });
 });

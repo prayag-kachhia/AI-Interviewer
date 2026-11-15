@@ -789,6 +789,68 @@ describe('V-2 · Topic weaknesses from your interviews (Issue #181)', () => {
         ).rejects.toThrow("Roadmap action 'non-existent-action' not found");
         expect(prisma.improvementPlan.update).not.toHaveBeenCalled();
       });
+
+      it('carries over completed action states when plan is regenerated via generateImprovementPlan', () => {
+        const topics = [
+          { topic: 'DBMS' as const, score: 2, summary: 'Weak on ACID transactions' },
+          { topic: 'OS' as const, score: 3, summary: 'Needs review on paging' },
+        ];
+        // Stable action ID: `${topic.toLowerCase()}-${resourceId}`
+        const completedActionId = 'dbms-dbms-acid-transactions';
+
+        const regeneratedPlan = generateImprovementPlan(topics, {
+          completedActionIds: [completedActionId],
+        });
+
+        const dbmsTopic = regeneratedPlan.find((t) => t.topic === 'DBMS');
+        expect(dbmsTopic).toBeDefined();
+        const acidAction = dbmsTopic?.actions.find((a) => a.id === completedActionId);
+        expect(acidAction?.completed).toBe(true);
+
+        const otherAction = dbmsTopic?.actions.find((a) => a.id !== completedActionId);
+        expect(otherAction?.completed).toBe(false);
+      });
+
+      it('preserves previously ticked actions across insights refresh (refreshInsightsForUser)', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        // Existing plan in DB with an already ticked item
+        const existingPlanWithTick = {
+          id: 'plan-123',
+          userId: USER_ID,
+          topics: [{ topic: 'DBMS', score: 2 }],
+          plan: [
+            {
+              id: 'plan-dbms',
+              topic: 'DBMS',
+              score: 2,
+              actions: [
+                {
+                  id: 'dbms-dbms-acid-transactions',
+                  action: 'Study ACID properties',
+                  resourceId: 'dbms-acid-transactions',
+                  completed: true,
+                },
+              ],
+            },
+          ],
+        };
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(existingPlanWithTick);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(MOCK_GEMINI_OUTPUT));
+        await refreshInsightsForUser(USER_ID, { generate: mockGenerate });
+
+        expect(prisma.improvementPlan.upsert).toHaveBeenCalled();
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+        const dbmsPlan = savedPlan.find((p: any) => p.topic === 'DBMS');
+        const tickedAct = dbmsPlan?.actions.find((a: any) => a.id === 'dbms-dbms-acid-transactions');
+        expect(tickedAct?.completed).toBe(true);
+      });
     });
   });
 });

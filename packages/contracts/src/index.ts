@@ -234,16 +234,10 @@ export const ImprovementPlan = z.object({
 export type ImprovementPlan = z.infer<typeof ImprovementPlan>;
 
 // Input for updating roadmap progress (V-6, PATCH /api/insights/progress)
-export const UpdateRoadmapProgressInput = z
-  .object({
-    id: z.string().optional(),
-    actionId: z.string().optional(),
-    itemId: z.string().optional(),
-    completed: z.boolean().default(true),
-  })
-  .refine((data) => Boolean(data.id || data.actionId || data.itemId), {
-    message: 'actionId, itemId, or id is required',
-  });
+export const UpdateRoadmapProgressInput = z.object({
+  actionId: z.string().min(1, 'actionId is required'),
+  completed: z.boolean().default(true),
+});
 export type UpdateRoadmapProgressInput = z.infer<typeof UpdateRoadmapProgressInput>;
 
 

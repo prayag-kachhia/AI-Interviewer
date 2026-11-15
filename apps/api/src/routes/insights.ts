@@ -70,29 +70,7 @@ router.patch('/progress', authenticate, async (req, res) => {
     return;
   }
 
-  const actionId = (parsed.data.actionId || parsed.data.id || parsed.data.itemId)!;
-  const completed = parsed.data.completed;
-
-  const plan = await updateRoadmapProgress(userId, actionId, completed);
-
-  res.status(200).json({
-    success: true,
-    data: plan,
-  });
-});
-
-// PATCH /api/insights/progress/:actionId
-router.patch('/progress/:actionId', authenticate, async (req, res) => {
-  const userId = req.user!.id;
-  const requestedUserId = (req.body?.userId || req.query?.userId) as string | undefined;
-
-  if (requestedUserId && requestedUserId !== userId) {
-    throw new NotFoundError('Improvement plan not found');
-  }
-
-  const actionId = Array.isArray(req.params.actionId) ? req.params.actionId[0] : req.params.actionId;
-  const completed = typeof req.body?.completed === 'boolean' ? req.body.completed : true;
-
+  const { actionId, completed } = parsed.data;
   const plan = await updateRoadmapProgress(userId, actionId, completed);
 
   res.status(200).json({

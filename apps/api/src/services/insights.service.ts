@@ -154,12 +154,14 @@ export const WEAKNESS_THRESHOLD = 3;
 export interface GeneratePlanOptions {
   weaknessThreshold?: number;
   maxActionsPerTopic?: number;
+  completedActionIds?: Set<string> | string[];
 }
 
 /**
  * Generates an ordered plan of weak topics with concrete actions,
  * citing only validated resource IDs from V-3 (apps/api/src/data/resources.ts).
  * The plan is ordered strictly by weakness (lowest score first).
+ * Preserves completed status for stable action IDs when provided (V-6).
  */
 export function generateImprovementPlan(
   topics: TopicScore[],
@@ -167,6 +169,10 @@ export function generateImprovementPlan(
 ): TopicPlan[] {
   const threshold = options.weaknessThreshold ?? WEAKNESS_THRESHOLD;
   const maxActions = options.maxActionsPerTopic ?? 3;
+  const completedIds =
+    options.completedActionIds instanceof Set
+      ? options.completedActionIds
+      : new Set(options.completedActionIds ?? []);
 
   // Filter weak topics only (scores <= threshold)
   const weakTopics = topics.filter((t) => t.score <= threshold);
@@ -179,11 +185,12 @@ export function generateImprovementPlan(
     const resources = getResourcesByTopic(t.topic).slice(0, maxActions);
     const actions: PlanAction[] = resources.map((r) => {
       validateResourceId(r.id);
+      const actionId = `${t.topic.toLowerCase()}-${r.id}`;
       return {
-        id: `${t.topic.toLowerCase()}-${r.id}`,
+        id: actionId,
         action: `Study ${r.title} to improve ${t.topic} foundations (${r.type}: ${r.description})`,
         resourceId: r.id,
-        completed: false,
+        completed: completedIds.has(actionId),
       };
     });
 
@@ -447,7 +454,28 @@ export async function refreshInsightsForUser(
   }
 
   const parsed = InsightsOutputSchema.parse(json);
-  const plan = generateImprovementPlan(parsed.topics);
+
+  // Preserve previously completed actions across plan regenerations (V-6)
+  const existingRecord = await prisma.improvementPlan.findUnique({
+    where: { userId },
+  });
+
+  const completedActionIds = new Set<string>();
+  if (existingRecord && Array.isArray(existingRecord.plan)) {
+    for (const tp of existingRecord.plan as any[]) {
+      if (Array.isArray(tp?.actions)) {
+        for (const act of tp.actions) {
+          if (act?.completed && act?.id) {
+            completedActionIds.add(act.id);
+          }
+        }
+      }
+    }
+  }
+
+  const plan = generateImprovementPlan(parsed.topics, {
+    completedActionIds,
+  });
 
   return prisma.improvementPlan.upsert({
     where: { userId },

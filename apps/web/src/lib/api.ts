@@ -196,7 +196,6 @@ export const updateRoadmapProgress = async (
 ): Promise<ImprovementPlan> => {
   const { data } = await api.patch<{ success: boolean; data?: unknown }>('/insights/progress', {
     actionId,
-    id: actionId,
     completed,
   });
   return ImprovementPlan.parse(data.data);

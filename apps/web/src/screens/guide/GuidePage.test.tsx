@@ -316,3 +316,61 @@ test("ticked items stay ticked after a page reload (re-fetch)", async () => {
   expect(checkbox).toBeChecked();
   expect(screen.getByText("Completed")).toBeInTheDocument();
 });
+
+test("does not let a stale response from a quick toggle overwrite the latest state", async () => {
+  vi.mocked(getInsights).mockResolvedValue(MOCK_PLAN);
+
+  let resolveFirstCall!: (value: any) => void;
+  const firstPromise = new Promise((resolve) => {
+    resolveFirstCall = resolve;
+  });
+
+  const updatedTrue: ImprovementPlan = {
+    ...MOCK_PLAN,
+    plan: [
+      {
+        ...MOCK_PLAN.plan[0],
+        actions: [{ ...MOCK_PLAN.plan[0].actions[0], completed: true }],
+      },
+    ],
+  };
+  const updatedFalse: ImprovementPlan = {
+    ...MOCK_PLAN,
+    plan: [
+      {
+        ...MOCK_PLAN.plan[0],
+        actions: [{ ...MOCK_PLAN.plan[0].actions[0], completed: false }],
+      },
+    ],
+  };
+
+  vi.mocked(updateRoadmapProgress)
+    .mockReturnValueOnce(firstPromise as any)
+    .mockResolvedValueOnce(updatedFalse);
+
+  render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  const checkbox = await screen.findByRole("checkbox", {
+    name: /Mark Study GeeksforGeeks: ACID Properties in DBMS as completed/i,
+  });
+  expect(checkbox).not.toBeChecked();
+
+  // First click: mark as completed (pending promise)
+  fireEvent.click(checkbox);
+  expect(checkbox).toBeChecked();
+
+  // Second quick click: unmark as completed (resolves immediately)
+  fireEvent.click(checkbox);
+  expect(checkbox).not.toBeChecked();
+
+  // Now the stale first promise resolves with completed: true
+  resolveFirstCall(updatedTrue);
+
+  // Checkbox should stay unchecked because the second click was completed: false
+  expect(checkbox).not.toBeChecked();
+  expect(screen.getByText("To do")).toBeInTheDocument();
+});

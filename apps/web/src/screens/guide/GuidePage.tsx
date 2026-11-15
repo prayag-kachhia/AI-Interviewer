@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Compass,
@@ -25,10 +25,13 @@ export const GuidePage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const latestActionState = useRef<Map<string, boolean>>(new Map());
   const navigate = useNavigate();
 
   const handleToggleProgress = async (actionId: string, completed: boolean) => {
     setActionError(null);
+    latestActionState.current.set(actionId, completed);
+
     // Optimistic UI update
     setPlan((prev) => {
       if (!prev) return prev;
@@ -48,28 +51,52 @@ export const GuidePage: React.FC = () => {
     setUpdatingId(actionId);
     try {
       const updated = await updateRoadmapProgress(actionId, completed);
-      if (updated) {
-        setPlan(updated);
+      // Guard against stale responses: only apply if the action hasn't been re-toggled
+      if (latestActionState.current.get(actionId) === completed) {
+        setPlan((prev) => {
+          if (!prev) return updated;
+          return {
+            ...prev,
+            resources: updated.resources || prev.resources,
+            plan: (prev.plan || []).map((tp) => {
+              const updatedTopic = updated.plan.find((ut) => ut.topic === tp.topic);
+              if (!updatedTopic) return tp;
+              return {
+                ...tp,
+                actions: (tp.actions || []).map((act) => {
+                  if (act.id === actionId) {
+                    const serverAct = updatedTopic.actions.find((ua) => ua.id === actionId);
+                    return serverAct ? { ...act, ...serverAct } : act;
+                  }
+                  return act;
+                }),
+              };
+            }),
+          };
+        });
       }
     } catch (err: any) {
-      // Revert optimistic update on failure
-      setPlan((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          plan: (prev.plan || []).map((tp) => ({
-            ...tp,
-            actions: (tp.actions || []).map((act) =>
-              act.id === actionId || act.resourceId === actionId
-                ? { ...act, completed: !completed }
-                : act
-            ),
-          })),
-        };
-      });
-      setActionError(err?.response?.data?.message || err?.message || 'Failed to update roadmap progress');
+      // Only revert if this failed call corresponds to the latest state
+      if (latestActionState.current.get(actionId) === completed) {
+        latestActionState.current.delete(actionId);
+        setPlan((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            plan: (prev.plan || []).map((tp) => ({
+              ...tp,
+              actions: (tp.actions || []).map((act) =>
+                act.id === actionId || act.resourceId === actionId
+                  ? { ...act, completed: !completed }
+                  : act
+              ),
+            })),
+          };
+        });
+        setActionError(err?.response?.data?.message || err?.message || 'Failed to update roadmap progress');
+      }
     } finally {
-      setUpdatingId(null);
+      setUpdatingId((cur) => (cur === actionId ? null : cur));
     }
   };
 
