@@ -2,6 +2,7 @@ import { GoogleGenAI, Type, type Schema } from '@google/genai';
 import { z } from 'zod';
 import type { ImprovementPlan, Job, Prisma } from '../generated/prisma/client';
 import prisma from '../db';
+import { NotFoundError } from '../errors';
 import {
   isValidResourceId,
   getResourcesByTopic,
@@ -497,14 +498,16 @@ export async function getImprovementPlan(userId: string): Promise<ImprovementPla
 }
 
 /**
- * Retrieves the current ImprovementPlan for a candidate, enriched with detailed learning resources.
+ * Enriches a raw ImprovementPlan model record with detailed learning resources.
  */
-export async function getEnrichedImprovementPlan(userId: string) {
-  const plan = await getImprovementPlan(userId);
-  if (!plan) {
-    return null;
-  }
-
+export function enrichPlanRecord(plan: ImprovementPlan | {
+  id: string;
+  userId: string;
+  topics: unknown;
+  plan: unknown;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}) {
   const rawPlan = (Array.isArray(plan.plan) ? plan.plan : []) as unknown as TopicPlan[];
   const rawTopics = (Array.isArray(plan.topics) ? plan.topics : []) as unknown as TopicScore[];
 
@@ -536,8 +539,77 @@ export async function getEnrichedImprovementPlan(userId: string) {
     topics: rawTopics,
     plan: enrichedPlan,
     resources: Array.from(resourceMap.values()),
-    createdAt: plan.createdAt.toISOString(),
-    updatedAt: plan.updatedAt.toISOString(),
+    createdAt: plan.createdAt instanceof Date ? plan.createdAt.toISOString() : String(plan.createdAt),
+    updatedAt: plan.updatedAt instanceof Date ? plan.updatedAt.toISOString() : String(plan.updatedAt),
   };
+}
+
+/**
+ * Retrieves the current ImprovementPlan for a candidate, enriched with detailed learning resources.
+ */
+export async function getEnrichedImprovementPlan(userId: string) {
+  const plan = await getImprovementPlan(userId);
+  if (!plan) {
+    return null;
+  }
+  return enrichPlanRecord(plan);
+}
+
+/**
+ * Updates the completion progress of a roadmap item/action (V-6).
+ * Persists the change in the user's ImprovementPlan and returns the enriched plan.
+ */
+export async function updateRoadmapProgress(
+  userId: string,
+  actionId: string,
+  completed: boolean = true
+) {
+  const plan = await prisma.improvementPlan.findUnique({
+    where: { userId },
+  });
+
+  if (!plan) {
+    throw new NotFoundError('Improvement plan not found');
+  }
+
+  const rawPlan = (Array.isArray(plan.plan) ? plan.plan : []) as unknown as TopicPlan[];
+  let matched = false;
+
+  const updatedPlan = rawPlan.map((tp) => {
+    let hasActionMatch = false;
+    const actions = (tp.actions || []).map((act) => {
+      if (act.id === actionId || act.resourceId === actionId) {
+        matched = true;
+        hasActionMatch = true;
+        return {
+          ...act,
+          completed,
+        };
+      }
+      return act;
+    });
+
+    if (!hasActionMatch && (tp.id === actionId || tp.resourceId === actionId)) {
+      matched = true;
+    }
+
+    return {
+      ...tp,
+      actions,
+    };
+  });
+
+  if (!matched) {
+    throw new NotFoundError(`Roadmap action '${actionId}' not found`);
+  }
+
+  const updatedRecord = await prisma.improvementPlan.update({
+    where: { userId },
+    data: {
+      plan: updatedPlan as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  return enrichPlanRecord(updatedRecord || { ...plan, plan: updatedPlan });
 }
 

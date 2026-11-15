@@ -56,6 +56,7 @@ export type {
   TopicScore,
   LearningResource,
   InsightTopic,
+  UpdateRoadmapProgressInput,
 } from '@interview/contracts';
 import type { Role, Session, Turn, ImprovementPlan } from '@interview/contracts';
 

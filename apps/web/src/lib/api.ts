@@ -184,9 +184,21 @@ export const retryFeedback = async (sessionId: string): Promise<Feedback> => {
   return Feedback.parse(data.data);
 };
 
-// Candidate insights & improvement plan (V-5)
+// Candidate insights & improvement plan (V-5, V-6)
 export const getInsights = async (): Promise<ImprovementPlan> => {
   const { data } = await api.get<{ success: boolean; data?: unknown }>('/insights');
+  return ImprovementPlan.parse(data.data);
+};
+
+export const updateRoadmapProgress = async (
+  actionId: string,
+  completed: boolean = true
+): Promise<ImprovementPlan> => {
+  const { data } = await api.patch<{ success: boolean; data?: unknown }>('/insights/progress', {
+    actionId,
+    id: actionId,
+    completed,
+  });
   return ImprovementPlan.parse(data.data);
 };
 

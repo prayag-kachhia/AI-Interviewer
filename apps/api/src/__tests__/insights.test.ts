@@ -13,6 +13,7 @@ import {
   validateTopicPlan,
   validateImprovementPlanRoadmap,
   flattenPlan,
+  updateRoadmapProgress,
   InvalidResourceIdError,
   WEAKNESS_THRESHOLD,
 } from '../services/insights.service';
@@ -30,6 +31,7 @@ vi.mock('../db', () => ({
     improvementPlan: {
       upsert: vi.fn(),
       findUnique: vi.fn(),
+      update: vi.fn(),
     },
   },
 }));
@@ -668,6 +670,124 @@ describe('V-2 · Topic weaknesses from your interviews (Issue #181)', () => {
             expect(isValidResourceId(act.resourceId)).toBe(true);
           }
         }
+      });
+    });
+
+    describe('Roadmap progress tracking (V-6)', () => {
+      const MOCK_EXISTING_PLAN = {
+        id: 'plan-123',
+        userId: USER_ID,
+        topics: [{ topic: 'DBMS', score: 2 }],
+        plan: [
+          {
+            id: 'plan-dbms',
+            topic: 'DBMS',
+            score: 2,
+            actions: [
+              {
+                id: 'act-1',
+                action: 'Study ACID properties',
+                resourceId: 'dbms-acid-transactions',
+                completed: false,
+              },
+              {
+                id: 'act-2',
+                action: 'Review SQL indexing',
+                resourceId: 'dbms-indexing-btree',
+                completed: false,
+              },
+            ],
+          },
+        ],
+        createdAt: new Date('2026-11-15T00:00:00Z'),
+        updatedAt: new Date('2026-11-15T00:00:00Z'),
+      };
+
+      it('marks a roadmap action as completed in the database', async () => {
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(MOCK_EXISTING_PLAN);
+        (prisma.improvementPlan.update as any).mockImplementationOnce(async ({ data }: any) => ({
+          ...MOCK_EXISTING_PLAN,
+          plan: data.plan,
+        }));
+
+        const res = await updateRoadmapProgress(USER_ID, 'act-1', true);
+
+        expect(prisma.improvementPlan.update).toHaveBeenCalledWith({
+          where: { userId: USER_ID },
+          data: {
+            plan: [
+              {
+                id: 'plan-dbms',
+                topic: 'DBMS',
+                score: 2,
+                actions: [
+                  expect.objectContaining({ id: 'act-1', completed: true }),
+                  expect.objectContaining({ id: 'act-2', completed: false }),
+                ],
+              },
+            ],
+          },
+        });
+        expect(res.plan[0].actions[0].completed).toBe(true);
+        expect(res.plan[0].actions[1].completed).toBe(false);
+      });
+
+      it('unmarks a roadmap action (completed: false)', async () => {
+        const completedPlan = {
+          ...MOCK_EXISTING_PLAN,
+          plan: [
+            {
+              ...MOCK_EXISTING_PLAN.plan[0],
+              actions: [
+                { ...MOCK_EXISTING_PLAN.plan[0].actions[0], completed: true },
+                MOCK_EXISTING_PLAN.plan[0].actions[1],
+              ],
+            },
+          ],
+        };
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(completedPlan);
+        (prisma.improvementPlan.update as any).mockImplementationOnce(async ({ data }: any) => ({
+          ...completedPlan,
+          plan: data.plan,
+        }));
+
+        const res = await updateRoadmapProgress(USER_ID, 'act-1', false);
+
+        expect(prisma.improvementPlan.update).toHaveBeenCalledWith({
+          where: { userId: USER_ID },
+          data: {
+            plan: [
+              {
+                id: 'plan-dbms',
+                topic: 'DBMS',
+                score: 2,
+                actions: [
+                  expect.objectContaining({ id: 'act-1', completed: false }),
+                  expect.objectContaining({ id: 'act-2', completed: false }),
+                ],
+              },
+            ],
+          },
+        });
+        expect(res.plan[0].actions[0].completed).toBe(false);
+      });
+
+      it('throws NotFoundError if the user has no improvement plan', async () => {
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(null);
+
+        await expect(updateRoadmapProgress(USER_ID, 'act-1', true)).rejects.toThrow(
+          'Improvement plan not found'
+        );
+        expect(prisma.improvementPlan.update).not.toHaveBeenCalled();
+      });
+
+      it('throws NotFoundError if the action is not found in the plan', async () => {
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(MOCK_EXISTING_PLAN);
+
+        await expect(
+          updateRoadmapProgress(USER_ID, 'non-existent-action', true)
+        ).rejects.toThrow("Roadmap action 'non-existent-action' not found");
+        expect(prisma.improvementPlan.update).not.toHaveBeenCalled();
       });
     });
   });
