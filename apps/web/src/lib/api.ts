@@ -116,6 +116,12 @@ export const postTurn = async (
   return data;
 };
 
+// Server-generated next AI question (PK-3); the backend saves the AI turn before returning it.
+export const postNextQuestion = async (sessionId: string): Promise<TurnResponse> => {
+  const { data } = await api.post<TurnResponse>(`/sessions/${sessionId}/next-question`);
+  return data;
+};
+
 export const endSession = async (sessionId: string): Promise<SessionResponse> => {
   const { data } = await api.post<SessionResponse>(`/sessions/${sessionId}/end`);
   return data;

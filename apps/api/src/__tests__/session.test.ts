@@ -98,7 +98,15 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(res.body.data.role).toBe('software-engineer');
       expect(res.body.data.status).toBe('LIVE');
       expect(prisma.session.create).toHaveBeenCalledWith({
-        data: { userId: AUTH_USER.id, role: 'software-engineer', resumeId: null },
+        data: {
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          resumeId: null,
+          company: null,
+          level: null,
+          focus: null,
+          mode: 'voice',
+        },
       });
     });
 
@@ -131,8 +139,55 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
         select: { id: true },
       });
       expect(prisma.session.create).toHaveBeenCalledWith({
-        data: { userId: AUTH_USER.id, role: 'software-engineer', resumeId: 'res-latest' },
+        data: {
+          userId: AUTH_USER.id,
+          role: 'software-engineer',
+          resumeId: 'res-latest',
+          company: null,
+          level: null,
+          focus: null,
+          mode: 'voice',
+        },
       });
+    });
+
+    it('stores the setup the candidate chose: focus, company, level and mode (P-7)', async () => {
+      (prisma.session.create as any).mockResolvedValueOnce({ id: 'sess-3', role: 'backend-developer' });
+
+      const res = await request(app)
+        .post('/api/sessions')
+        .set('Authorization', authHeader())
+        .send({ roleId: 'backend-developer', focus: 'Databases', company: '  Stripe ', level: 'mid', mode: 'typed' });
+
+      expect(res.status).toBe(201);
+      expect(prisma.session.create).toHaveBeenCalledWith({
+        data: {
+          userId: AUTH_USER.id,
+          role: 'backend-developer',
+          resumeId: null,
+          company: 'Stripe',
+          level: 'mid',
+          focus: 'Databases',
+          mode: 'typed',
+        },
+      });
+    });
+
+    it('rejects an unknown focus, level or mode with HTTP 400 (P-7)', async () => {
+      const bad = [
+        { roleId: 'backend-developer', focus: 'Underwater basket weaving' },
+        // A focus that belongs to a different role is unknown for this one.
+        { roleId: 'backend-developer', focus: 'SQL' },
+        { roleId: 'backend-developer', level: 'principal' },
+        { roleId: 'backend-developer', mode: 'video' },
+      ];
+
+      for (const body of bad) {
+        const res = await request(app).post('/api/sessions').set('Authorization', authHeader()).send(body);
+        expect(res.status).toBe(400);
+        expect(res.body.success).toBe(false);
+      }
+      expect(prisma.session.create).not.toHaveBeenCalled();
     });
 
     // TEST 2: unknown role returns 400

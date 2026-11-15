@@ -103,7 +103,7 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
   try {
     const evaluation = await evaluateTranscript(
       { roleId: session.role, turns: session.turns },
-      { ...options, requirePerAnswer: true }
+      options
     );
     await saveFeedback({
       sessionId: session.id,

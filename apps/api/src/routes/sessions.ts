@@ -13,7 +13,7 @@ import {
 import { mintVoiceToken } from '../services/voice-provider.service';
 import { briefingFor } from '../services/briefing.service';
 import { generateNextQuestion } from '../services/interviewer.service';
-import { RoleList, ROLES, VoiceToken } from '@interview/contracts';
+import { CreateSessionInput, RoleList, ROLES, VoiceToken } from '@interview/contracts';
 
 const router = Router();
 
@@ -25,14 +25,15 @@ router.get('/roles', authenticate, async (_req, res) => {
 // POST /api/sessions
 router.post('/', authenticate, async (req, res) => {
   const userId = req.user!.id;
-  const { roleId } = req.body ?? {};
+  const parsed = CreateSessionInput.safeParse(req.body ?? {});
 
-  if (!roleId || typeof roleId !== 'string') {
-    res.status(400).json({ success: false, message: 'roleId is required' });
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    res.status(400).json({ success: false, message: `${issue.path.join('.') || 'input'}: ${issue.message}` });
     return;
   }
 
-  const session = await createSession(userId, roleId);
+  const session = await createSession(userId, parsed.data);
   res.status(201).json({ success: true, data: session });
 });
 

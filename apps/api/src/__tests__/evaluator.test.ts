@@ -11,7 +11,8 @@ import {
   type EvaluationInput,
   type TranscriptTurn,
 } from '../services/evaluator.service';
-import { getRubric, UnknownRoleError } from '../services/rubrics';
+import { getRubric, UnknownRoleError, SCORE_SEPARATION_PRINCIPLE } from '../services/rubrics';
+import { evaluateScoreSeparation } from '../../scripts/bench';
 
 // Established schema validation for transcript turn fixtures against shared contracts
 const TranscriptTurnSchema = z.object({
@@ -60,6 +61,10 @@ describe('FB4 — evaluator', () => {
       'empty-answers.json',
       'tech-stack-python.json',
       'tech-stack-java.json',
+      'difficulty-basic.json',
+      'difficulty-advanced.json',
+      'filler-heavy-correct.json',
+      'filler-heavy-data-analyst.json',
     ] as const;
     for (const name of fixtureNames) {
       const turns = loadTranscriptFixture(name);
@@ -103,7 +108,7 @@ describe('FB4 — evaluator', () => {
   it('given the LLM call times out, then it fails well inside the 15-second budget', async () => {
     const started = Date.now();
     await expect(
-      evaluateTranscript(SAMPLE, { generate: () => new Promise(() => {}), timeoutMs: 50 })
+      evaluateTranscript(SAMPLE, { generate: () => new Promise(() => { }), timeoutMs: 50 })
     ).rejects.toThrow('timed out');
     expect(Date.now() - started).toBeLessThan(1000);
   });
@@ -192,6 +197,15 @@ describe('FB4 — evaluator', () => {
     const prompt = buildEvaluationPrompt(SAMPLE);
     expect(prompt).toContain('Technology-independent evaluation');
     expect(prompt).toContain('Any valid technology, programming language, framework, library, or technical approach earns full credit');
+  });
+
+  it('includes score separation and comment justification instructions in the evaluation prompt (S-5, FR-21, NFR-19)', () => {
+    const prompt = buildEvaluationPrompt(SAMPLE);
+    expect(prompt).toContain('Score separation (technical depth vs. communication)');
+    expect(prompt).toContain(SCORE_SEPARATION_PRINCIPLE);
+    expect(prompt).toContain('Judge technical depth on content only');
+    expect(prompt).toContain('Data Interpretation & Business Insights');
+    expect(prompt).toContain('explaining why this score was given');
   });
 
   describe('PN-8 — Technology-independent benchmark scoring parity', () => {
@@ -315,6 +329,493 @@ describe('FB4 — evaluator', () => {
     });
   });
 
+  describe('PN-3 — Difficulty-aware expectations (DR-05)', () => {
+    it('scales prompt instructions according to question difficulty', () => {
+      // Basic difficulty explicitly instructs full credit (5/5) without advanced penalization
+      const basicPrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'basic' });
+      expect(basicPrompt).toContain('Target Question Difficulty: BASIC');
+      expect(basicPrompt).toContain('full credit (5/5)');
+      expect(basicPrompt).toContain('Do NOT penalize or mark down the candidate for omitting advanced optimizations');
+
+      // Advanced difficulty expects deeper technical reasoning and trade-offs
+      const advancedPrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'advanced' });
+      expect(advancedPrompt).toContain('Target Question Difficulty: ADVANCED');
+      expect(advancedPrompt).toContain('deeper technical reasoning');
+      expect(advancedPrompt).toContain('architectural or system trade-offs');
+
+      // Default (unspecified) preserves backward compatibility with general difficulty scaling
+      const defaultPrompt = buildEvaluationPrompt(SAMPLE);
+      expect(defaultPrompt).toContain('Difficulty-Aware Expectations');
+      expect(defaultPrompt).toContain('Calibrate expected answer depth to the difficulty of the question');
+
+      // Intermediate difficulty falls back cleanly to the general difficulty principle
+      const intermediatePrompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'intermediate' });
+      expect(intermediatePrompt).toContain('Difficulty-Aware Expectations');
+      expect(intermediatePrompt).toContain('Calibrate expected answer depth to the difficulty of the question');
+    });
+
+    it('handles casing and whitespace normalization in difficulty parameter', () => {
+      const trimmedBasic = buildEvaluationPrompt({ ...SAMPLE, difficulty: '  BASIC  ' });
+      expect(trimmedBasic).toContain('Target Question Difficulty: BASIC');
+
+      const trimmedAdvanced = buildEvaluationPrompt({ ...SAMPLE, difficulty: '  Advanced  ' });
+      expect(trimmedAdvanced).toContain('Target Question Difficulty: ADVANCED');
+    });
+
+    it('verifies that both technology independence and difficulty instructions coexist in the prompt', () => {
+      const prompt = buildEvaluationPrompt({ ...SAMPLE, difficulty: 'basic' });
+      expect(prompt).toContain('Technology-independent evaluation');
+      expect(prompt).toContain('Target Question Difficulty: BASIC');
+    });
+
+    it('verifies that difficulty-basic and difficulty-advanced fixtures satisfy TurnSpeaker and 8-turn constraints', () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+      const advancedTurns = loadTranscriptFixture('difficulty-advanced.json');
+
+      expect(basicTurns).toHaveLength(8);
+      expect(advancedTurns).toHaveLength(8);
+
+      // Basic questions focus on foundational data structures and protocols
+      const basicQuestions = basicTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(basicQuestions.some((q) => q.includes('hash table'))).toBe(true);
+      expect(basicQuestions.some((q) => q.includes('HTTP status codes'))).toBe(true);
+
+      // Advanced questions focus on distributed consensus, MVCC, and chaos engineering
+      const advancedQuestions = advancedTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(advancedQuestions.some((q) => q.includes('globally consistent counter') || q.includes('CRDT'))).toBe(true);
+      expect(advancedQuestions.some((q) => q.includes('chaos engineering') || q.includes('fault-injection'))).toBe(true);
+    });
+
+    it('demonstrates that a fully correct basic answer receives 5/5 full marks without advanced depth (PN-3 DoD)', async () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+
+      // Evaluation for basic answer covering core concepts without unprompted distributed system depth
+      const basicReply = JSON.stringify({
+        summary: 'Outstanding grasp of foundational data structures, memory layout, HTTP semantics, and unit testing principles.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Fully correct, thorough explanation of hash table mechanics, bucket indexing, collision resolution, and array vs linked list trade-offs.',
+            strengths: ['Accurate O(1) hash table lookup explanation', 'Clear memory layout contrast between arrays and linked lists'],
+            improvements: ['Could mention dynamic array amortized doubling costs'],
+            quote: 'On average, lookups, insertions, and deletions take O(1) constant time because the bucket index is computed directly',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Precise understanding of HTTP status codes, error categorization, and unit testing isolation boundaries.',
+            strengths: ['Clear status code categorization', 'Solid testing isolation principles'],
+            improvements: ['Could briefly mention 3xx redirect status family'],
+            quote: 'Unit testing is the practice of testing individual functions, methods, or components in isolation',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Exemplary clarity and structured explanations of core computer science fundamentals.',
+            strengths: ['Concise, accurate terminology', 'Structured compare-and-contrast reasoning'],
+            improvements: ['Keep answers equally concise in live discussions'],
+            quote: 'Using the correct status codes allows client applications to handle responses and user error messaging predictably.',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: basicTurns, difficulty: 'basic' },
+        { generate: async () => ({ text: basicReply }) }
+      );
+
+      // Verify that every category achieved full marks (5/5)
+      expect(evaluation.scores).toHaveLength(RUBRIC.length);
+      for (const score of evaluation.scores) {
+        expect(score.score).toBe(5);
+      }
+      const avgScore = evaluation.scores.reduce((a, b) => a + b.score, 0) / evaluation.scores.length;
+      expect(avgScore).toBe(5.0);
+    });
+
+    it('rejects an evaluation that marks down a correct basic answer for lacking advanced-level depth', () => {
+      // Simulates an evaluator improperly penalizing a basic answer for not discussing distributed systems
+      const penalizedScores = [
+        { category: 'Problem Solving & Algorithms', score: 3 }, // penalized for no consistent hashing
+        { category: 'Software Design & Architecture', score: 4 },
+        { category: 'Technical Communication', score: 5 },
+      ];
+
+      const fullMarksMet = penalizedScores.every((s) => s.score === 5);
+      expect(fullMarksMet).toBe(false);
+
+      // The PN-3 benchmark criterion asserts that basic answers are NOT marked down
+      const sub5 = penalizedScores.filter((s) => s.score < 5);
+      expect(sub5.length).toBeGreaterThan(0);
+      expect(sub5.map((s) => s.category)).toContain('Problem Solving & Algorithms');
+    });
+
+    it('evaluates advanced questions with deeper expectations', async () => {
+      const advancedTurns = loadTranscriptFixture('difficulty-advanced.json');
+
+      const advancedReply = JSON.stringify({
+        summary: 'Deep architectural mastery of distributed counters, CRDTs, concurrency anomalies, and automated fault-injection pipelines.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Mastery of PN-Counters, Raft consensus partitioning, and lock-free CAS primitives under heavy concurrency.',
+            strengths: ['Rigorous distributed consensus understanding', 'Lock-free CAS optimization'],
+            improvements: ['Could detail state-based vs operation-based CRDT delta synchronization'],
+            quote: 'To achieve high write throughput across multiple regions without incurring synchronous cross-region consensus latency',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Comprehensive analysis of isolation levels, MVCC xmin/xmax tuple versioning, and chaos engineering pipelines.',
+            strengths: ['Accurate MVCC snapshot mechanics', 'Automated chaos engineering pipeline design'],
+            improvements: ['Could mention specific transaction rollback anomaly benchmarks'],
+            quote: 'Multi-Version Concurrency Control (MVCC) achieves this by writing a new tuple version with creation and expiration transaction IDs',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Exceptional communication articulating complex distributed systems edge cases and failure modes.',
+            strengths: ['Precise systems terminology', 'Structured trade-off analysis'],
+            improvements: ['None observed'],
+            quote: 'If error budgets or p99 latency SLOs are breached beyond predefined thresholds, the automated pipeline halts deployment',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: advancedTurns, difficulty: 'advanced' },
+        { generate: async () => ({ text: advancedReply }) }
+      );
+
+      for (const score of evaluation.scores) {
+        expect(score.score).toBeGreaterThanOrEqual(4);
+      }
+    });
+
+    it('preserves backward compatibility when difficulty is undefined', async () => {
+      const basicTurns = loadTranscriptFixture('difficulty-basic.json');
+      const sampleReply = JSON.stringify({
+        summary: 'Good foundational software engineering answers.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 4,
+            comment: 'Good understanding of data structures.',
+            strengths: ['Accurate time complexity'],
+            improvements: ['Could mention hash collisions in more detail'],
+            quote: 'A hash table is an associative data structure',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 4,
+            comment: 'Solid grasp of HTTP semantics.',
+            strengths: ['Status code meanings clear'],
+            improvements: ['None'],
+            quote: 'HTTP status codes provide standard three-digit numerical responses',
+          },
+          {
+            category: 'Technical Communication',
+            score: 4,
+            comment: 'Clear communication.',
+            strengths: ['Clear terminology'],
+            improvements: ['None'],
+            quote: 'The main difference is their memory layout and access patterns.',
+          },
+        ],
+      });
+
+      // Difficulty omitted: should not throw, should succeed
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: basicTurns },
+        { generate: async () => ({ text: sampleReply }) }
+      );
+      expect(evaluation.scores).toHaveLength(3);
+    });
+  });
+
+  describe('S-5 — Technical depth vs. communication score separation', () => {
+    it('verifies that filler-heavy-correct and filler-heavy-data-analyst have valid turn structures and candidate disfluencies', () => {
+      const seTurns = loadTranscriptFixture('filler-heavy-correct.json');
+      const daTurns = loadTranscriptFixture('filler-heavy-data-analyst.json');
+
+      expect(seTurns.length).toBe(8);
+      expect(daTurns.length).toBe(8);
+
+      // Verify that candidate turns in both fixtures contain actual verbal fillers and hesitation
+      const seCandidateText = seTurns.filter((t) => t.speaker === 'CANDIDATE').map((t) => t.text).join(' ');
+      expect(seCandidateText).toMatch(/\bum\b/i);
+      expect(seCandidateText).toMatch(/\buh\b/i);
+      expect(seCandidateText).toMatch(/\blike\b/i);
+      expect(seCandidateText).toMatch(/\byou know\b/i);
+
+      const daCandidateText = daTurns.filter((t) => t.speaker === 'CANDIDATE').map((t) => t.text).join(' ');
+      expect(daCandidateText).toMatch(/\bum\b/i);
+      expect(daCandidateText).toMatch(/\buh\b/i);
+      expect(daCandidateText).toMatch(/\blike\b/i);
+      expect(daCandidateText).toMatch(/\byou know\b/i);
+    });
+
+    it('demonstrates that filler-heavy answers retain high technical scores while communication reflects verbal disfluency', async () => {
+      const turns = loadTranscriptFixture('filler-heavy-correct.json');
+
+      const mockReply = JSON.stringify({
+        summary: 'Solid technical depth on messaging queues and idempotency, though presentation was affected by frequent filler words.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Awarded 5 because the candidate correctly selected exponential backoff with jitter and idempotency keys; technical depth is evaluated on content despite speech fillers.',
+            strengths: ['Optimal exponential backoff with jitter', 'Idempotent PostgreSQL state tracking'],
+            improvements: ['Could discuss lock timeouts under network partitions'],
+            quote: 'we should, like, handle failures with, you know, exponential backoff retries, um, plus jitter',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 4,
+            comment: 'Awarded 4 because the candidate cleanly decoupled the API with RabbitMQ/SQS and dead-letter queues, demonstrating sound architecture unaffected by hesitation.',
+            strengths: ['Decoupled queue buffer', 'Dead-letter queue recovery pattern'],
+            improvements: ['Could specify queue partition limits'],
+            quote: 'decouple the notification requests from, like, the main web API using, uh, a message queue',
+          },
+          {
+            category: 'Technical Communication',
+            score: 2,
+            comment: 'Awarded 2 because frequent verbal fillers (um, uh, like, you know) and hesitation made explanations disjointed and reduced delivery clarity.',
+            strengths: ['Answered all questions cooperatively'],
+            improvements: ['Reduce reliance on verbal crutches and pauses to deliver more concise responses'],
+            quote: 'Um, well... so, like, basically, uh... I would, you know, decouple',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'software-engineer', turns },
+        { generate: async () => ({ text: mockReply }) }
+      );
+
+      const problemSolving = evaluation.scores.find((s) => s.category === 'Problem Solving & Algorithms')!;
+      const architecture = evaluation.scores.find((s) => s.category === 'Software Design & Architecture')!;
+      const communication = evaluation.scores.find((s) => s.category === 'Technical Communication')!;
+
+      // Technical categories must retain high scores (>= 4)
+      expect(problemSolving.score).toBeGreaterThanOrEqual(4);
+      expect(architecture.score).toBeGreaterThanOrEqual(4);
+
+      // Communication category reflects the heavy verbal disfluency (<= 3)
+      expect(communication.score).toBeLessThanOrEqual(3);
+
+      // Every category comment must explicitly explain why its score was given
+      for (const score of evaluation.scores) {
+        expect(score.comment.length).toBeGreaterThan(10);
+        expect(score.comment.toLowerCase()).toContain('because');
+      }
+    });
+
+    it('demonstrates that Data Analyst filler-heavy answers retain high scores in Data Interpretation & Business Insights as a technical category', async () => {
+      const turns = loadTranscriptFixture('filler-heavy-data-analyst.json');
+
+      const mockReply = JSON.stringify({
+        summary: 'Rigorous root-cause metric decomposition and layered pipeline validation; analytical conclusions evaluated strictly on content unaffected by verbal hesitation.',
+        scores: [
+          {
+            category: 'SQL & Analytical Reasoning',
+            score: 5,
+            comment: 'Awarded 5 because the candidate correctly utilized CTE aggregation and explicit ROWS BETWEEN window framing, demonstrating superior query design.',
+            strengths: ['Correct ROWS BETWEEN window function syntax', 'Accurate ROW_NUMBER deduplication'],
+            improvements: ['Could benchmark memory usage under massive row cardinality'],
+            quote: 'WITH daily AS (SELECT DATE(event_time) AS day, COUNT(DISTINCT user_id) AS dau FROM events GROUP BY 1)',
+          },
+          {
+            category: 'Data Interpretation & Business Insights',
+            score: 5,
+            comment: 'Awarded 5 because the candidate systematically decomposed revenue into orders × AOV, performed dimensional slicing, and tested YoY seasonality, demonstrating exemplary analytical reasoning.',
+            strengths: ['Mathematical metric decomposition', 'Multidimensional segmentation and anomaly checks'],
+            improvements: ['Could formulate immediate stakeholder communication SLAs'],
+            quote: 'decompose revenue into, you know, orders multiplied by average order value to, uh, see which part dropped',
+          },
+          {
+            category: 'Statistical Understanding & Data Quality',
+            score: 4,
+            comment: 'Awarded 4 because the candidate applied structured invariant checks and shadow testing across pipeline layers, showing sound quality practices unaffected by speech fillers.',
+            strengths: ['Layered data quality invariant checks', 'Shadow deployment testing cycle'],
+            improvements: ['Could elaborate on alerting thresholds for volume drift'],
+            quote: 'At schema layer, uh, check data types and null constraints, you know? And at volume layer, like, reconcile row counts',
+          },
+        ],
+      });
+
+      const evaluation = await evaluateTranscript(
+        { roleId: 'data-analyst', turns },
+        { generate: async () => ({ text: mockReply }) }
+      );
+
+      const sqlScore = evaluation.scores.find((s) => s.category === 'SQL & Analytical Reasoning')!;
+      const interpretationScore = evaluation.scores.find((s) => s.category === 'Data Interpretation & Business Insights')!;
+      const dataQualityScore = evaluation.scores.find((s) => s.category === 'Statistical Understanding & Data Quality')!;
+
+      // All three technical/analytical categories must retain high scores (>= 4)
+      expect(sqlScore.score).toBeGreaterThanOrEqual(4);
+      expect(interpretationScore.score).toBeGreaterThanOrEqual(4);
+      expect(dataQualityScore.score).toBeGreaterThanOrEqual(4);
+
+      // Comments must justify the scores given
+      for (const score of evaluation.scores) {
+        expect(score.comment.length).toBeGreaterThan(10);
+        expect(score.comment.toLowerCase()).toContain('because');
+      }
+    });
+
+    it('evaluateScoreSeparation passes when both SWE and Data Analyst technical scores are high', () => {
+      const mockResults = [
+        {
+          name: 'filler-heavy-correct',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1100,
+              outputTokens: 500,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 5 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 2 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'filler-heavy-data-analyst',
+          runs: [
+            {
+              wallMs: 11000,
+              promptTokens: 1150,
+              outputTokens: 480,
+              scores: [
+                { category: 'SQL & Analytical Reasoning', score: 5 },
+                { category: 'Data Interpretation & Business Insights', score: 5 },
+                { category: 'Statistical Understanding & Data Quality', score: 4 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateScoreSeparation(mockResults);
+      expect(result.pass).toBe(true);
+      expect(result.technicalAvg).toBe(4.5);
+      expect(result.communicationScore).toBe(2);
+      expect(result.dataAnalystAvg).toBeCloseTo(4.67, 1);
+      expect(result.dataInterpretationScore).toBe(5);
+    });
+
+    it('evaluateScoreSeparation fails when Data Interpretation & Business Insights is unfairly dragged down by speech disfluency', () => {
+      const mockResults = [
+        {
+          name: 'filler-heavy-correct',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1100,
+              outputTokens: 500,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 5 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 2 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'filler-heavy-data-analyst',
+          runs: [
+            {
+              wallMs: 11000,
+              promptTokens: 1150,
+              outputTokens: 480,
+              scores: [
+                { category: 'SQL & Analytical Reasoning', score: 4 },
+                { category: 'Data Interpretation & Business Insights', score: 2 }, // unfairly penalized for fillers
+                { category: 'Statistical Understanding & Data Quality', score: 4 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateScoreSeparation(mockResults);
+      expect(result.pass).toBe(false);
+      expect(result.dataInterpretationScore).toBe(2); // < 3.5 target
+    });
+
+    it('evaluateScoreSeparation fails when SWE technical categories are unfairly dragged down by speech disfluency', () => {
+      const mockResults = [
+        {
+          name: 'filler-heavy-correct',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1100,
+              outputTokens: 500,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 3 },
+                { category: 'Software Design & Architecture', score: 2 },
+                { category: 'Technical Communication', score: 2 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'filler-heavy-data-analyst',
+          runs: [
+            {
+              wallMs: 11000,
+              promptTokens: 1150,
+              outputTokens: 480,
+              scores: [
+                { category: 'SQL & Analytical Reasoning', score: 5 },
+                { category: 'Data Interpretation & Business Insights', score: 5 },
+                { category: 'Statistical Understanding & Data Quality', score: 5 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateScoreSeparation(mockResults);
+      expect(result.pass).toBe(false);
+      expect(result.technicalAvg).toBe(2.5); // < 3.5 target
+    });
+
+    it('evaluateScoreSeparation returns error when required fixtures are missing or errored', () => {
+      const resultMissingAll = evaluateScoreSeparation([]);
+      expect(resultMissingAll.pass).toBe(false);
+      expect(resultMissingAll.error).toContain('Missing required score separation fixture(s)');
+
+      const resultMissingDa = evaluateScoreSeparation([
+        {
+          name: 'filler-heavy-correct',
+          runs: [{ wallMs: 1000, promptTokens: 0, outputTokens: 0, scores: [] }],
+        },
+      ]);
+      expect(resultMissingDa.pass).toBe(false);
+      expect(resultMissingDa.error).toContain('filler-heavy-data-analyst');
+
+      const resultErrored = evaluateScoreSeparation([
+        {
+          name: 'filler-heavy-correct',
+          runs: [{ wallMs: 1000, promptTokens: 0, outputTokens: 0, scores: [], error: '503 error' }],
+        },
+        {
+          name: 'filler-heavy-data-analyst',
+          runs: [{ wallMs: 1000, promptTokens: 0, outputTokens: 0, scores: [], error: '503 error' }],
+        },
+      ]);
+      expect(resultErrored.pass).toBe(false);
+      expect(resultErrored.error).toContain('No successful evaluated runs');
+    });
+  });
+
   describe('PN-9 - Per-answer feedback (#174)', () => {
     const SAMPLE_PER_ANSWER = [
       {
@@ -375,13 +876,13 @@ describe('FB4 — evaluator', () => {
 
     it('evaluationSchema includes perAnswer with required fields', () => {
       const schema = evaluationSchema(['Problem Solving & Algorithms']);
-      expect(schema.required).toContain('perAnswer');
+      expect(schema.required).not.toContain('perAnswer');
       expect((schema.properties as any).perAnswer).toBeDefined();
       const perAnswerProps = (schema.properties as any).perAnswer;
       expect(perAnswerProps.items.required).toEqual(['question', 'summary', 'strengths', 'improvements']);
     });
 
-    it('rejects when perAnswer feedback has incomplete answer coverage', async () => {
+    it('rejects when perAnswer feedback has incomplete answer coverage and requirePerAnswer is true', async () => {
       // Transcript has 4 candidate answers, but perAnswer only has 2
       const incompleteReply = JSON.stringify({
         summary: 'Good start.',
@@ -392,11 +893,48 @@ describe('FB4 — evaluator', () => {
       await expect(
         evaluateTranscript(SAMPLE, {
           generate: async () => ({ text: incompleteReply }),
+          requirePerAnswer: true,
         })
       ).rejects.toThrow(/Incomplete per-answer feedback: expected 4 answer\(s\) but received 2/);
     });
 
-    it('rejects when a perAnswer entry has an empty question', async () => {
+    it('gracefully degrades to undefined perAnswer when perAnswer is incomplete and requirePerAnswer is false', async () => {
+      const incompleteReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: SAMPLE_PER_ANSWER.slice(0, 2),
+      });
+
+      const result = await evaluateTranscript(SAMPLE, {
+        generate: async () => ({ text: incompleteReply }),
+      });
+
+      expect(result.perAnswer).toBeUndefined();
+      expect(result.summary).toBe('Good start.');
+      expect(result.scores).toHaveLength(RUBRIC.length);
+    });
+
+    it('gracefully degrades to undefined perAnswer when perAnswer has schema errors and requirePerAnswer is false', async () => {
+      const malformedPerAnswerReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: [
+          {
+            question: 'Missing required fields',
+          },
+        ],
+      });
+
+      const result = await evaluateTranscript(SAMPLE, {
+        generate: async () => ({ text: malformedPerAnswerReply }),
+      });
+
+      expect(result.perAnswer).toBeUndefined();
+      expect(result.summary).toBe('Good start.');
+      expect(result.scores).toHaveLength(RUBRIC.length);
+    });
+
+    it('rejects when a perAnswer entry has an empty question and requirePerAnswer is true', async () => {
       const emptyQuestionReply = JSON.stringify({
         summary: 'Good start.',
         scores: RUBRIC.map((r) => scoreFor(r.category)),
@@ -411,11 +949,12 @@ describe('FB4 — evaluator', () => {
       await expect(
         evaluateTranscript(SAMPLE, {
           generate: async () => ({ text: emptyQuestionReply }),
+          requirePerAnswer: true,
         })
       ).rejects.toThrow();
     });
 
-    it('rejects when a perAnswer entry has an empty summary', async () => {
+    it('rejects when a perAnswer entry has an empty summary and requirePerAnswer is true', async () => {
       const emptySummaryReply = JSON.stringify({
         summary: 'Good start.',
         scores: RUBRIC.map((r) => scoreFor(r.category)),
@@ -430,6 +969,7 @@ describe('FB4 — evaluator', () => {
       await expect(
         evaluateTranscript(SAMPLE, {
           generate: async () => ({ text: emptySummaryReply }),
+          requirePerAnswer: true,
         })
       ).rejects.toThrow();
     });
@@ -534,7 +1074,7 @@ describe('FB4 — evaluator', () => {
         expect(result.perAnswer![1].question).toBe('Follow-up: What happens on collision?');
       });
 
-      it('rejects a wrong question for an answer', async () => {
+      it('rejects a wrong question for an answer when requirePerAnswer is true', async () => {
         const wrong = [
           { ...CORRECT_PER_ANSWER[0], question: 'Completely different question?' },
           CORRECT_PER_ANSWER[1],
@@ -542,20 +1082,22 @@ describe('FB4 — evaluator', () => {
         await expect(
           evaluateTranscript(PAIRING_INPUT, {
             generate: async () => ({ text: pairingReply(wrong) }),
+            requirePerAnswer: true,
           })
         ).rejects.toThrow(/entry 1 question does not match/);
       });
 
-      it('rejects reordered questions', async () => {
+      it('rejects reordered questions when requirePerAnswer is true', async () => {
         const swapped = [CORRECT_PER_ANSWER[1], CORRECT_PER_ANSWER[0]];
         await expect(
           evaluateTranscript(PAIRING_INPUT, {
             generate: async () => ({ text: pairingReply(swapped) }),
+            requirePerAnswer: true,
           })
         ).rejects.toThrow(/entry 1 question does not match/);
       });
 
-      it('rejects candidate answer without a preceding interviewer question', async () => {
+      it('rejects candidate answer without a preceding interviewer question when requirePerAnswer is true', async () => {
         const noAiFirst: EvaluationInput = {
           roleId: 'software-engineer',
           turns: [
@@ -581,6 +1123,7 @@ describe('FB4 — evaluator', () => {
         await expect(
           evaluateTranscript(noAiFirst, {
             generate: async () => ({ text: reply }),
+            requirePerAnswer: true,
           })
         ).rejects.toThrow(/entry 1 has no preceding interviewer question/);
       });

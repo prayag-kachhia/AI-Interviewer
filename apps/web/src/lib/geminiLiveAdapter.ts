@@ -358,12 +358,4 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
 
     this.callbacks?.onAudioLevel?.(0);
   }
-
-  // STUB (VI-8): Gemini Live asks the questions and detects the end of a turn itself, so these
-  // room calls do nothing here until VI-8 slims VoiceSessionAdapter.
-  async speakAiQuestion(): Promise<void> {}
-
-  async startListening(): Promise<void> {}
-
-  finishCandidateTurn(): void {}
 }

@@ -62,6 +62,10 @@ BENCH_USD_TO_INR=84.0               # default USD to INR conversion rate
 | `backend-developer-good` | Backend Developer | Competent | ✅ |
 | `backend-developer-average` | Backend Developer | Mixed | ✅ |
 | `off-topic` | Software Engineer | Edge case (off-topic) | ✅ |
+| `tech-stack-python` | Software Engineer | Top-tier (Python stack) | ✅ (DR-05 parity) |
+| `tech-stack-java` | Software Engineer | Top-tier (Java stack) | ✅ (DR-05 parity) |
+| `filler-heavy-correct` | Software Engineer | Competent, heavy speech fillers | ✅ (FR-21 separation) |
+| `filler-heavy-data-analyst` | Data Analyst | Competent, heavy speech fillers | ✅ (FR-21 separation) |
 
 Each `*.expected.json` file stores the fixture's role and, per rubric category, the acceptable score range `[min, max]` with a one-line reason. The benchmark averages scores across all runs and fails a fixture if a category's average is outside its range or the category is missing.
 

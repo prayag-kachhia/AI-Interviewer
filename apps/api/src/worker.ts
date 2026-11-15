@@ -1,7 +1,11 @@
 import type { Job } from './generated/prisma/client';
-import { processNextJob } from './services/job-queue.service';
+import {
+  processNextJob,
+  enqueueDailyRetentionPurge,
+} from './services/job-queue.service';
 import { handleSessionEnded } from './services/feedback.service';
 import { handleInsightsRefresh } from './services/insights.service';
+import { purgeExpiredSessions } from './services/retention.service';
 
 const IDLE_POLL_MS = 1000;
 
@@ -13,6 +17,11 @@ export async function handleJob(job: Job): Promise<void> {
     case 'insights.refresh':
       await handleInsightsRefresh(job);
       break;
+    case 'retention.purge': {
+      const result = await purgeExpiredSessions();
+      console.log(`[retention] purged ${result.count} expired sessions`);
+      break;
+    }
     default:
       throw new Error(`Unknown job type: ${job.type}`);
   }
@@ -29,7 +38,19 @@ export async function runWorker(
   jobType?: string
 ): Promise<void> {
   console.log(`[${workerId}] waiting for jobs${jobType ? ` of type ${jobType}` : ''}`);
+  let lastScheduledDate: string | undefined;
   while (!signal?.aborted) {
+    const now = new Date();
+    const scheduledDate = now.toISOString().slice(0, 10);
+
+    if (scheduledDate !== lastScheduledDate) {
+      try {
+        await enqueueDailyRetentionPurge(now);
+        lastScheduledDate = scheduledDate;
+      } catch (error) {
+        console.error(`[${workerId}] failed to enqueue daily retention purge:`, error);
+      }
+    }
     try {
       const job = await processNextJob(
         workerId,

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Alert, AlertDescription, AlertTitle } from "./alert";
 import { Badge } from "./badge";
 import { Button } from "./button";
+import { ChartContainer, type ChartConfig } from "./chart";
 
 describe("Button", () => {
   it("disables itself and reports busy while loading", () => {
@@ -48,5 +49,24 @@ describe("Alert", () => {
     );
     expect(screen.getByRole("alert")).toHaveTextContent("Please select a PDF file.");
     expect(screen.getByRole("status")).toHaveTextContent("Extracting information...");
+  });
+});
+
+describe("ChartContainer", () => {
+  it("renders with data-slot and data-chart attributes", () => {
+    const config: ChartConfig = {
+      score: {
+        label: "Score",
+        color: "#805600",
+      },
+    };
+    render(
+      <ChartContainer config={config} id="test-radar">
+        <div>Chart Content</div>
+      </ChartContainer>,
+    );
+    const container = screen.getByText("Chart Content").closest("[data-slot='chart']");
+    expect(container).toBeInTheDocument();
+    expect(container).toHaveAttribute("data-chart", "chart-test-radar");
   });
 });

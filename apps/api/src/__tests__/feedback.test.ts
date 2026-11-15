@@ -426,6 +426,43 @@ describe('FB3 — GET /api/sessions/:id/feedback', () => {
     });
   });
 
+  it('handleSessionEnded saves ready feedback without perAnswer when evaluator omits perAnswer (Issue #174 review fix)', async () => {
+    (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({ ...SESSION, turns: TURNS });
+    vi.mocked(evaluateTranscript).mockResolvedValueOnce({
+      summary: 'Solid performance overall.',
+      scores: SCORES,
+      perAnswer: undefined,
+    });
+
+    await handleSessionEnded(JOB);
+
+    expect(evaluateTranscript).toHaveBeenCalledWith(
+      { roleId: SESSION.role, turns: TURNS },
+      {}
+    );
+
+    expect(prisma.feedback.upsert).toHaveBeenCalledWith({
+      where: { sessionId: 'sess-1' },
+      create: {
+        sessionId: 'sess-1',
+        status: 'ready',
+        summary: 'Solid performance overall.',
+        scores: {
+          scores: SCORES,
+        },
+        error: null,
+      },
+      update: {
+        status: 'ready',
+        summary: 'Solid performance overall.',
+        scores: {
+          scores: SCORES,
+        },
+        error: null,
+      },
+    });
+  });
+
   it("given another candidate's session, then 404 (FR-27)", async () => {
     (prisma.session.findFirst as any).mockResolvedValueOnce(null);
 

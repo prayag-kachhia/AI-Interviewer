@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "scores": [
+    {
+      "category": "Problem Solving & Algorithms",
+      "min": 3,
+      "max": 5,
+      "reason": "Correct use of exponential backoff with jitter and idempotency keys; solid algorithmic thinking applied to reliability problems despite frequent pauses and filler words."
+    },
+    {
+      "category": "Software Design & Architecture",
+      "min": 3,
+      "max": 5,
+      "reason": "Sound asynchronous architecture with message queue decoupling, dead-letter queues, and containerised integration tests; technical depth is evaluated on content alone."
+    },
+    {
+      "category": "Technical Communication",
+      "min": 1,
+      "max": 3,
+      "reason": "Heavy reliance on pauses, fillers ('um', 'uh', 'like', 'you know'), and verbal hesitation impedes delivery and conciseness."
+    }
+  ]
+}
+

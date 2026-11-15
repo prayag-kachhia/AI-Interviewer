@@ -55,7 +55,8 @@
   --success: #059669;
   --warning: #ea580c;
   --border: #e2dfd6;
-  --input: #d6d2c7;
+  /* Form-field and outline-button borders: 3:1 against cards and the page (WCAG 1.4.11). */
+  --input: #8f8a7e;
   --radius: 0.5rem;
 }
 
@@ -80,7 +81,7 @@
   --success: #34d399;
   --warning: #fb923c;
   --border: #36322b;
-  --input: #36322b;
+  --input: #6e695f;
 }
 
 /*
