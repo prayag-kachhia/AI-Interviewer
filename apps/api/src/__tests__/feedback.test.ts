@@ -103,7 +103,7 @@ describe('FB3 — session.ended job handler', () => {
 
     expect(evaluateTranscript).toHaveBeenCalledWith(
       { roleId: 'backend-developer', turns: TURNS },
-      { requirePerAnswer: true }
+      {}
     );
     expect(prisma.feedback.upsert).toHaveBeenCalledWith({
       where: { sessionId: 'sess-1' },
@@ -447,17 +447,13 @@ describe('FB3 — GET /api/sessions/:id/feedback', () => {
         sessionId: 'sess-1',
         status: 'ready',
         summary: 'Solid performance overall.',
-        scores: {
-          scores: SCORES,
-        },
+        scores: SCORES,
         error: null,
       },
       update: {
         status: 'ready',
         summary: 'Solid performance overall.',
-        scores: {
-          scores: SCORES,
-        },
+        scores: SCORES,
         error: null,
       },
     });
