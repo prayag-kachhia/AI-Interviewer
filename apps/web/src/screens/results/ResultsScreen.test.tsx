@@ -482,6 +482,42 @@ test("given the delete fails, then an error shows and I can try again", async ()
   expect(screen.getByRole("button", { name: "Delete interview" })).toBeEnabled();
 });
 
+test("given feedback has per-answer feedback, then it renders the per-answer section", async () => {
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Overall good.",
+    scores: [],
+    perAnswer: [
+      {
+        question: "How do you handle load balancing?",
+        summary: "Solid overview of round-robin and least-connections.",
+        strengths: ["Clear terminology"],
+        improvements: ["Mention health checks"],
+      },
+    ],
+  });
+
+  renderResults();
+  expect(await screen.findByTestId("per-answer-feedback-section")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Feedback by Answer" })).toBeInTheDocument();
+  expect(screen.getByText("How do you handle load balancing?")).toBeInTheDocument();
+  expect(screen.getByText("Solid overview of round-robin and least-connections.")).toBeInTheDocument();
+});
+
+test("given feedback lacks per-answer feedback, then per-answer section is not rendered", async () => {
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Overall good.",
+    scores: [],
+  });
+
+  renderResults();
+  expect(await screen.findByText("Overall good.")).toBeInTheDocument();
+  expect(screen.queryByTestId("per-answer-feedback-section")).not.toBeInTheDocument();
+});
+
 test("given an unkept interview, when I click Keep interview, then it is protected", async () => {
   vi.mocked(getSession).mockResolvedValue({
     success: true,

@@ -32,6 +32,7 @@ import {
   updateSessionKeep,
 } from "../../lib/api";
 import { useFeedback, useTurns } from "./useFeedback";
+import { PerAnswerFeedbackSection } from "./PerAnswerFeedbackSection";
 import type { TurnSpeaker } from "@interview/contracts";
 import "./ResultsScreen.css";
 
@@ -436,6 +437,8 @@ export function ResultsScreen() {
                   )}
                 </div>
             </details>
+
+            <PerAnswerFeedbackSection perAnswer={feedback?.perAnswer} />
 
             <div className="flex flex-col gap-2 pt-2">
               {deleteError && (
