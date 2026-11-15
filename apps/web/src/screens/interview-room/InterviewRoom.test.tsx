@@ -532,4 +532,228 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
       expect(mockState.browserInstances[0].sendText).not.toHaveBeenCalled();
     });
   });
+
+  describe('Typed interview mode (PK-4, #156)', () => {
+    it('skips microphone and voice adapter setup, displays typed badge, and requests opening question', async () => {
+      vi.mocked(api.getSession).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'typed-sess-1',
+          userId: 'usr-1',
+          role: 'software-engineer',
+          mode: 'typed',
+          status: 'LIVE',
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          turns: [],
+        },
+      });
+
+      vi.mocked(api.postNextQuestion).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'turn-1',
+          sessionId: 'typed-sess-1',
+          speaker: 'AI',
+          text: 'Welcome to your typed interview. Describe your experience with Node.js.',
+          turnIndex: 1,
+          timestampSec: 0,
+          createdAt: new Date().toISOString(),
+        },
+      });
+
+      renderRoom('typed-sess-1');
+
+      // Microphone adapters are completely bypassed
+      expect(mockState.liveInstances).toHaveLength(0);
+      expect(mockState.browserInstances).toHaveLength(0);
+
+      // Header indicates typed mode
+      expect(await screen.findByText(/typed mode/i)).toBeInTheDocument();
+
+      // Automatically requested opening question
+      await waitFor(() => {
+        expect(api.postNextQuestion).toHaveBeenCalledWith('typed-sess-1');
+        expect(
+          screen.getByText('"Welcome to your typed interview. Describe your experience with Node.js."')
+        ).toBeInTheDocument();
+      });
+
+      // Renders typed answer card, not microphone card
+      expect(screen.getByRole('textbox', { name: /Type your interview answer/i })).toBeInTheDocument();
+      expect(screen.queryByText('Your Microphone')).not.toBeInTheDocument();
+    });
+
+    it('candidate types answer, calls postTurn and postNextQuestion, and repeats loop', async () => {
+      vi.mocked(api.getSession).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'typed-sess-2',
+          userId: 'usr-1',
+          role: 'software-engineer',
+          mode: 'typed',
+          status: 'LIVE',
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          turns: [
+            {
+              id: 'turn-1',
+              sessionId: 'typed-sess-2',
+              speaker: 'AI',
+              text: 'What are the main advantages of TypeScript?',
+              turnIndex: 1,
+              timestampSec: 0,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        },
+      });
+
+      vi.mocked(api.postTurn).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'turn-2',
+          sessionId: 'typed-sess-2',
+          speaker: 'CANDIDATE',
+          text: 'TypeScript provides static typing and early error detection.',
+          turnIndex: 2,
+          timestampSec: 10,
+          createdAt: new Date().toISOString(),
+        },
+      });
+
+      vi.mocked(api.postNextQuestion).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'turn-3',
+          sessionId: 'typed-sess-2',
+          speaker: 'AI',
+          text: 'Great. How do you handle asynchronous operations in TypeScript?',
+          turnIndex: 3,
+          timestampSec: 15,
+          createdAt: new Date().toISOString(),
+        },
+      });
+
+      renderRoom('typed-sess-2');
+
+      expect(
+        await screen.findByText('"What are the main advantages of TypeScript?"')
+      ).toBeInTheDocument();
+
+      const textarea = screen.getByRole('textbox', { name: /Type your interview answer/i });
+      fireEvent.change(textarea, {
+        target: { value: 'TypeScript provides static typing and early error detection.' },
+      });
+
+      const submitBtn = screen.getByRole('button', { name: /Submit Answer/i });
+      expect(submitBtn).toBeEnabled();
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(api.postTurn).toHaveBeenCalledWith(
+          'typed-sess-2',
+          'CANDIDATE',
+          'TypeScript provides static typing and early error detection.'
+        );
+        expect(api.postNextQuestion).toHaveBeenCalledWith('typed-sess-2');
+      });
+
+      // Next question arrives and is displayed
+      expect(
+        await screen.findByText(
+          '"Great. How do you handle asynchronous operations in TypeScript?"'
+        )
+      ).toBeInTheDocument();
+
+      // Textarea resets ready for next answer
+      expect(textarea).toHaveValue('');
+    });
+
+    it('dynamically switches from voice mode to typed mode via Type instead', async () => {
+      vi.mocked(api.getSession).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'voice-to-typed',
+          userId: 'usr-1',
+          role: 'software-engineer',
+          mode: 'voice',
+          status: 'LIVE',
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          turns: [],
+        },
+      });
+
+      vi.mocked(api.postNextQuestion).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'turn-next-1',
+          sessionId: 'voice-to-typed',
+          speaker: 'AI',
+          text: 'Opening question after switching to typed mode.',
+          turnIndex: 1,
+          timestampSec: 0,
+          createdAt: new Date().toISOString(),
+        },
+      });
+
+      renderRoom('voice-to-typed');
+
+      // Starts in voice mode with GeminiLive
+      await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+      const liveAdapter = mockState.liveInstances[0];
+
+      // "Type instead" button is present
+      const typeInsteadBtn = await screen.findByRole('button', { name: /Type instead/i });
+      fireEvent.click(typeInsteadBtn);
+
+      // Live adapter is disconnected
+      expect(liveAdapter.disconnect).toHaveBeenCalled();
+
+      // UI switches to typed mode
+      expect(await screen.findByText(/typed mode/i)).toBeInTheDocument();
+      expect(screen.getByRole('textbox', { name: /Type your interview answer/i })).toBeInTheDocument();
+    });
+
+    it('ends a typed interview and navigates to feedback', async () => {
+      vi.mocked(api.getSession).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'typed-end',
+          userId: 'usr-1',
+          role: 'software-engineer',
+          mode: 'typed',
+          status: 'LIVE',
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          turns: [],
+        },
+      });
+
+      vi.mocked(api.endSession).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'typed-end',
+          userId: 'usr-1',
+          role: 'software-engineer',
+          mode: 'typed',
+          status: 'ENDED',
+          startedAt: new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+          turns: [],
+        },
+      });
+
+      renderRoom('typed-end');
+
+      fireEvent.click(await screen.findByRole('button', { name: 'End Interview' }));
+      fireEvent.click(screen.getByRole('button', { name: /Yes, End Interview/ }));
+
+      await waitFor(() => {
+        expect(api.endSession).toHaveBeenCalledWith('typed-end');
+        expect(screen.getByText('Feedback page')).toBeInTheDocument();
+      });
+    });
+  });
 });

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import axios from 'axios';
 import { getSession, postTurn, postNextQuestion, endSession } from '../../lib/api';
 import { ROLES } from '@interview/contracts';
-import type { InterviewVoiceState, SessionStatus, TurnData, TurnSpeaker } from '../../types';
+import type { InterviewMode, InterviewVoiceState, SessionStatus, TurnData, TurnSpeaker } from '../../types';
 import {
   BrowserWebSpeechVoiceAdapter,
   type VoiceSessionAdapter,
@@ -50,6 +50,9 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [endedAt, setEndedAt] = useState<string | null>(null);
   const [role, setRole] = useState<string>('software-engineer');
+  const [mode, setMode] = useState<InterviewMode>('voice');
+  const [typedAnswer, setTypedAnswer] = useState('');
+  const [submittingTyped, setSubmittingTyped] = useState(false);
   const [status, setStatus] = useState<SessionStatus>('LIVE');
   const [turns, setTurns] = useState<TurnData[]>([]);
   const [voiceState, setVoiceState] = useState<InterviewVoiceState>('IDLE');
@@ -160,7 +163,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       setError('');
       try {
         const res = await postTurn(sessionId, speaker, trimmed);
-        if (res.success && res.data) {
+        if (res?.success && res.data) {
           const savedTurn = res.data;
           setTurns((prev) => {
             const next = [...prev, savedTurn];
@@ -169,7 +172,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
           });
           return savedTurn;
         } else {
-          setError(res.message || 'Could not save transcript turn.');
+          setError(res?.message || 'Could not save transcript turn.');
           return null;
         }
       } catch (err: unknown) {
@@ -193,7 +196,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       const res = await postNextQuestion(sessionId);
       if (statusRef.current !== 'LIVE') return;
 
-      if (res.success && res.data) {
+      if (res?.success && res.data) {
         const aiTurn = res.data;
         setCurrentAiQuestion(aiTurn.text);
         setTurns((prev) => {
@@ -209,7 +212,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
           await adapterRef.current.speakAiQuestion(aiTurn.text);
         }
       } else {
-        setError(res.message || 'Could not generate the next interview question.');
+        setError(res?.message || 'Could not generate the next interview question.');
         setShowAccessibilityFallback(true);
       }
     } catch (err: unknown) {
@@ -282,6 +285,9 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
           setStartedAt(res.data.startedAt);
           setEndedAt(res.data.endedAt ?? null);
           setRole(res.data.role);
+          if (res.data.mode) {
+            setMode(res.data.mode);
+          }
           setStatus(res.data.status);
           const existingTurns = res.data.turns ?? [];
           setTurns(existingTurns);
@@ -308,8 +314,10 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   }, [sessionId]);
 
   // Connect Gemini Live first, automatically falling back to Browser Web Speech + /next-question.
+  // In typed mode, skip audio setup completely (PK-4, #156).
   useEffect(() => {
     if (loading || notFound || status !== 'LIVE' || !sessionId || !startedAt) return;
+    if (mode === 'typed') return;
 
     let cancelled = false;
     let fallbackStarted = false;
@@ -435,6 +443,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     loading,
     notFound,
     status,
+    mode,
     sessionId,
     startedAt,
     handleAdapterTranscript,
@@ -444,6 +453,51 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     resetThinkingTimer,
     updateVoiceState,
   ]);
+
+  // In typed mode, trigger the opening interview question if turns are empty (PK-4, #156).
+  useEffect(() => {
+    if (loading || notFound || status !== 'LIVE' || !sessionId || !startedAt) return;
+    if (mode !== 'typed') return;
+
+    if (turns.length === 0 && !initialQuestionTriggeredRef.current) {
+      initialQuestionTriggeredRef.current = true;
+      void requestNextQuestion();
+    }
+  }, [loading, notFound, status, sessionId, startedAt, mode, turns.length, requestNextQuestion]);
+
+  const switchToTypedMode = useCallback(() => {
+    setMode('typed');
+    clearThinkingTimer();
+    adapterRef.current?.disconnect();
+    adapterRef.current = null;
+    updateVoiceState('IDLE');
+    setLiveCandidateSpeech('');
+    setAudioLevel(0);
+  }, [clearThinkingTimer, updateVoiceState]);
+
+  const handleTypedSubmit = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      const text = typedAnswer.trim();
+      if (!text || submittingTyped || savingTurn || statusRef.current !== 'LIVE' || !sessionId) {
+        return;
+      }
+
+      setSubmittingTyped(true);
+      setError('');
+      try {
+        const savedCandidateTurn = await persistTurnToServer('CANDIDATE', text);
+        if (!savedCandidateTurn || statusRef.current !== 'LIVE') {
+          return;
+        }
+        setTypedAnswer('');
+        await requestNextQuestion();
+      } finally {
+        setSubmittingTyped(false);
+      }
+    },
+    [typedAnswer, submittingTyped, savingTurn, sessionId, persistTurnToServer, requestNextQuestion]
+  );
 
   // Live elapsed timer
   useEffect(() => {
@@ -525,13 +579,13 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     try {
       adapterRef.current?.disconnect();
       const res = await endSession(sessionId);
-      if (res.success && res.data) {
+      if (res?.success && res.data) {
         setStatus('ENDED');
         setEndedAt(res.data.endedAt ?? new Date().toISOString());
         updateVoiceState('IDLE');
         navigate(`/interview/${sessionId}/feedback`);
       } else {
-        setError(res.message || 'Failed to end the interview session.');
+        setError(res?.message || 'Failed to end the interview session.');
       }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Failed to end the interview session.');
@@ -560,6 +614,12 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     sessionId,
     roleLabel,
     status,
+    mode,
+    typedAnswer,
+    setTypedAnswer,
+    submittingTyped,
+    switchToTypedMode,
+    handleTypedSubmit,
     startedAt,
     endedAt,
     turns,

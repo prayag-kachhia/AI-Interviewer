@@ -5,6 +5,7 @@ import { InterviewerCard } from './InterviewerCard';
 import { MicrophoneCard } from './MicrophoneCard';
 import { TranscriptPanel } from './TranscriptPanel';
 import { TypedAnswerBox } from './TypedAnswerBox';
+import { TypedResponseCard } from './TypedResponseCard';
 import type { TurnData } from '../../types';
 
 describe('Interview Room Cards Restyled (PK-5, #157)', () => {
@@ -195,6 +196,93 @@ describe('Interview Room Cards Restyled (PK-5, #157)', () => {
       expect(submitBtn).toBeEnabled();
       fireEvent.click(submitBtn);
       expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+
+    test('renders Type instead button when callback is provided and triggers it', () => {
+      const onSwitch = vi.fn();
+      render(
+        <TypedAnswerBox
+          show={false}
+          onToggleShow={vi.fn()}
+          value=""
+          onChange={vi.fn()}
+          onSubmit={vi.fn()}
+          disabled={false}
+          savingTurn={false}
+          onSwitchToTyped={onSwitch}
+        />
+      );
+
+      const switchBtn = screen.getByRole('button', { name: /Type instead/i });
+      expect(switchBtn).toBeInTheDocument();
+      fireEvent.click(switchBtn);
+      expect(onSwitch).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('TypedResponseCard (PK-4, #156)', () => {
+    test('renders ready state with disabled submit when empty', () => {
+      render(
+        <TypedResponseCard
+          value=""
+          onChange={vi.fn()}
+          onSubmit={vi.fn()}
+          disabled={false}
+          submitting={false}
+          interviewComplete={false}
+        />
+      );
+
+      expect(screen.getByText('Type Your Answer')).toBeInTheDocument();
+      expect(screen.getByText('Your Response')).toBeInTheDocument();
+      const textarea = screen.getByRole('textbox', { name: /Type your interview answer/i });
+      expect(textarea).toBeInTheDocument();
+      expect(textarea).toBeEnabled();
+
+      const submitBtn = screen.getByRole('button', { name: /Submit Answer/i });
+      expect(submitBtn).toBeDisabled();
+    });
+
+    test('updates value and submits on button click or Ctrl+Enter', () => {
+      const onSubmit = vi.fn();
+      const onChange = vi.fn();
+
+      const { rerender } = render(
+        <TypedResponseCard
+          value="My scalable architecture design"
+          onChange={onChange}
+          onSubmit={onSubmit}
+          disabled={false}
+          submitting={false}
+          interviewComplete={false}
+        />
+      );
+
+      expect(screen.getByText('31 characters')).toBeInTheDocument();
+      const submitBtn = screen.getByRole('button', { name: /Submit Answer/i });
+      expect(submitBtn).toBeEnabled();
+
+      fireEvent.click(submitBtn);
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+
+      const textarea = screen.getByRole('textbox', { name: /Type your interview answer/i });
+      fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
+      expect(onSubmit).toHaveBeenCalledTimes(2);
+
+      // Verify submitting state
+      rerender(
+        <TypedResponseCard
+          value="My scalable architecture design"
+          onChange={onChange}
+          onSubmit={onSubmit}
+          disabled={false}
+          submitting={true}
+          interviewComplete={false}
+        />
+      );
+
+      expect(screen.getByText('Saving transcript...')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Submit Answer/i })).toBeDisabled();
     });
   });
 });
