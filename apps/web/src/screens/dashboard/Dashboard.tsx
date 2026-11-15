@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { UploadCloud, FileText, CheckCircle, ArrowRight, Loader2, AlertCircle, UserCircle2 } from 'lucide-react';
 import { uploadResume, getLatestResume } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
+import type { ResumeData } from '../../types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ export const Dashboard: React.FC = () => {
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [hasProfile, setHasProfile] = useState(false);
+  const [latestResume, setLatestResume] = useState<ResumeData | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
@@ -26,6 +28,7 @@ export const Dashboard: React.FC = () => {
     getLatestResume().then(res => {
       if (res.success && res.data) {
         setHasProfile(true);
+        setLatestResume(res.data);
       }
     }).catch(() => {
       // Ignore 404s, it just means they don't have a profile yet
@@ -77,15 +80,19 @@ export const Dashboard: React.FC = () => {
 
     setLoading(true);
     setError('');
-    setStatus('Extracting information...');
+    setStatus('Analyzing resume...');
 
     try {
-      // Simulate slight delay for UI polish if processing is too fast
-      setTimeout(() => setStatus('Analyzing resume with AI...'), 1500);
-      
       const response = await uploadResume(file);
       
-      if (response.success) {
+      if (response.success && response.data) {
+        setLatestResume(response.data);
+        setStatus(response.data.source === 'heuristic' ? 'Analysis complete (basic parse)!' : 'Analysis complete!');
+        setHasProfile(true);
+        setTimeout(() => {
+          navigate('/profile');
+        }, 1000);
+      } else if (response.success) {
         setStatus('Analysis complete!');
         setHasProfile(true);
         setTimeout(() => {
@@ -114,7 +121,14 @@ export const Dashboard: React.FC = () => {
         <CardHeader>
           <div className="flex items-center justify-between gap-4">
             <CardTitle>Upload resume</CardTitle>
-            <Badge variant={hasProfile ? 'success' : 'pending'}>{hasProfile ? 'On file' : 'Not uploaded'}</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={hasProfile ? 'success' : 'pending'}>{hasProfile ? 'On file' : 'Not uploaded'}</Badge>
+              {hasProfile && latestResume?.source && (
+                <Badge variant={latestResume.source === 'ai' ? 'default' : 'secondary'}>
+                  {latestResume.source === 'ai' ? 'AI' : 'Basic parse'}
+                </Badge>
+              )}
+            </div>
           </div>
           <CardDescription>A PDF up to 5 MB. The interviewer uses it to tailor your questions.</CardDescription>
         </CardHeader>
@@ -124,6 +138,16 @@ export const Dashboard: React.FC = () => {
             <Alert variant="error">
               <AlertCircle />
               <AlertTitle>{error}</AlertTitle>
+            </Alert>
+          )}
+
+          {hasProfile && latestResume?.source === 'heuristic' && (
+            <Alert variant="warning">
+              <AlertCircle />
+              <AlertTitle>AI analysis unavailable</AlertTitle>
+              <AlertDescription>
+                Your resume was parsed using our fallback parser because AI analysis was unavailable. You can review and verify your details in your profile.
+              </AlertDescription>
             </Alert>
           )}
 
@@ -193,7 +217,15 @@ export const Dashboard: React.FC = () => {
           </div>
           <div className="stat-content">
             <h4>Profile Status</h4>
-            <p>{hasProfile ? 'Analyzed & Ready' : 'Awaiting Resume'}</p>
+            <p>
+              {hasProfile
+                ? latestResume?.source === 'heuristic'
+                  ? 'Analyzed (Basic Parse)'
+                  : latestResume?.source === 'ai'
+                  ? 'Analyzed with AI'
+                  : 'Analyzed & Ready'
+                : 'Awaiting Resume'}
+            </p>
           </div>
         </div>
 
