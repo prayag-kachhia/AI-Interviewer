@@ -76,7 +76,9 @@ The expected files use per-role rubric categories from `rubrics.ts`:
 - **Data Analyst**: SQL & Analytical Reasoning · Data Interpretation & Business Insights · Statistical Understanding & Data Quality
 - **Backend Developer**: API Design & Architecture · Database Modeling & Performance · System Reliability & Scalability
 
-**Acceptance criterion:** ≥ 8 of 10 fixtures pass _and_ p95 wall time < 15 000 ms.
+**Acceptance criteria:**
+- Accuracy & Latency: ≥ 8 of 10 fixtures pass _and_ p95 wall time < 15 000 ms.
+- Concise vs. Vague Answers (S-6 / NFR-19): `concise-correct` must score at least as well as `long-vague` overall (`conciseAvg >= longVagueAvg`) and in technical depth (`conciseTechnicalAvg >= longVagueTechnicalAvg`), with `conciseTechnicalAvg >= 3.50 / 5.00`.
 
 ---
 

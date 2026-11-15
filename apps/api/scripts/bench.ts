@@ -511,7 +511,7 @@ export interface ConciseAnswersResult {
  * at least as well as long, vague answers to the same questions (S-6, NFR-19).
  * Verifies that:
  * 1. Both concise-correct and long-vague fixtures exist and have valid runs.
- * 2. concise-correct achieves high overall and technical averages (>= 3.5 / 5.0).
+ * 2. concise-correct achieves a high technical average (conciseTechnicalAvg >= 3.50 / 5.00).
  * 3. concise-correct scores at least as well as long-vague overall (conciseAvg >= longVagueAvg).
  * 4. Crucially, concise-correct technical depth is at least as high as long-vague
  *    (conciseTechnicalAvg >= longVagueTechnicalAvg), proving that substance and correctness
@@ -1146,22 +1146,32 @@ async function main() {
     console.log(`  ❌ FAIL — ${conciseEval.error}`);
   } else if (conciseEval.conciseAvg !== undefined && conciseEval.longVagueAvg !== undefined) {
     conciseAnswersOk = conciseEval.pass;
+    const techQualityOk = (conciseEval.conciseTechnicalAvg ?? 0) >= 3.5;
+    const techParityOk = (conciseEval.conciseTechnicalAvg ?? 0) >= (conciseEval.longVagueTechnicalAvg ?? 0);
+    const overallParityOk = conciseEval.conciseAvg >= conciseEval.longVagueAvg;
+
     console.log(
-      `  concise-correct avg     : ${conciseEval.conciseAvg.toFixed(2)} / 5.00 (technical: ${conciseEval.conciseTechnicalAvg?.toFixed(2)}) (target: >= 3.50)  ${
-        conciseEval.conciseAvg >= 3.5 ? '✅ PASS' : '❌ FAIL'
+      `  concise technical avg   : ${conciseEval.conciseTechnicalAvg?.toFixed(2)} / 5.00 (target: >= 3.50)  ${
+        techQualityOk ? '✅ PASS' : '❌ FAIL'
       }`
     );
     console.log(
-      `  long-vague avg          : ${conciseEval.longVagueAvg.toFixed(2)} / 5.00 (technical: ${conciseEval.longVagueTechnicalAvg?.toFixed(2)})`
+      `  concise overall avg     : ${conciseEval.conciseAvg.toFixed(2)} / 5.00`
+    );
+    console.log(
+      `  long-vague technical avg: ${conciseEval.longVagueTechnicalAvg?.toFixed(2)} / 5.00`
+    );
+    console.log(
+      `  long-vague overall avg  : ${conciseEval.longVagueAvg.toFixed(2)} / 5.00`
     );
     console.log(
       `  Technical diff          : ${conciseEval.technicalDiff !== undefined && conciseEval.technicalDiff >= 0 ? '+' : ''}${conciseEval.technicalDiff?.toFixed(2)} pts (concise tech >= long-vague tech)  ${
-        (conciseEval.conciseTechnicalAvg ?? 0) >= (conciseEval.longVagueTechnicalAvg ?? 0) ? '✅ PASS' : '❌ FAIL'
+        techParityOk ? '✅ PASS' : '❌ FAIL'
       }`
     );
     console.log(
-      `  Score difference        : ${conciseEval.diff !== undefined && conciseEval.diff >= 0 ? '+' : ''}${conciseEval.diff?.toFixed(2)} pts (concise must score >= long-vague)  ${
-        conciseEval.conciseAvg >= conciseEval.longVagueAvg ? '✅ PASS' : '❌ FAIL'
+      `  Overall diff            : ${conciseEval.diff !== undefined && conciseEval.diff >= 0 ? '+' : ''}${conciseEval.diff?.toFixed(2)} pts (concise overall >= long-vague overall)  ${
+        overallParityOk ? '✅ PASS' : '❌ FAIL'
       }`
     );
     console.log(`  Concise answer verdict  : ${conciseAnswersOk ? '✅ PASS' : '❌ FAIL'}`);
@@ -1200,7 +1210,7 @@ async function main() {
       console.error(`❌ SCORE SEPARATION: filler-heavy answers did not maintain high technical scores (S-5, FR-21)`);
     if (!conciseAnswersOk)
       console.error(
-        `❌ CONCISE ANSWERS: concise and correct answer scored lower than long and vague answer (S-6, NFR-19)`
+        `❌ CONCISE ANSWERS: concise answer scored lower than long vague answer or failed technical quality threshold (>= 3.50) (S-6, NFR-19)`
       );
     process.exit(1);
   } else {

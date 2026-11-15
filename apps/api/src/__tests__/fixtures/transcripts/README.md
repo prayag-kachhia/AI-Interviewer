@@ -117,7 +117,10 @@ The "representative" ranges below are rough hand estimates of the average score.
   - The exact same four Software Engineer technical interview questions.
   - The candidate responds with lengthy (~2.5x word count), conversational, rambling answers that repeat truisms, omit crucial mechanisms, and propose flawed patterns (linear timestamp scanning, frontend-only button disabling, manual Postman tests).
   - Expected ranges: Problem Solving & Algorithms (1–3), Software Design & Architecture (1–3), Technical Communication (1–3).
-  - Acceptance criterion (S-6): concise answers score at least as well as long vague answers (`conciseAvg >= longVagueAvg`).
+  - Acceptance criteria (S-6):
+    - Overall score parity: concise answers score at least as well as long vague answers (`conciseAvg >= longVagueAvg`).
+    - Technical score parity: concise answers match or exceed long vague answers in non-communication technical categories (`conciseTechnicalAvg >= longVagueTechnicalAvg`).
+    - Technical quality threshold: concise answers achieve a high technical average (`conciseTechnicalAvg >= 3.50 / 5.00`).
 
 The exact range per category is in each fixture's `*.expected.json`.
 
