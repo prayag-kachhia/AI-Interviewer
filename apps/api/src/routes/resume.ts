@@ -5,7 +5,7 @@ import prisma from '../db';
 import { extractTextFromPdfBuffer } from '../services/pdf.service';
 import { analyzeResumeWithAI } from '../services/gemini.service';
 import { getUserResourceOr404 } from '../errors';
-import type { CandidateProfile } from '../types';
+import type { CandidateProfile } from '@interview/contracts';
 
 const router = Router();
 

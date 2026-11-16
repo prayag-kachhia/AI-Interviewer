@@ -1,16 +1,4 @@
-export interface CandidateProfile {
-  name: string;
-  email: string;
-  phone: string;
-  summary: string;
-  education: string[];
-  skills: string[];
-  projects: string[];
-  experience: string[];
-  certifications: string[];
-  achievements: string[];
-  languages: string[];
-}
+export type { CandidateProfile } from '@interview/contracts';
 
 export interface AuthUser {
   id: string;

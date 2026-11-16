@@ -1,16 +1,18 @@
-export interface CandidateProfile {
-  name: string;
-  email: string;
-  phone: string;
-  summary: string;
-  education: string[];
-  skills: string[];
-  projects: string[];
-  experience: string[];
-  certifications: string[];
-  achievements: string[];
-  languages: string[];
-}
+export type {
+  CandidateProfile,
+  Role,
+  SessionStatus,
+  TurnSpeaker,
+  InterviewMode,
+  ImprovementPlan,
+  TopicPlan,
+  PlanAction,
+  TopicScore,
+  LearningResource,
+  InsightTopic,
+  UpdateRoadmapProgressInput,
+} from '@interview/contracts';
+import type { CandidateProfile, Role, Session, Turn, ImprovementPlan } from '@interview/contracts';
 
 export interface User {
   id: string;
@@ -45,20 +47,6 @@ export interface ResumeResponse {
 // Slice A — Live Session
 // ---------------------------------------------------------------------------
 
-export type {
-  Role,
-  SessionStatus,
-  TurnSpeaker,
-  InterviewMode,
-  ImprovementPlan,
-  TopicPlan,
-  PlanAction,
-  TopicScore,
-  LearningResource,
-  InsightTopic,
-  UpdateRoadmapProgressInput,
-} from '@interview/contracts';
-import type { Role, Session, Turn, ImprovementPlan } from '@interview/contracts';
 
 export type InterviewVoiceState =
   | 'IDLE'
