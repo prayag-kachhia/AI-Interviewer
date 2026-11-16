@@ -1,11 +1,12 @@
 import { GoogleGenAI } from '@google/genai';
 import { getResumeAnalysisPrompt } from '../prompts/resume.prompt';
 import { CandidateProfile } from '@interview/contracts';
-import { extractResumeHeuristically } from './heuristic.service';
+import { extractResumeHeuristically, isResumeHeuristically } from './heuristic.service';
 
 export interface AnalyzeResumeResult {
   profile: CandidateProfile;
   source: 'ai' | 'heuristic';
+  looksLikeResume: boolean;
 }
 
 export const analyzeResumeWithAI = async (extractedText: string): Promise<AnalyzeResumeResult> => {
@@ -29,10 +30,12 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Analyz
       // Validate Gemini's JSON with CandidateProfile contract
       const raw = JSON.parse(responseText);
       const profile = CandidateProfile.parse(raw);
+      const looksLikeResume = typeof raw.looksLikeResume === 'boolean' ? raw.looksLikeResume : true;
 
       return {
         profile,
         source: 'ai',
+        looksLikeResume,
       };
     } catch (error: any) {
       // Logged as an error so a broken key or retired model is visible in the logs, not hidden.
@@ -46,5 +49,6 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Analyz
   return {
     profile: extractResumeHeuristically(extractedText),
     source: 'heuristic',
+    looksLikeResume: isResumeHeuristically(extractedText),
   };
 };
