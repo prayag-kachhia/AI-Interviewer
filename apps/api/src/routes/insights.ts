@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
-import { getEnrichedImprovementPlan } from '../services/insights.service';
+import { getEnrichedImprovementPlan, updateRoadmapProgress } from '../services/insights.service';
 import { NotFoundError } from '../errors';
+import { UpdateRoadmapProgressInput } from '@interview/contracts';
 
 const router = Router();
 
@@ -41,6 +42,36 @@ router.get('/:userId', authenticate, async (req, res) => {
   if (!plan) {
     throw new NotFoundError('Improvement plan not found');
   }
+
+  res.status(200).json({
+    success: true,
+    data: plan,
+  });
+});
+
+// PATCH /api/insights/progress
+// Marks roadmap action items done (or undone) for the authenticated candidate (V-6).
+// Returns 404 if no plan exists, if action is not found, or for another user (FR-27).
+router.patch('/progress', authenticate, async (req, res) => {
+  const userId = req.user!.id;
+  const requestedUserId = (req.body?.userId || req.query?.userId) as string | undefined;
+
+  if (requestedUserId && requestedUserId !== userId) {
+    throw new NotFoundError('Improvement plan not found');
+  }
+
+  const parsed = UpdateRoadmapProgressInput.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    res.status(400).json({
+      success: false,
+      message: `${issue.path.join('.') || 'input'}: ${issue.message}`,
+    });
+    return;
+  }
+
+  const { actionId, completed } = parsed.data;
+  const plan = await updateRoadmapProgress(userId, actionId, completed);
 
   res.status(200).json({
     success: true,

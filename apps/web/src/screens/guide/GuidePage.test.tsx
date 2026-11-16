@@ -3,11 +3,12 @@ import { test, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { GuidePage } from "./GuidePage";
-import { getInsights } from "../../lib/api";
+import { getInsights, updateRoadmapProgress } from "../../lib/api";
 import type { ImprovementPlan } from "../../types";
 
 vi.mock("../../lib/api", () => ({
   getInsights: vi.fn(),
+  updateRoadmapProgress: vi.fn(),
 }));
 
 const mockNavigate = vi.fn();
@@ -162,4 +163,214 @@ test("given API returns unexpected error, renders error alert", async () => {
 
   expect(await screen.findByText("Internal server error")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Retry/i })).toBeInTheDocument();
+});
+
+test("given roadmap items, renders checkboxes for each action item", async () => {
+  vi.mocked(getInsights).mockResolvedValue(MOCK_PLAN);
+
+  render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  const checkbox = await screen.findByRole("checkbox", {
+    name: /Mark Study GeeksforGeeks: ACID Properties in DBMS as completed/i,
+  });
+  expect(checkbox).toBeInTheDocument();
+  expect(checkbox).not.toBeChecked();
+});
+
+test("ticking a roadmap checkbox calls updateRoadmapProgress and updates badge to Completed", async () => {
+  vi.mocked(getInsights).mockResolvedValue(MOCK_PLAN);
+  const updatedPlan: ImprovementPlan = {
+    ...MOCK_PLAN,
+    plan: [
+      {
+        ...MOCK_PLAN.plan[0],
+        actions: [{ ...MOCK_PLAN.plan[0].actions[0], completed: true }],
+      },
+    ],
+  };
+  vi.mocked(updateRoadmapProgress).mockResolvedValue(updatedPlan);
+
+  render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  const checkbox = await screen.findByRole("checkbox", {
+    name: /Mark Study GeeksforGeeks: ACID Properties in DBMS as completed/i,
+  });
+  expect(checkbox).not.toBeChecked();
+  expect(screen.getByText("To do")).toBeInTheDocument();
+
+  fireEvent.click(checkbox);
+
+  expect(updateRoadmapProgress).toHaveBeenCalledWith("act-1", true);
+  expect(await screen.findByText("Completed")).toBeInTheDocument();
+  expect(checkbox).toBeChecked();
+});
+
+test("unticking a completed roadmap checkbox calls updateRoadmapProgress with completed: false", async () => {
+  const completedInitialPlan: ImprovementPlan = {
+    ...MOCK_PLAN,
+    plan: [
+      {
+        ...MOCK_PLAN.plan[0],
+        actions: [{ ...MOCK_PLAN.plan[0].actions[0], completed: true }],
+      },
+    ],
+  };
+  vi.mocked(getInsights).mockResolvedValue(completedInitialPlan);
+  const uncompletedPlan: ImprovementPlan = {
+    ...MOCK_PLAN,
+    plan: [
+      {
+        ...MOCK_PLAN.plan[0],
+        actions: [{ ...MOCK_PLAN.plan[0].actions[0], completed: false }],
+      },
+    ],
+  };
+  vi.mocked(updateRoadmapProgress).mockResolvedValue(uncompletedPlan);
+
+  render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  const checkbox = await screen.findByRole("checkbox", {
+    name: /Mark Study GeeksforGeeks: ACID Properties in DBMS as completed/i,
+  });
+  expect(checkbox).toBeChecked();
+  expect(screen.getByText("Completed")).toBeInTheDocument();
+
+  fireEvent.click(checkbox);
+
+  expect(updateRoadmapProgress).toHaveBeenCalledWith("act-1", false);
+  expect(await screen.findByText("To do")).toBeInTheDocument();
+  expect(checkbox).not.toBeChecked();
+});
+
+test("when updateRoadmapProgress fails, reverts the optimistic checkbox change and shows error alert", async () => {
+  vi.mocked(getInsights).mockResolvedValue(MOCK_PLAN);
+  vi.mocked(updateRoadmapProgress).mockRejectedValue(new Error("Network timeout saving progress"));
+
+  render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  const checkbox = await screen.findByRole("checkbox", {
+    name: /Mark Study GeeksforGeeks: ACID Properties in DBMS as completed/i,
+  });
+  expect(checkbox).not.toBeChecked();
+
+  fireEvent.click(checkbox);
+
+  expect(await screen.findByText("Network timeout saving progress")).toBeInTheDocument();
+  expect(checkbox).not.toBeChecked();
+  expect(screen.getByText("To do")).toBeInTheDocument();
+});
+
+test("ticked items stay ticked after a page reload (re-fetch)", async () => {
+  const completedPlan: ImprovementPlan = {
+    ...MOCK_PLAN,
+    plan: [
+      {
+        ...MOCK_PLAN.plan[0],
+        actions: [{ ...MOCK_PLAN.plan[0].actions[0], completed: true }],
+      },
+    ],
+  };
+  // Initial fetch returns the completed plan (as stored in DB after reload)
+  vi.mocked(getInsights).mockResolvedValue(completedPlan);
+
+  const { unmount } = render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  let checkbox = await screen.findByRole("checkbox", {
+    name: /Mark Study GeeksforGeeks: ACID Properties in DBMS as completed/i,
+  });
+  expect(checkbox).toBeChecked();
+  expect(screen.getByText("Completed")).toBeInTheDocument();
+
+  // Simulate page reload
+  unmount();
+
+  render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  checkbox = await screen.findByRole("checkbox", {
+    name: /Mark Study GeeksforGeeks: ACID Properties in DBMS as completed/i,
+  });
+  expect(checkbox).toBeChecked();
+  expect(screen.getByText("Completed")).toBeInTheDocument();
+});
+
+test("does not let a stale response from a quick toggle overwrite the latest state", async () => {
+  vi.mocked(getInsights).mockResolvedValue(MOCK_PLAN);
+
+  let resolveFirstCall!: (value: any) => void;
+  const firstPromise = new Promise((resolve) => {
+    resolveFirstCall = resolve;
+  });
+
+  const updatedTrue: ImprovementPlan = {
+    ...MOCK_PLAN,
+    plan: [
+      {
+        ...MOCK_PLAN.plan[0],
+        actions: [{ ...MOCK_PLAN.plan[0].actions[0], completed: true }],
+      },
+    ],
+  };
+  const updatedFalse: ImprovementPlan = {
+    ...MOCK_PLAN,
+    plan: [
+      {
+        ...MOCK_PLAN.plan[0],
+        actions: [{ ...MOCK_PLAN.plan[0].actions[0], completed: false }],
+      },
+    ],
+  };
+
+  vi.mocked(updateRoadmapProgress)
+    .mockReturnValueOnce(firstPromise as any)
+    .mockResolvedValueOnce(updatedFalse);
+
+  render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  const checkbox = await screen.findByRole("checkbox", {
+    name: /Mark Study GeeksforGeeks: ACID Properties in DBMS as completed/i,
+  });
+  expect(checkbox).not.toBeChecked();
+
+  // First click: mark as completed (pending promise)
+  fireEvent.click(checkbox);
+  expect(checkbox).toBeChecked();
+
+  // Second quick click: unmark as completed (resolves immediately)
+  fireEvent.click(checkbox);
+  expect(checkbox).not.toBeChecked();
+
+  // Now the stale first promise resolves with completed: true
+  resolveFirstCall(updatedTrue);
+
+  // Checkbox should stay unchecked because the second click was completed: false
+  expect(checkbox).not.toBeChecked();
+  expect(screen.getByText("To do")).toBeInTheDocument();
 });

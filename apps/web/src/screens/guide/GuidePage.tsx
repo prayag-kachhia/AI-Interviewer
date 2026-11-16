@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import {
   Compass,
@@ -15,7 +15,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { getInsights } from '../../lib/api';
+import { getInsights, updateRoadmapProgress } from '../../lib/api';
 import type { ImprovementPlan, LearningResource, TopicPlan, TopicScore } from '../../types';
 
 export const GuidePage: React.FC = () => {
@@ -23,7 +23,82 @@ export const GuidePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const latestActionState = useRef<Map<string, boolean>>(new Map());
   const navigate = useNavigate();
+
+  const handleToggleProgress = async (actionId: string, completed: boolean) => {
+    setActionError(null);
+    latestActionState.current.set(actionId, completed);
+
+    // Optimistic UI update
+    setPlan((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        plan: (prev.plan || []).map((tp) => ({
+          ...tp,
+          actions: (tp.actions || []).map((act) =>
+            act.id === actionId || act.resourceId === actionId
+              ? { ...act, completed }
+              : act
+          ),
+        })),
+      };
+    });
+
+    setUpdatingId(actionId);
+    try {
+      const updated = await updateRoadmapProgress(actionId, completed);
+      // Guard against stale responses: only apply if the action hasn't been re-toggled
+      if (latestActionState.current.get(actionId) === completed) {
+        setPlan((prev) => {
+          if (!prev) return updated;
+          return {
+            ...prev,
+            resources: updated.resources || prev.resources,
+            plan: (prev.plan || []).map((tp) => {
+              const updatedTopic = updated.plan.find((ut) => ut.topic === tp.topic);
+              if (!updatedTopic) return tp;
+              return {
+                ...tp,
+                actions: (tp.actions || []).map((act) => {
+                  if (act.id === actionId) {
+                    const serverAct = updatedTopic.actions.find((ua) => ua.id === actionId);
+                    return serverAct ? { ...act, ...serverAct } : act;
+                  }
+                  return act;
+                }),
+              };
+            }),
+          };
+        });
+      }
+    } catch (err: any) {
+      // Only revert if this failed call corresponds to the latest state
+      if (latestActionState.current.get(actionId) === completed) {
+        latestActionState.current.delete(actionId);
+        setPlan((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            plan: (prev.plan || []).map((tp) => ({
+              ...tp,
+              actions: (tp.actions || []).map((act) =>
+                act.id === actionId || act.resourceId === actionId
+                  ? { ...act, completed: !completed }
+                  : act
+              ),
+            })),
+          };
+        });
+        setActionError(err?.response?.data?.message || err?.message || 'Failed to update roadmap progress');
+      }
+    } finally {
+      setUpdatingId((cur) => (cur === actionId ? null : cur));
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -222,6 +297,14 @@ export const GuidePage: React.FC = () => {
           </Badge>
         </div>
 
+        {actionError && (
+          <Alert variant="error" className="py-2.5">
+            <AlertCircle className="size-4" />
+            <AlertTitle className="text-xs font-semibold">Update Failed</AlertTitle>
+            <AlertDescription className="text-xs">{actionError}</AlertDescription>
+          </Alert>
+        )}
+
         {roadmapItems.length === 0 ? (
           <Card className="p-6 text-center text-muted-foreground">
             No roadmap actions currently generated.
@@ -232,15 +315,31 @@ export const GuidePage: React.FC = () => {
               <Card key={item.id || index} className="py-4">
                 <CardContent className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-0">
                   <div className="flex items-start gap-3">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
-                      {index + 1}
-                    </span>
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <input
+                        type="checkbox"
+                        id={`roadmap-item-${item.id || index}`}
+                        checked={Boolean(item.completed)}
+                        disabled={updatingId === item.id}
+                        onChange={(e) => handleToggleProgress(item.id, e.target.checked)}
+                        aria-label={`Mark ${item.action} as completed`}
+                        className="size-4 rounded border-input text-primary focus:ring-primary cursor-pointer accent-primary shrink-0"
+                      />
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-foreground">
+                        {index + 1}
+                      </span>
+                    </div>
                     <div className="flex flex-col gap-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline">{item.topic}</Badge>
-                        <span className="font-medium text-sm text-foreground">
+                        <label
+                          htmlFor={`roadmap-item-${item.id || index}`}
+                          className={`font-medium text-sm cursor-pointer select-none ${
+                            item.completed ? 'line-through text-muted-foreground' : 'text-foreground'
+                          }`}
+                        >
                           {item.action}
-                        </span>
+                        </label>
                       </div>
                       {item.resource && (
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
