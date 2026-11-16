@@ -1,6 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router';
 import { Navbar } from './components/Navbar';
 import { Login } from './screens/login/Login';
+import { ResetPassword } from './screens/reset-password/ResetPassword';
+import { VerifyEmail } from './screens/verify-email/VerifyEmail';
 import { Dashboard } from './screens/dashboard/Dashboard';
 import { Profile } from './screens/profile/Profile';
 import { NewInterview } from './screens/new-interview/NewInterview';
@@ -21,6 +23,8 @@ function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
             
             {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>

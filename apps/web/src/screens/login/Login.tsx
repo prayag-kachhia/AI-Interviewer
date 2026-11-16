@@ -2,14 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { 
-  BrainCircuit, 
-  AlertCircle, 
-  CheckCircle2, 
-  UserPlus, 
-  LogIn, 
-  ArrowRight, 
-  ShieldCheck, 
+import { checkPasswordStrength } from '../../lib/passwordStrength';
+import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
+import { validateEmail } from '../../lib/emailValidation';
+import {
+  BrainCircuit,
+  AlertCircle,
+  CheckCircle2,
+  UserPlus,
+  LogIn,
+  ArrowRight,
+  ShieldCheck,
   Sparkles,
   Sun,
   Moon,
@@ -47,18 +50,23 @@ const GoogleIcon: React.FC = () => (
 export const Login: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signIn, signUp, signInWithGoogle, user } = useAuth();
+  const { signIn, signUp, signInWithGoogle, resetPasswordForEmail, user } = useAuth();
   const { theme, setTheme } = useTheme();
 
   // Mode: 'signin' | 'signup'
   const [mode, setMode] = useState<'signin' | 'signup'>(() => location.state?.mode || 'signin');
-  
+
+  // Forgot password mode toggle
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
+
   // Form fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
+
   // Password reveal toggles
   const [showSignInPassword, setShowSignInPassword] = useState(false);
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
@@ -69,6 +77,18 @@ export const Login: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState(() => location.state?.message || '');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  // Validation & strength for Sign Up
+  const emailValidation = validateEmail(email);
+  const strengthResult = checkPasswordStrength(password, email);
+  const isPasswordStrong = strengthResult.strength === 'strong';
+  const doPasswordsMatch = password.length > 0 && password === confirmPassword;
+  const isSignUpValid = Boolean(
+    name.trim() &&
+    emailValidation.isValid &&
+    isPasswordStrong &&
+    doPasswordsMatch
+  );
 
   // Parse OAuth redirect errors (from query params or hash fragments)
   useEffect(() => {
@@ -107,7 +127,33 @@ export const Login: React.FC = () => {
   const handleSwitchMode = (newMode: 'signin' | 'signup') => {
     if (newMode === mode) return;
     setMode(newMode);
+    setShowForgotPassword(false);
+    setUnverifiedEmail('');
     setError('');
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+    const emailVal = validateEmail(email);
+    if (!emailVal.isValid) {
+      setError(emailVal.error || 'Please enter a valid email address.');
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const res = await resetPasswordForEmail(emailVal.normalizedEmail);
+      if (res.success) {
+        setSuccessMsg(res.message || 'If an account exists for that email, a password reset link has been sent.');
+      } else {
+        setError(res.message || 'Failed to send password reset email');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred');
+    } finally {
+      setForgotLoading(false);
+    }
   };
 
   const handleGoogleSignIn = async () => {
@@ -131,17 +177,25 @@ export const Login: React.FC = () => {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
+    setUnverifiedEmail('');
     setLoading(true);
 
     try {
+      const emailVal = validateEmail(email);
+      if (!emailVal.isValid) {
+        setError(emailVal.error || 'Please provide a valid email address.');
+        setLoading(false);
+        return;
+      }
+
       if (mode === 'signup') {
         if (!name.trim()) {
           setError('Please provide your full name.');
           setLoading(false);
           return;
         }
-        if (password.length < 6) {
-          setError('Password must be at least 6 characters.');
+        if (!isPasswordStrong) {
+          setError('Password does not meet all security requirements.');
           setLoading(false);
           return;
         }
@@ -151,9 +205,16 @@ export const Login: React.FC = () => {
           return;
         }
 
-        const res = await signUp(name, email, password);
+        const res = await signUp(name, emailVal.normalizedEmail, password);
         if (res.success) {
-          if (res.message) {
+          if (res.needsVerification) {
+            navigate('/verify-email', {
+              state: {
+                email: emailVal.normalizedEmail,
+                message: res.message,
+              },
+            });
+          } else if (res.message) {
             setSuccessMsg(res.message);
           } else {
             navigate('/new-interview');
@@ -163,7 +224,7 @@ export const Login: React.FC = () => {
         }
       } else {
         // Sign In
-        const res = await signIn(email, password);
+        const res = await signIn(emailVal.normalizedEmail, password);
         if (res.success) {
           const selectedRole = localStorage.getItem('selectedRole');
           if (selectedRole) {
@@ -172,6 +233,9 @@ export const Login: React.FC = () => {
             navigate('/new-interview');
           }
         } else {
+          if (res.needsVerification) {
+            setUnverifiedEmail(emailVal.normalizedEmail);
+          }
           setError(res.message || 'Invalid credentials');
         }
       }
@@ -232,7 +296,7 @@ export const Login: React.FC = () => {
       {/* 3D Flip Container: Flips horizontally when mode changes */}
       <div className="auth-flip-perspective">
         <div className={`auth-flip-card ${isFlipped ? 'is-flipped' : ''}`}>
-          
+
           {/* =========================================================
               FRONT FACE: SIGN IN
               ========================================================= */}
@@ -273,113 +337,226 @@ export const Login: React.FC = () => {
 
             {/* Flash / Status Alerts */}
             {successMsg && (
-              <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
-                <CheckCircle2 size={18} color="var(--primary-color)" />
-                <span style={{ fontSize: '0.875rem' }}>{successMsg}</span>
+              <div className="alert alert-info" style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <CheckCircle2 size={18} color="var(--primary-color)" />
+                  <span style={{ fontSize: '0.875rem' }}>{successMsg}</span>
+                </div>
+                {showForgotPassword && (
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    Didn't receive the email? Please check your Spam or Junk folder as well.
+                  </p>
+                )}
               </div>
             )}
 
             {error && mode === 'signin' && (
-              <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
-                <AlertCircle size={18} />
-                <span style={{ fontSize: '0.875rem' }}>{error}</span>
+              <div className="alert alert-error" style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <AlertCircle size={18} />
+                  <span style={{ fontSize: '0.875rem' }}>{error}</span>
+                </div>
+                {unverifiedEmail && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/verify-email', { state: { email: unverifiedEmail } })}
+                    className="btn-auth-submit"
+                    style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem', width: '100%', justifyContent: 'center' }}
+                  >
+                    <span>Enter Verification Code</span>
+                    <ArrowRight size={14} />
+                  </button>
+                )}
               </div>
             )}
 
-            {/* Google OAuth Sign In */}
-            <button
-              type="button"
-              className="btn-google-auth"
-              onClick={handleGoogleSignIn}
-              disabled={loading || googleLoading}
-              tabIndex={isFlipped ? -1 : 0}
-            >
-              {googleLoading ? (
-                <>
-                  <Loader2 size={18} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
-                  <span>Connecting to Google...</span>
-                </>
-              ) : (
-                <>
-                  <GoogleIcon />
-                  <span>Continue with Google</span>
-                </>
-              )}
-            </button>
-
-            <div className="auth-divider">
-              <span>or continue with email</span>
-            </div>
-
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Email address</label>
-                <div className="input-with-icon-wrapper">
-                  <div className="input-icon-left">
-                    <Mail size={18} />
-                  </div>
-                  <input
-                    type="email"
-                    className="form-input-aesthetic"
-                    placeholder="name@company.com"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                                      }}
-                    required
-                    tabIndex={isFlipped ? -1 : 0}
-                  />
+            {showForgotPassword ? (
+              <div style={{ marginTop: '0.5rem' }}>
+                <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 600, margin: '0 0 0.4rem 0', color: 'var(--text-main)' }}>
+                    Reset Password
+                  </h3>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+                    Enter your email and we'll send you a link to reset your password.
+                  </p>
                 </div>
-              </div>
 
-              <div className="form-group" style={{ margin: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label className="form-label" style={{ margin: 0 }}>Password</label>
-                </div>
-                <div className="input-with-icon-wrapper">
-                  <div className="input-icon-left">
-                    <Lock size={18} />
+                <form onSubmit={handleForgotPassword} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Email address</label>
+                    <div className="input-with-icon-wrapper">
+                      <div className="input-icon-left">
+                        <Mail size={18} />
+                      </div>
+                      <input
+                        type="email"
+                        className="form-input-aesthetic"
+                        placeholder="name@company.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        tabIndex={isFlipped ? -1 : 0}
+                      />
+                    </div>
                   </div>
-                  <input
-                    type={showSignInPassword ? 'text' : 'password'}
-                    className="form-input-aesthetic has-right-icon"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    tabIndex={isFlipped ? -1 : 0}
-                  />
+
                   <button
-                    type="button"
-                    className="input-action-btn"
-                    onClick={() => setShowSignInPassword(!showSignInPassword)}
-                    title={showSignInPassword ? 'Hide password' : 'Show password'}
+                    type="submit"
+                    className="btn-auth-submit"
+                    disabled={forgotLoading || !email.trim()}
                     tabIndex={isFlipped ? -1 : 0}
                   >
-                    {showSignInPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    {forgotLoading ? (
+                      <>
+                        <Loader2 size={18} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+                        <span>Sending reset link...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Send Reset Link</span>
+                        <ArrowRight size={16} />
+                      </>
+                    )}
                   </button>
-                </div>
-              </div>
 
-              <button
-                type="submit"
-                className="btn-auth-submit"
-                disabled={loading || googleLoading}
-                tabIndex={isFlipped ? -1 : 0}
-              >
-                {loading && mode === 'signin' ? (
-                  <>
-                    <Loader2 size={18} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
-                    <span>Signing in...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Sign In to Dashboard</span>
-                    <ArrowRight size={16} />
-                  </>
-                )}
-              </button>
-            </form>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForgotPassword(false);
+                      setError('');
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.85rem',
+                      cursor: 'pointer',
+                      padding: '0.4rem 0',
+                      textAlign: 'center',
+                    }}
+                    tabIndex={isFlipped ? -1 : 0}
+                  >
+                    ← Back to Sign In
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <>
+                {/* Google OAuth Sign In */}
+                <button
+                  type="button"
+                  className="btn-google-auth"
+                  onClick={handleGoogleSignIn}
+                  disabled={loading || googleLoading}
+                  tabIndex={isFlipped ? -1 : 0}
+                >
+                  {googleLoading ? (
+                    <>
+                      <Loader2 size={18} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+                      <span>Connecting to Google...</span>
+                    </>
+                  ) : (
+                    <>
+                      <GoogleIcon />
+                      <span>Continue with Google</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="auth-divider">
+                  <span>or continue with email</span>
+                </div>
+
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">Email address</label>
+                    <div className="input-with-icon-wrapper">
+                      <div className="input-icon-left">
+                        <Mail size={18} />
+                      </div>
+                      <input
+                        type="email"
+                        className="form-input-aesthetic"
+                        placeholder="name@company.com"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                        }}
+                        required
+                        tabIndex={isFlipped ? -1 : 0}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <label className="form-label" style={{ margin: 0 }}>Password</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowForgotPassword(true);
+                          setError('');
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--primary-color)',
+                          fontSize: '0.8rem',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                        tabIndex={isFlipped ? -1 : 0}
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                    <div className="input-with-icon-wrapper">
+                      <div className="input-icon-left">
+                        <Lock size={18} />
+                      </div>
+                      <input
+                        type={showSignInPassword ? 'text' : 'password'}
+                        className="form-input-aesthetic has-right-icon"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        tabIndex={isFlipped ? -1 : 0}
+                      />
+                      <button
+                        type="button"
+                        className="input-action-btn"
+                        onClick={() => setShowSignInPassword(!showSignInPassword)}
+                        title={showSignInPassword ? 'Hide password' : 'Show password'}
+                        tabIndex={isFlipped ? -1 : 0}
+                      >
+                        {showSignInPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn-auth-submit"
+                    disabled={loading || googleLoading}
+                    tabIndex={isFlipped ? -1 : 0}
+                  >
+                    {loading && mode === 'signin' ? (
+                      <>
+                        <Loader2 size={18} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+                        <span>Signing in...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Sign In to Dashboard</span>
+                        <ArrowRight size={16} />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </>
+            )}
 
             {/* Flip toggle prompt footer */}
             <div style={{ marginTop: '1.4rem', textAlign: 'center', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
@@ -523,7 +700,7 @@ export const Login: React.FC = () => {
                     value={email}
                     onChange={(e) => {
                       setEmail(e.target.value);
-                                      }}
+                    }}
                     required
                     tabIndex={!isFlipped ? -1 : 0}
                   />
@@ -539,7 +716,7 @@ export const Login: React.FC = () => {
                   <input
                     type={showSignUpPassword ? 'text' : 'password'}
                     className="form-input-aesthetic has-right-icon"
-                    placeholder="At least 6 characters"
+                    placeholder="Create a strong password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -556,6 +733,11 @@ export const Login: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              {/* Password strength meter */}
+              {password.length > 0 && (
+                <PasswordStrengthMeter result={strengthResult} />
+              )}
 
               <div className="form-group" style={{ margin: 0 }}>
                 <label className="form-label">Confirm Password</label>
@@ -582,12 +764,17 @@ export const Login: React.FC = () => {
                     {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
+                {confirmPassword.length > 0 && !doPasswordsMatch && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--error-color, #ef4444)', marginTop: '0.25rem', display: 'block' }}>
+                    Passwords do not match.
+                  </span>
+                )}
               </div>
 
               <button
                 type="submit"
                 className="btn-auth-submit"
-                disabled={loading || googleLoading}
+                disabled={loading || googleLoading || !isSignUpValid}
                 tabIndex={!isFlipped ? -1 : 0}
               >
                 {loading && mode === 'signup' ? (
