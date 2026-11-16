@@ -223,7 +223,7 @@ export function ResultsScreen() {
         {feedback?.status === "ready" && (
             <div className="space-y-6">
               <div className="flex flex-col gap-1">
-                <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+                <h1 className="heading text-2xl text-foreground sm:text-3xl">
                   Your Feedback
                 </h1>
                 <p className="text-sm text-muted-foreground">
@@ -332,7 +332,7 @@ export function ResultsScreen() {
 
               {feedback.scores && feedback.scores.length > 0 && (
                 <div className="space-y-4">
-                  <h2 className="font-display text-xl font-semibold tracking-tight text-foreground">
+                  <h2 className="heading text-xl text-foreground">
                     Category Details
                   </h2>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

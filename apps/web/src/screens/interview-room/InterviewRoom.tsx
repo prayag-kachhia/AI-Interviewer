@@ -114,7 +114,7 @@ export const InterviewRoom: React.FC = () => {
       <div className="flex flex-wrap justify-between items-center gap-4 pb-2 border-b border-border/60">
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="font-display text-2xl font-bold tracking-tight text-foreground capitalize m-0">
+            <h2 className="heading text-2xl text-foreground capitalize m-0">
               AI Interview — {roleLabel}
             </h2>
             <Badge variant={status === 'LIVE' ? 'live' : 'ended'}>
@@ -187,7 +187,7 @@ export const InterviewRoom: React.FC = () => {
               <CheckCircle2 className="size-6" />
             </div>
             <div className="flex-1 flex flex-col gap-2">
-              <h3 className="font-display text-lg font-semibold text-foreground m-0">
+              <h3 className="heading text-lg text-foreground m-0">
                 Interview Ended — Queued for Feedback Evaluation
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed m-0">
