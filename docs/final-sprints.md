@@ -75,7 +75,7 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 
 | Person | Counted PRs | Hard | Medium | Easy | Days | Required doc (not counted) |
 |---|---|---|---|---|---|---|
-| Prayag | 11 | 2 | 6 | 3 | 6.75 | – |
+| Prayag | 12 | 2 | 6 | 4 | 7.25 | – |
 | Vishwa | 8 | 2 | 5 | 1 | 5.5 | – |
 | Kishan | 10 | 1 | 7 | 2 | 5.5 | D-1 (1 day) |
 | Prakriti | 8 | 1 | 4 | 3 | 5 | D-2 (1 day) |
@@ -84,7 +84,7 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 | Rahi | 9 | 1 | 3 | 5 | 5.25 | D-4 (1 day) |
 | Ved | 8 | 1 | 5 | 2 | 5.5 | D-3 (1 day) |
 | Vismay | 9 | 2 | 4 | 3 | 6.25 | – |
-| Raj | 8 | 2 | 3 | 3 | 5.75 | – |
+| Raj | 7 | 2 | 3 | 2 | 5.25 | – |
 
 Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
@@ -92,7 +92,7 @@ Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
 ### Prayag: lead: UI revamp, structure, interview setup
 
-About 6.75 days · 11 counted PRs (2 already merged) · 2 Hard, 6 Medium, 3 Easy · review partner: Raj
+About 7.25 days · 12 counted PRs (2 already merged) · 2 Hard, 6 Medium, 4 Easy · review partner: Raj
 
 **[P-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/74) · Merge the API flatten (#118)** · **✅ merged in [#118](https://github.com/prayag-kachhia/AI-Interviewer/pull/118)** · Medium · 0.5 days · Sprint 4
 
@@ -205,6 +205,15 @@ One styling system: the old stylesheet and static inline styles are gone.
 - Include docs/adr/0011-design-system.md in this PR.
 - **Done when:** `git grep "style={{" -- apps/web/src` finds only dynamic values, and every screen is checked in light and dark.
 - **Depends on:** P-8, P-9, P-10, PK-5, RH-4, RJ-5, V-5 (all screen migrations)
+
+**[P-13](https://github.com/prayag-kachhia/AI-Interviewer/issues/199) · Landing page** · Easy · 0.5 days · Sprint 5
+
+A first impression for signed-out visitors.
+
+- `screens/landing/` at `/` for signed-out users: a hero, 3 real feature cards and a call to action.
+- No invented stats.
+- **Done when:** Signed-out visitors see the landing page, and signed-in users go to the Dashboard.
+- **Depends on:** P-5
 
 ### Vishwa: voice transport
 
@@ -913,7 +922,7 @@ Candidates see an honest summary of their open-source work, and the interviewer 
 
 ### Raj: identity, end-to-end tests
 
-About 5.75 days · 8 counted PRs (0 already merged) · 2 Hard, 3 Medium, 3 Easy · review partner: Prayag
+About 5.25 days · 7 counted PRs (0 already merged) · 2 Hard, 3 Medium, 2 Easy · review partner: Prayag
 
 **[RJ-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/78) · Show when resume AI analysis fell back** · Easy · 0.5 days · Sprint 4
 
@@ -964,15 +973,6 @@ The 649-line Login screen becomes small, readable pieces on the design system.
 - Keep `Login.test.tsx` passing.
 - **Done when:** No file in screens/login is over about 200 lines, and the tests pass.
 - **Depends on:** P-5, P-6, RJ-3, RJ-4
-
-**[RJ-6](https://github.com/prayag-kachhia/AI-Interviewer/issues/199) · Landing page** · Easy · 0.5 days · Sprint 5
-
-A first impression for signed-out visitors.
-
-- `screens/landing/` at `/` for signed-out users: a hero, 3 real feature cards and a call to action.
-- No invented stats.
-- **Done when:** Signed-out visitors see the landing page, and signed-in users go to the Dashboard.
-- **Depends on:** P-5
 
 **[RJ-9](https://github.com/prayag-kachhia/AI-Interviewer/issues/200) · End-to-end golden-path test in CI** · Hard · 1 day · Sprint 5
 
@@ -1070,7 +1070,7 @@ Testing is documented as a Software Engineering deliverable.
 
 **Cut first:**
 - P-11, RH-7, RH-8, VI-6, K-7 and V-6;
-- then RJ-6, RJ-10 and PN-5;
+- then P-13, RJ-10 and PN-5;
 - then VM-6, VM-7 and VM-13, documenting the deferral in the SRS.
 
 ## 8. Deferred
