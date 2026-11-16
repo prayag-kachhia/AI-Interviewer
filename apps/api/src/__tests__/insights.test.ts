@@ -852,6 +852,225 @@ describe('V-2 · Topic weaknesses from your interviews (Issue #181)', () => {
         expect(tickedAct?.completed).toBe(true);
       });
     });
+
+    describe('V-7 · Refresh the guide after new interviews (Issue #186)', () => {
+      const PREVIOUS_PLAN_WITH_PROGRESS = {
+        id: 'plan-123',
+        userId: USER_ID,
+        topics: [
+          { topic: 'DBMS', score: 2, summary: 'Struggled with transaction isolation levels.' },
+          { topic: 'OS', score: 3, summary: 'Weak on paging and virtual memory.' },
+          { topic: 'SQL', score: 2, summary: 'Struggled with complex joins.' },
+        ],
+        plan: [
+          {
+            id: 'plan-dbms',
+            topic: 'DBMS',
+            score: 2,
+            actions: [
+              {
+                id: 'dbms-dbms-acid-transactions',
+                action: 'Study ACID properties',
+                resourceId: 'dbms-acid-transactions',
+                completed: true, // Candidate completed this item
+              },
+              {
+                id: 'dbms-dbms-indexing-b-trees',
+                action: 'Study B-Tree indexes',
+                resourceId: 'dbms-indexing-b-trees',
+                completed: false,
+              },
+            ],
+          },
+          {
+            id: 'plan-os',
+            topic: 'OS',
+            score: 3,
+            actions: [
+              {
+                id: 'os-os-three-easy-pieces',
+                action: 'Study Operating Systems: Three Easy Pieces',
+                resourceId: 'os-three-easy-pieces',
+                completed: true, // Candidate completed this item on OS
+              },
+            ],
+          },
+          {
+            id: 'plan-sql',
+            topic: 'SQL',
+            score: 2,
+            actions: [
+              {
+                id: 'sql-sql-indexing-performance',
+                action: 'Study SQL indexing performance',
+                resourceId: 'sql-indexing-performance',
+                completed: false,
+              },
+            ],
+          },
+        ],
+        createdAt: new Date('2026-11-10T00:00:00Z'),
+        updatedAt: new Date('2026-11-10T00:00:00Z'),
+      };
+
+      it('drops topics that have improved past the weakness threshold (> 3) after new interviews', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(PREVIOUS_PLAN_WITH_PROGRESS);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        // Candidate had another interview and improved DBMS from 2 to 5!
+        // OS is still weak at 3, SQL improved to 4 (> threshold).
+        const UPDATED_GEMINI_OUTPUT = {
+          topics: [
+            { topic: 'DBMS', score: 5, summary: 'Demonstrated expert mastery of ACID, MVCC, and transactions.' },
+            { topic: 'OS', score: 3, summary: 'Still needs practice with paging.' },
+            { topic: 'SQL', score: 4, summary: 'Solid grasp of query execution plans and joins.' },
+            { topic: 'System Design', score: 4, summary: 'Solid architecture.' },
+            { topic: 'OOP', score: 4, summary: 'Good patterns.' },
+            { topic: 'CN', score: 4, summary: 'Solid networking.' },
+            { topic: 'DSA', score: 4, summary: 'Good algorithms.' },
+          ],
+        };
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(UPDATED_GEMINI_OUTPUT));
+        await refreshInsightsForUser(USER_ID, { generate: mockGenerate });
+
+        expect(prisma.improvementPlan.upsert).toHaveBeenCalled();
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+
+        // DBMS (score 5) and SQL (score 4) improved past the threshold and MUST drop out of the plan
+        const dbmsPlan = savedPlan.find((p: any) => p.topic === 'DBMS');
+        const sqlPlan = savedPlan.find((p: any) => p.topic === 'SQL');
+        expect(dbmsPlan).toBeUndefined();
+        expect(sqlPlan).toBeUndefined();
+
+        // OS (score 3) remains weak and MUST remain in the plan
+        const osPlan = savedPlan.find((p: any) => p.topic === 'OS');
+        expect(osPlan).toBeDefined();
+        expect(osPlan.topic).toBe('OS');
+        expect(osPlan.score).toBe(3);
+      });
+
+      it('keeps progress (completed checkboxes) for unchanged weak topics while dropping improved topics', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(PREVIOUS_PLAN_WITH_PROGRESS);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        // DBMS improved to 4 (drops out). OS is still weak (score 3).
+        const UPDATED_GEMINI_OUTPUT = {
+          topics: [
+            { topic: 'DBMS', score: 4, summary: 'Good understanding of transactions now.' },
+            { topic: 'OS', score: 3, summary: 'Still needs practice with paging.' },
+            { topic: 'SQL', score: 2, summary: 'Still weak on complex joins.' },
+            { topic: 'System Design', score: 4, summary: 'Solid architecture.' },
+            { topic: 'OOP', score: 4, summary: 'Good patterns.' },
+            { topic: 'CN', score: 4, summary: 'Solid networking.' },
+            { topic: 'DSA', score: 4, summary: 'Good algorithms.' },
+          ],
+        };
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(UPDATED_GEMINI_OUTPUT));
+        await refreshInsightsForUser(USER_ID, { generate: mockGenerate });
+
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+
+        // DBMS dropped out
+        expect(savedPlan.find((p: any) => p.topic === 'DBMS')).toBeUndefined();
+
+        // OS preserved its completed action
+        const osPlan = savedPlan.find((p: any) => p.topic === 'OS');
+        expect(osPlan).toBeDefined();
+        const osCompletedAction = osPlan.actions.find((a: any) => a.id === 'os-os-three-easy-pieces');
+        expect(osCompletedAction?.completed).toBe(true);
+
+        // SQL is still weak and preserved its actions
+        const sqlPlan = savedPlan.find((p: any) => p.topic === 'SQL');
+        expect(sqlPlan).toBeDefined();
+        expect(sqlPlan.score).toBe(2);
+      });
+
+      it('drops all topics from the roadmap when candidate improves across all topics (> 3)', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(PREVIOUS_PLAN_WITH_PROGRESS);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        // All topics are >= 4 (all strong now)
+        const ALL_STRONG_OUTPUT = {
+          topics: [
+            { topic: 'DBMS', score: 5, summary: 'Mastered.' },
+            { topic: 'OS', score: 4, summary: 'Good.' },
+            { topic: 'SQL', score: 4, summary: 'Good.' },
+            { topic: 'System Design', score: 5, summary: 'Mastered.' },
+            { topic: 'OOP', score: 4, summary: 'Good.' },
+            { topic: 'CN', score: 5, summary: 'Mastered.' },
+            { topic: 'DSA', score: 4, summary: 'Good.' },
+          ],
+        };
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(ALL_STRONG_OUTPUT));
+        await refreshInsightsForUser(USER_ID, { generate: mockGenerate });
+
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+        expect(savedPlan).toEqual([]);
+        const savedTopics = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.topics;
+        expect(savedTopics).toHaveLength(7);
+      });
+
+      it('adapts roadmap via handleInsightsRefresh job when dispatched by worker', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(PREVIOUS_PLAN_WITH_PROGRESS);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        const UPDATED_GEMINI_OUTPUT = {
+          topics: [
+            { topic: 'DBMS', score: 4, summary: 'Improved transaction knowledge.' },
+            { topic: 'OS', score: 2, summary: 'Struggling with process scheduling.' },
+          ],
+        };
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(UPDATED_GEMINI_OUTPUT));
+
+        const job = {
+          id: 'job-v7-1',
+          type: 'insights.refresh',
+          sessionId: SESSION_ID,
+          payload: { userId: USER_ID },
+          attempts: 1,
+          maxAttempts: 3,
+          status: 'pending',
+          workerId: 'worker-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        await handleInsightsRefresh(job as any, { generate: mockGenerate });
+
+        expect(prisma.improvementPlan.upsert).toHaveBeenCalled();
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+        expect(savedPlan.find((p: any) => p.topic === 'DBMS')).toBeUndefined();
+        expect(savedPlan.find((p: any) => p.topic === 'OS')).toBeDefined();
+      });
+    });
   });
 });
 
