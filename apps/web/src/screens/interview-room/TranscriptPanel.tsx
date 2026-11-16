@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Sparkles, MessageSquare } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +17,7 @@ export const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
   transcriptEndRef,
 }) => {
   const [showTranscriptPanel, setShowTranscriptPanel] = useState(true);
+  const reduceMotion = useReducedMotion();
 
   return (
     <Card className="p-5 gap-4">
@@ -53,8 +55,11 @@ export const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
             turns.map((turn) => {
               const isAi = turn.speaker === 'AI';
               return (
-                <div
+                <motion.div
                   key={turn.id}
+                  initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
                   className={cn(
                     'flex flex-col max-w-[85%] rounded-2xl p-3.5 shadow-xs transition-colors',
                     isAi
@@ -74,7 +79,7 @@ export const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                   <div className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
                     {turn.text}
                   </div>
-                </div>
+                </motion.div>
               );
             })
           )}
