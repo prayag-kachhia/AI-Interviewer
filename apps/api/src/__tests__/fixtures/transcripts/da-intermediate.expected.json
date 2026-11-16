@@ -1,0 +1,24 @@
+{
+  "role": "data-analyst",
+  "difficulty": "intermediate",
+  "scores": [
+    {
+      "category": "SQL & Analytical Reasoning",
+      "min": 4,
+      "max": 5,
+      "reason": "Expert window function syntax with LAG and ROWS BETWEEN framing, plus multi-stage CTE cohort retention modelling."
+    },
+    {
+      "category": "Data Interpretation & Business Insights",
+      "min": 4,
+      "max": 5,
+      "reason": "Structured 3-dimensional funnel decomposition and nuanced interpretation of horizontal/vertical cohort retention curves."
+    },
+    {
+      "category": "Statistical Understanding & Data Quality",
+      "min": 4,
+      "max": 5,
+      "reason": "Comprehensive automated pipeline validation invariants across schema, referential integrity, volume thresholds, and business domain boundaries."
+    }
+  ]
+}

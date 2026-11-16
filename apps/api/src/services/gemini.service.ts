@@ -3,11 +3,16 @@ import { getResumeAnalysisPrompt } from '../prompts/resume.prompt';
 import { CandidateProfile } from '@interview/contracts';
 import { extractResumeHeuristically } from './heuristic.service';
 
-export const analyzeResumeWithAI = async (extractedText: string): Promise<CandidateProfile> => {
+export interface AnalyzeResumeResult {
+  profile: CandidateProfile;
+  source: 'ai' | 'heuristic';
+}
+
+export const analyzeResumeWithAI = async (extractedText: string): Promise<AnalyzeResumeResult> => {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
 
   // If apiKey is missing or the default placeholder "AIzaSy...", use heuristic analysis directly
-  const isPlaceholderKey = !apiKey || apiKey === 'AIzaSy...' || apiKey.startsWith('AIzaSy...') && apiKey.length < 20;
+  const isPlaceholderKey = !apiKey || apiKey === 'AIzaSy...' || (apiKey.startsWith('AIzaSy...') && apiKey.length < 20);
 
   if (!isPlaceholderKey) {
     try {
@@ -23,7 +28,12 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Candid
       
       // Validate Gemini's JSON with CandidateProfile contract
       const raw = JSON.parse(responseText);
-      return CandidateProfile.parse(raw);
+      const profile = CandidateProfile.parse(raw);
+
+      return {
+        profile,
+        source: 'ai',
+      };
     } catch (error: any) {
       // Logged as an error so a broken key or retired model is visible in the logs, not hidden.
       console.error('[AI Service] Gemini resume analysis failed; using the heuristic parser instead:', error.message || error);
@@ -33,5 +43,8 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Candid
   }
 
   // Resilient fallback to heuristic parser
-  return extractResumeHeuristically(extractedText);
+  return {
+    profile: extractResumeHeuristically(extractedText),
+    source: 'heuristic',
+  };
 };

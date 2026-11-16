@@ -1,3 +1,5 @@
+export type { CandidateProfile } from '@interview/contracts';
+
 export interface AuthUser {
   id: string;
   supabaseUserId?: string | null;

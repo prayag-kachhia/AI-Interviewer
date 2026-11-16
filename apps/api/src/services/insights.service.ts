@@ -2,10 +2,13 @@ import { GoogleGenAI, Type, type Schema } from '@google/genai';
 import { z } from 'zod';
 import type { ImprovementPlan, Job, Prisma } from '../generated/prisma/client';
 import prisma from '../db';
+import { NotFoundError } from '../errors';
 import {
   isValidResourceId,
   getResourcesByTopic,
+  getResourceById,
   normalizeTopic,
+  type LearningResource,
 } from '../data/resources';
 
 export const INSIGHT_TOPICS = [
@@ -151,12 +154,14 @@ export const WEAKNESS_THRESHOLD = 3;
 export interface GeneratePlanOptions {
   weaknessThreshold?: number;
   maxActionsPerTopic?: number;
+  completedActionIds?: Set<string> | string[];
 }
 
 /**
  * Generates an ordered plan of weak topics with concrete actions,
  * citing only validated resource IDs from V-3 (apps/api/src/data/resources.ts).
  * The plan is ordered strictly by weakness (lowest score first).
+ * Preserves completed status for stable action IDs when provided (V-6).
  */
 export function generateImprovementPlan(
   topics: TopicScore[],
@@ -164,6 +169,10 @@ export function generateImprovementPlan(
 ): TopicPlan[] {
   const threshold = options.weaknessThreshold ?? WEAKNESS_THRESHOLD;
   const maxActions = options.maxActionsPerTopic ?? 3;
+  const completedIds =
+    options.completedActionIds instanceof Set
+      ? options.completedActionIds
+      : new Set(options.completedActionIds ?? []);
 
   // Filter weak topics only (scores <= threshold)
   const weakTopics = topics.filter((t) => t.score <= threshold);
@@ -176,11 +185,12 @@ export function generateImprovementPlan(
     const resources = getResourcesByTopic(t.topic).slice(0, maxActions);
     const actions: PlanAction[] = resources.map((r) => {
       validateResourceId(r.id);
+      const actionId = `${t.topic.toLowerCase()}-${r.id}`;
       return {
-        id: `${t.topic.toLowerCase()}-${r.id}`,
+        id: actionId,
         action: `Study ${r.title} to improve ${t.topic} foundations (${r.type}: ${r.description})`,
         resourceId: r.id,
-        completed: false,
+        completed: completedIds.has(actionId),
       };
     });
 
@@ -275,9 +285,14 @@ export function buildInsightsPrompt(sessions: SessionWithFeedbackAndTurns[]): st
       if (s.feedback.summary) {
         context += `Feedback Summary: ${s.feedback.summary}\n`;
       }
-      if (Array.isArray(s.feedback.scores) && s.feedback.scores.length > 0) {
+      const scoreItems = Array.isArray(s.feedback.scores)
+        ? s.feedback.scores
+        : s.feedback.scores && typeof s.feedback.scores === 'object' && Array.isArray((s.feedback.scores as { scores?: unknown }).scores)
+          ? (s.feedback.scores as { scores: any[] }).scores
+          : [];
+      if (scoreItems.length > 0) {
         context += `Category Scores:\n`;
-        for (const score of s.feedback.scores as any[]) {
+        for (const score of scoreItems as any[]) {
           context += `- ${score.category}: Score ${score.score}/5. ${score.comment ?? ''}\n`;
           if (Array.isArray(score.strengths) && score.strengths.length > 0) {
             context += `  Strengths: ${score.strengths.join('; ')}\n`;
@@ -439,7 +454,28 @@ export async function refreshInsightsForUser(
   }
 
   const parsed = InsightsOutputSchema.parse(json);
-  const plan = generateImprovementPlan(parsed.topics);
+
+  // Preserve previously completed actions across plan regenerations (V-6)
+  const existingRecord = await prisma.improvementPlan.findUnique({
+    where: { userId },
+  });
+
+  const completedActionIds = new Set<string>();
+  if (existingRecord && Array.isArray(existingRecord.plan)) {
+    for (const tp of existingRecord.plan as any[]) {
+      if (Array.isArray(tp?.actions)) {
+        for (const act of tp.actions) {
+          if (act?.completed && act?.id) {
+            completedActionIds.add(act.id);
+          }
+        }
+      }
+    }
+  }
+
+  const plan = generateImprovementPlan(parsed.topics, {
+    completedActionIds,
+  });
 
   return prisma.improvementPlan.upsert({
     where: { userId },
@@ -487,5 +523,121 @@ export async function getImprovementPlan(userId: string): Promise<ImprovementPla
   return prisma.improvementPlan.findUnique({
     where: { userId },
   });
+}
+
+/**
+ * Enriches a raw ImprovementPlan model record with detailed learning resources.
+ */
+export function enrichPlanRecord(plan: ImprovementPlan | {
+  id: string;
+  userId: string;
+  topics: unknown;
+  plan: unknown;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}) {
+  const rawPlan = (Array.isArray(plan.plan) ? plan.plan : []) as unknown as TopicPlan[];
+  const rawTopics = (Array.isArray(plan.topics) ? plan.topics : []) as unknown as TopicScore[];
+
+  const enrichedPlan = rawPlan.map((tp) => ({
+    ...tp,
+    actions: (tp.actions || []).map((act) => ({
+      ...act,
+      resource: getResourceById(act.resourceId),
+    })),
+  }));
+
+  const resourceMap = new Map<string, LearningResource>();
+  for (const tp of rawPlan) {
+    for (const act of tp.actions || []) {
+      const res = getResourceById(act.resourceId);
+      if (res) {
+        resourceMap.set(res.id, res);
+      }
+    }
+    const topicRes = getResourcesByTopic(tp.topic);
+    for (const r of topicRes) {
+      resourceMap.set(r.id, r);
+    }
+  }
+
+  return {
+    id: plan.id,
+    userId: plan.userId,
+    topics: rawTopics,
+    plan: enrichedPlan,
+    resources: Array.from(resourceMap.values()),
+    createdAt: plan.createdAt instanceof Date ? plan.createdAt.toISOString() : String(plan.createdAt),
+    updatedAt: plan.updatedAt instanceof Date ? plan.updatedAt.toISOString() : String(plan.updatedAt),
+  };
+}
+
+/**
+ * Retrieves the current ImprovementPlan for a candidate, enriched with detailed learning resources.
+ */
+export async function getEnrichedImprovementPlan(userId: string) {
+  const plan = await getImprovementPlan(userId);
+  if (!plan) {
+    return null;
+  }
+  return enrichPlanRecord(plan);
+}
+
+/**
+ * Updates the completion progress of a roadmap item/action (V-6).
+ * Persists the change in the user's ImprovementPlan and returns the enriched plan.
+ */
+export async function updateRoadmapProgress(
+  userId: string,
+  actionId: string,
+  completed: boolean = true
+) {
+  const plan = await prisma.improvementPlan.findUnique({
+    where: { userId },
+  });
+
+  if (!plan) {
+    throw new NotFoundError('Improvement plan not found');
+  }
+
+  const rawPlan = (Array.isArray(plan.plan) ? plan.plan : []) as unknown as TopicPlan[];
+  let matched = false;
+
+  const updatedPlan = rawPlan.map((tp) => {
+    let hasActionMatch = false;
+    const actions = (tp.actions || []).map((act) => {
+      if (act.id === actionId || act.resourceId === actionId) {
+        matched = true;
+        hasActionMatch = true;
+        return {
+          ...act,
+          completed,
+        };
+      }
+      return act;
+    });
+
+    if (!hasActionMatch && (tp.id === actionId || tp.resourceId === actionId)) {
+      matched = true;
+    }
+
+    return {
+      ...tp,
+      actions,
+    };
+  });
+
+  if (!matched) {
+    throw new NotFoundError(`Roadmap action '${actionId}' not found`);
+  }
+
+  const updatedRecord = await prisma.improvementPlan.update({
+    where: { userId },
+    data: {
+      plan: updatedPlan as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  return enrichPlanRecord(updatedRecord || { ...plan, plan: updatedPlan });
 }
 

@@ -128,10 +128,11 @@ describe('CandidateProfile Contract & Resume Validation (Issue #103 / RJ-2)', ()
         text: JSON.stringify(geminiResponse),
       });
 
-      const profile = await analyzeResumeWithAI('Alice Developer resume text with Go and Kubernetes');
+      const result = await analyzeResumeWithAI('Alice Developer resume text with Go and Kubernetes');
 
       expect(mockGenerateContent).toHaveBeenCalledTimes(1);
-      expect(profile).toEqual(geminiResponse);
+      expect(result.source).toBe('ai');
+      expect(result.profile).toEqual(geminiResponse);
     });
 
     it('handles Gemini output with missing or null fields by defaulting via schema', async () => {
@@ -148,8 +149,9 @@ describe('CandidateProfile Contract & Resume Validation (Issue #103 / RJ-2)', ()
         text: JSON.stringify(geminiResponseWithNulls),
       });
 
-      const profile = await analyzeResumeWithAI('Alice Developer resume text');
+      const { profile, source } = await analyzeResumeWithAI('Alice Developer resume text');
 
+      expect(source).toBe('ai');
       expect(profile.name).toBe('Alice Developer');
       expect(profile.email).toBe('');
       expect(profile.phone).toBe('');
@@ -165,8 +167,9 @@ describe('CandidateProfile Contract & Resume Validation (Issue #103 / RJ-2)', ()
       });
 
       const resumeText = 'Jane Smith\njane.smith@example.com\nSkills: React, Node.js';
-      const profile = await analyzeResumeWithAI(resumeText);
+      const { profile, source } = await analyzeResumeWithAI(resumeText);
 
+      expect(source).toBe('heuristic');
       expect(profile.email).toBe('jane.smith@example.com');
       expect(profile.skills).toContain('React');
     });
@@ -178,8 +181,9 @@ describe('CandidateProfile Contract & Resume Validation (Issue #103 / RJ-2)', ()
       });
 
       const resumeText = 'Jane Smith\njane.smith@example.com\nSkills: React, Node.js';
-      const profile = await analyzeResumeWithAI(resumeText);
+      const { profile, source } = await analyzeResumeWithAI(resumeText);
 
+      expect(source).toBe('heuristic');
       expect(profile.email).toBe('jane.smith@example.com');
       expect(profile.skills).toContain('React');
     });
@@ -188,9 +192,10 @@ describe('CandidateProfile Contract & Resume Validation (Issue #103 / RJ-2)', ()
       delete process.env.GEMINI_API_KEY;
 
       const resumeText = 'Jane Smith\njane.smith@example.com\nSkills: TypeScript';
-      const profile = await analyzeResumeWithAI(resumeText);
+      const { profile, source } = await analyzeResumeWithAI(resumeText);
 
       expect(mockGenerateContent).not.toHaveBeenCalled();
+      expect(source).toBe('heuristic');
       expect(profile).toEqual(extractResumeHeuristically(resumeText));
     });
   });

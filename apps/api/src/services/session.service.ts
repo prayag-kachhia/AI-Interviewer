@@ -60,6 +60,7 @@ export async function createSession(userId: string, input: CreateSessionInput) {
       level: input.level ?? null,
       focus: input.focus ?? null,
       mode: input.mode,
+      jobContext: input.jobContext ?? null,
     },
   });
 }
@@ -91,13 +92,19 @@ export const EARLY_END_THRESHOLD_MINUTES = 15;
  * Returns the average of valid scores rounded to 1 decimal place, or null if no valid scores remain.
  */
 export function computeOverallScore(scores: unknown): number | null {
-  if (!Array.isArray(scores) || scores.length === 0) {
+  const items = Array.isArray(scores)
+    ? scores
+    : scores && typeof scores === 'object' && Array.isArray((scores as { scores?: unknown }).scores)
+      ? (scores as { scores: unknown[] }).scores
+      : null;
+
+  if (!items || items.length === 0) {
     return null;
   }
 
   const validScores: number[] = [];
 
-  for (const item of scores) {
+  for (const item of items) {
     if (typeof item === 'object' && item !== null && 'score' in item) {
       const val = (item as { score?: unknown }).score;
       if (typeof val === 'number' && Number.isFinite(val) && val >= 1 && val <= 5) {
@@ -260,7 +267,21 @@ export async function deleteSession(sessionId: string, userId: string) {
     where: { id: sessionId },
   });
 }
+/**
+ * Protect or unprotect an interview session from retention cleanup.
+ */
+export async function updateSessionKeep(
+  sessionId: string,
+  userId: string,
+  keep: boolean
+) {
+  await getOwnedSession(sessionId, userId);
 
+  return prisma.session.update({
+    where: { id: sessionId },
+    data: { keep },
+  });
+}
 /**
  * Query AI questions from the candidate's last N ended sessions for a given role (FR-16).
  * Capped at 30 questions to fit within context limits.

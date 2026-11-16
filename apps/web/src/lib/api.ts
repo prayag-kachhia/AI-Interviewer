@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Feedback, VoiceToken } from '@interview/contracts';
+import { CreateSessionInput, Feedback, ImprovementPlan, VoiceToken } from '@interview/contracts';
 import { supabase } from './supabase';
 import type {
   ResumeResponse,
@@ -74,6 +74,13 @@ export const deleteUserAccount = async (): Promise<{
   const { data } = await api.delete('/auth/account');
   return data;
 };
+// Download the authenticated user's personal data export.
+export const exportMyData = async (): Promise<Blob> => {
+  const { data } = await api.get<Blob>('/me/export', {
+    responseType: 'blob',
+  });
+  return data;
+};
 
 // ---------------------------------------------------------------------------
 // Slice A — Live Session Endpoints
@@ -89,8 +96,11 @@ export const getSessions = async (): Promise<SessionsListResponse> => {
   return data;
 };
 
-export const createSession = async (roleId: string): Promise<SessionResponse> => {
-  const { data } = await api.post<SessionResponse>('/sessions', { roleId });
+export const createSession = async (
+  input: string | (Partial<CreateSessionInput> & { roleId: string })
+): Promise<SessionResponse> => {
+  const payload = typeof input === 'string' ? { roleId: input } : input;
+  const { data } = await api.post<SessionResponse>('/sessions', payload);
   return data;
 };
 
@@ -117,8 +127,12 @@ export const postTurn = async (
 };
 
 // Server-generated next AI question (PK-3); the backend saves the AI turn before returning it.
-export const postNextQuestion = async (sessionId: string): Promise<TurnResponse> => {
-  const { data } = await api.post<TurnResponse>(`/sessions/${sessionId}/next-question`);
+export const postNextQuestion = async (
+  sessionId: string,
+  remainingSeconds?: number
+): Promise<TurnResponse> => {
+  const body = remainingSeconds !== undefined ? { remainingSeconds } : undefined;
+  const { data } = await api.post<TurnResponse>(`/sessions/${sessionId}/next-question`, body);
   return data;
 };
 
@@ -134,6 +148,17 @@ export const deleteSession = async (
 ): Promise<{ success: boolean; message?: string }> => {
   const { data } = await api.delete<{ success: boolean; message?: string }>(
     `/sessions/${sessionId}`
+  );
+  return data;
+};
+
+export const updateSessionKeep = async (
+  sessionId: string,
+  keep: boolean
+): Promise<SessionResponse> => {
+  const { data } = await api.patch<SessionResponse>(
+    `/sessions/${sessionId}/keep`,
+    { keep }
   );
   return data;
 };
@@ -157,6 +182,23 @@ export const getFeedback = async (sessionId: string): Promise<Feedback> => {
 export const retryFeedback = async (sessionId: string): Promise<Feedback> => {
   const { data } = await api.post<{ success: boolean; data?: unknown }>(`/sessions/${sessionId}/feedback/retry`);
   return Feedback.parse(data.data);
+};
+
+// Candidate insights & improvement plan (V-5, V-6)
+export const getInsights = async (): Promise<ImprovementPlan> => {
+  const { data } = await api.get<{ success: boolean; data?: unknown }>('/insights');
+  return ImprovementPlan.parse(data.data);
+};
+
+export const updateRoadmapProgress = async (
+  actionId: string,
+  completed: boolean = true
+): Promise<ImprovementPlan> => {
+  const { data } = await api.patch<{ success: boolean; data?: unknown }>('/insights/progress', {
+    actionId,
+    completed,
+  });
+  return ImprovementPlan.parse(data.data);
 };
 
 export default api;

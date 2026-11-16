@@ -1,5 +1,18 @@
-export type { CandidateProfile, Role, SessionStatus, TurnSpeaker } from '@interview/contracts';
-import type { CandidateProfile, Role, Session, Turn } from '@interview/contracts';
+export type {
+  CandidateProfile,
+  Role,
+  SessionStatus,
+  TurnSpeaker,
+  InterviewMode,
+  ImprovementPlan,
+  TopicPlan,
+  PlanAction,
+  TopicScore,
+  LearningResource,
+  InsightTopic,
+  UpdateRoadmapProgressInput,
+} from '@interview/contracts';
+import type { CandidateProfile, Role, Session, Turn, ImprovementPlan } from '@interview/contracts';
 
 export interface User {
   id: string;
@@ -21,6 +34,7 @@ export interface ResumeData {
   fileName: string;
   createdAt: string;
   profile: CandidateProfile;
+  source?: 'ai' | 'heuristic';
 }
 
 export interface ResumeResponse {
@@ -33,6 +47,7 @@ export interface ResumeResponse {
 // Slice A — Live Session
 // ---------------------------------------------------------------------------
 
+
 export type InterviewVoiceState =
   | 'IDLE'
   | 'AI_SPEAKING'
@@ -44,12 +59,16 @@ export type InterviewVoiceState =
 
 export type TurnData = Turn;
 
-export type SessionData = Session;
+export interface HistorySession extends Session {
+  overallScore?: number | null;
+}
+
+export type SessionData = HistorySession;
 
 export interface SessionsListResponse {
   success: boolean;
   message?: string;
-  data?: SessionData[];
+  data?: HistorySession[];
 }
 
 export interface RolesResponse {
@@ -74,4 +93,10 @@ export interface TurnsListResponse {
   success: boolean;
   message?: string;
   data?: TurnData[];
+}
+
+export interface InsightsResponse {
+  success: boolean;
+  message?: string;
+  data?: ImprovementPlan;
 }

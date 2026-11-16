@@ -77,6 +77,13 @@ export const CreateSessionInput = z
       .transform((c) => c || undefined),
     level: Level.optional(),
     mode: InterviewMode.default("voice"),
+    // Candidate-supplied job description text (FR-11). Max 4,000 characters.
+    jobContext: z
+      .string()
+      .trim()
+      .max(4000, "Job description must not exceed 4,000 characters")
+      .optional()
+      .transform((jc) => jc || undefined),
   })
   .superRefine((input, ctx) => {
     const role = ROLES.find((r) => r.id === input.roleId);
@@ -117,13 +124,16 @@ export const Session = z.object({
   level: Level.nullable().optional(),
   focus: z.string().nullable().optional(),
   mode: InterviewMode.optional(),
+  jobContext: z.string().nullable().optional(),
   status: SessionStatus,
+  keep: z.boolean().optional(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
   createdAt: z.string().optional(),
   turns: z.array(Turn).optional(),
   feedbackStatus: FeedbackStatus.nullable().optional(),
   endedEarly: z.boolean().optional(),
+  overallScore: z.number().nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
@@ -143,11 +153,21 @@ export const FeedbackScore = z.object({
 });
 export type FeedbackScore = z.infer<typeof FeedbackScore>;
 
+// Per-answer feedback for each candidate response (PN-9, FR-21, FR-26).
+export const PerAnswerFeedback = z.object({
+  question: z.string().min(1),
+  summary: z.string().min(1),
+  strengths: z.array(z.string()),
+  improvements: z.array(z.string()),
+});
+export type PerAnswerFeedback = z.infer<typeof PerAnswerFeedback>;
+
 export const Feedback = z.object({
   sessionId: z.string(),
   status: FeedbackStatus,
   summary: z.string().optional(),
   scores: z.array(FeedbackScore).optional(),
+  perAnswer: z.array(PerAnswerFeedback).optional(),
 });
 export type Feedback = z.infer<typeof Feedback>;
 
@@ -172,11 +192,30 @@ export const TopicScore = z.object({
 });
 export type TopicScore = z.infer<typeof TopicScore>;
 
+export const LearningResourceType = z.enum([
+  "documentation",
+  "tutorial",
+  "interactive",
+  "guide",
+]);
+export type LearningResourceType = z.infer<typeof LearningResourceType>;
+
+export const LearningResource = z.object({
+  id: z.string(),
+  topic: InsightTopic,
+  title: z.string(),
+  url: z.string(),
+  description: z.string(),
+  type: LearningResourceType,
+});
+export type LearningResource = z.infer<typeof LearningResource>;
+
 export const PlanAction = z.object({
   id: z.string(),
   action: z.string(),
   resourceId: z.string(),
   completed: z.boolean().default(false),
+  resource: LearningResource.optional(),
 });
 export type PlanAction = z.infer<typeof PlanAction>;
 
@@ -198,6 +237,7 @@ export const RoadmapItem = z.object({
   action: z.string(),
   resourceId: z.string(),
   completed: z.boolean().default(false),
+  resource: LearningResource.optional(),
 });
 export type RoadmapItem = z.infer<typeof RoadmapItem>;
 
@@ -206,8 +246,17 @@ export const ImprovementPlan = z.object({
   userId: z.string(),
   topics: z.array(TopicScore),
   plan: z.array(TopicPlan).default([]),
+  resources: z.array(LearningResource).optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 });
 export type ImprovementPlan = z.infer<typeof ImprovementPlan>;
+
+// Input for updating roadmap progress (V-6, PATCH /api/insights/progress)
+export const UpdateRoadmapProgressInput = z.object({
+  actionId: z.string().min(1, 'actionId is required'),
+  completed: z.boolean().default(true),
+});
+export type UpdateRoadmapProgressInput = z.infer<typeof UpdateRoadmapProgressInput>;
+
 
