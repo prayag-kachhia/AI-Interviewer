@@ -14,15 +14,34 @@ export interface AuthContextType {
   signIn: (
     email: string,
     password: string
-  ) => Promise<{ success: boolean; message?: string }>;
+  ) => Promise<{ success: boolean; message?: string; needsVerification?: boolean; email?: string }>;
   signUp: (
     name: string,
     email: string,
     password: string
-  ) => Promise<{ success: boolean; message?: string; exists?: boolean }>;
+  ) => Promise<{
+    success: boolean;
+    message?: string;
+    exists?: boolean;
+    needsVerification?: boolean;
+    email?: string;
+  }>;
   signInWithGoogle: () => Promise<{ success: boolean; message?: string }>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<{ success: boolean; message?: string }>;
+  resetPasswordForEmail: (
+    email: string
+  ) => Promise<{ success: boolean; message?: string }>;
+  updatePassword: (
+    newPassword: string
+  ) => Promise<{ success: boolean; message?: string }>;
+  verifyOtp: (
+    email: string,
+    token: string
+  ) => Promise<{ success: boolean; message?: string }>;
+  resendOtp: (
+    email: string
+  ) => Promise<{ success: boolean; message?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -31,8 +50,12 @@ const AuthContext = createContext<AuthContextType>({
   signIn: async () => ({ success: false }),
   signUp: async () => ({ success: false }),
   signInWithGoogle: async () => ({ success: false }),
-  signOut: async () => {},
+  signOut: async () => { },
   deleteAccount: async () => ({ success: false }),
+  resetPasswordForEmail: async () => ({ success: false }),
+  updatePassword: async () => ({ success: false }),
+  verifyOtp: async () => ({ success: false }),
+  resendOtp: async () => ({ success: false }),
 });
 
 const mapSupabaseUser = (supabaseUser: any): AuthUser => ({
@@ -227,7 +250,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       if (error) {
-        return { success: false, message: error.message };
+        const isUnconfirmed =
+          error.message.toLowerCase().includes('email not confirmed') ||
+          error.message.toLowerCase().includes('not confirmed');
+        return {
+          success: false,
+          message: isUnconfirmed
+            ? 'Your email address has not been verified yet. Please enter the verification code sent to your email.'
+            : error.message,
+          needsVerification: isUnconfirmed,
+          email: email.trim().toLowerCase(),
+        };
       }
 
       if (!data.user || !data.session) {
@@ -287,20 +320,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       if (error) {
+        // If the error reveals that an account is already registered,
+        // normalize to a secure anti-enumeration response.
+        if (error.message.toLowerCase().includes('already')) {
+          return {
+            success: true,
+            needsVerification: true,
+            email: normalizedEmail,
+            message:
+              'Please enter the 6-digit verification code sent to your email. If you already have an account, you can return to sign in.',
+          };
+        }
         return {
           success: false,
           message: error.message,
-          exists: error.message.toLowerCase().includes('already'),
         };
       }
 
-      // Supabase can return an otherwise-empty user when the email already
-      // belongs to an existing account. Treat that as an existing account.
+      // Supabase returns an empty identities array when the email already
+      // belongs to an existing account (anti-enumeration mode).
+      // Return a uniform verification response to protect user privacy.
       if (data.user && data.user.identities?.length === 0) {
         return {
-          success: false,
-          message: 'An account with this email already exists. Please sign in.',
-          exists: true,
+          success: true,
+          needsVerification: true,
+          email: normalizedEmail,
+          message:
+            'Please enter the 6-digit verification code sent to your email. If you already have an account, you can return to sign in.',
         };
       }
 
@@ -316,8 +362,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!data.session) {
         return {
           success: true,
+          needsVerification: true,
+          email: normalizedEmail,
           message:
-            'Account created. Please confirm your email, then sign in to continue.',
+            'Please enter the 6-digit verification code sent to your email. If you already have an account, you can return to sign in.',
         };
       }
 
@@ -422,6 +470,197 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  /**
+   * Request a password reset link for the given email address.
+   * Supabase Auth sends an email containing a recovery token pointing to /reset-password.
+   */
+  const resetPasswordForEmail = async (email: string) => {
+    try {
+      if (!isSupabaseConfigured) {
+        return {
+          success: false,
+          message:
+            'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in apps/web/.env.local.',
+        };
+      }
+
+      const redirectTo = `${window.location.origin}/reset-password`;
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        {
+          redirectTo,
+        }
+      );
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message,
+        };
+      }
+
+      return {
+        success: true,
+        message: 'If an account exists for that email, a password reset link has been sent.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'Failed to send password reset email',
+      };
+    }
+  };
+
+  /**
+   * Update the user's password using the active session / recovery session.
+   */
+  const updatePassword = async (newPassword: string) => {
+    try {
+      if (!isSupabaseConfigured) {
+        return {
+          success: false,
+          message:
+            'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in apps/web/.env.local.',
+        };
+      }
+
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message,
+        };
+      }
+
+      if (!data.user) {
+        return {
+          success: false,
+          message: 'Failed to update password.',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Your password has been reset successfully.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'Failed to update password',
+      };
+    }
+  };
+
+  /**
+   * Verify a 6-digit email signup confirmation OTP code.
+   * On success, Supabase creates a verified session, and the user profile is synced.
+   */
+  const verifyOtp = async (email: string, token: string) => {
+    try {
+      if (!isSupabaseConfigured) {
+        return {
+          success: false,
+          message:
+            'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in apps/web/.env.local.',
+        };
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+      const cleanToken = token.trim();
+
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: normalizedEmail,
+        token: cleanToken,
+        type: 'email',
+      });
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message || 'Invalid or expired verification code.',
+        };
+      }
+
+      if (!data.user || !data.session) {
+        return {
+          success: false,
+          message: 'Verification succeeded but no active session was established.',
+        };
+      }
+
+      let applicationUser = mapSupabaseUser(data.user);
+      if (mountedRef.current) {
+        setUser(applicationUser);
+      }
+
+      applicationUser = await syncUserProfile(data.user, applicationUser);
+      if (mountedRef.current) {
+        setUser(applicationUser);
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'Verification failed. Please try again.',
+      };
+    }
+  };
+
+  /**
+   * Resend the 6-digit email signup confirmation OTP code.
+   */
+  const resendOtp = async (email: string) => {
+    try {
+      if (!isSupabaseConfigured) {
+        return {
+          success: false,
+          message:
+            'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in apps/web/.env.local.',
+        };
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: normalizedEmail,
+      });
+
+      if (error) {
+        // If the email is already confirmed or registered, do not leak enumeration details
+        const isAlreadyConfirmed =
+          error.message.toLowerCase().includes('already') ||
+          error.message.toLowerCase().includes('confirmed');
+        if (isAlreadyConfirmed) {
+          return {
+            success: true,
+            message:
+              'If this email is unverified, a new code has been sent. If you already have an account, please sign in.',
+          };
+        }
+
+        return {
+          success: false,
+          message: error.message || 'Failed to resend verification code.',
+        };
+      }
+
+      return {
+        success: true,
+        message: 'A new 6-digit verification code has been sent to your email.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'Failed to resend verification code.',
+      };
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -432,6 +671,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         signInWithGoogle,
         signOut,
         deleteAccount,
+        resetPasswordForEmail,
+        updatePassword,
+        verifyOtp,
+        resendOtp,
       }}
     >
       {children}

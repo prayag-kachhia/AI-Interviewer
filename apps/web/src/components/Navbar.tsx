@@ -27,7 +27,11 @@ export const Navbar: React.FC = () => {
 
   const isActive = (path: string) => location.pathname === path;
 
-  if (!user) {
+  if (
+    !user ||
+    location.pathname === '/reset-password' ||
+    location.pathname === '/verify-email'
+  ) {
     return null;
   }
 

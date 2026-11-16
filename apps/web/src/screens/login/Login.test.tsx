@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { Login } from "./Login";
 import { AuthProvider, useAuth } from "../../context/AuthContext";
@@ -13,17 +13,21 @@ const mockOnAuthStateChange = vi.fn((_callback?: any) => {
 });
 const mockSignOut = vi.fn().mockResolvedValue({ error: null });
 const mockSignInWithOAuth = vi.fn().mockResolvedValue({ error: null });
+const mockResetPasswordForEmail = vi.fn().mockResolvedValue({ error: null });
+const mockSignInWithPassword = vi.fn();
+const mockSignUp = vi.fn();
 
 vi.mock("../../lib/supabase", () => ({
   isSupabaseConfigured: true,
   supabase: {
     auth: {
-      getSession: (...args: unknown[]) => mockGetSession(...args),
+      getSession: () => mockGetSession(),
       onAuthStateChange: (callback: any) => mockOnAuthStateChange(callback),
-      signOut: (...args: unknown[]) => mockSignOut(...args),
-      signInWithOAuth: (...args: unknown[]) => mockSignInWithOAuth(...args),
-      signInWithPassword: vi.fn(),
-      signUp: vi.fn(),
+      signOut: () => mockSignOut(),
+      signInWithOAuth: (params: any) => mockSignInWithOAuth(params),
+      signInWithPassword: (params: any) => mockSignInWithPassword(params),
+      signUp: (params: any) => mockSignUp(params),
+      resetPasswordForEmail: (email: any, opts: any) => mockResetPasswordForEmail(email, opts),
     },
   },
 }));
@@ -297,5 +301,396 @@ describe("Login Screen - Google Sign In Button Visibility", () => {
     googleButtons = await screen.findAllByRole("button", { name: /continue with google/i });
     expect(googleButtons.length).toBeGreaterThanOrEqual(1);
     expect(googleButtons[0]).toBeInTheDocument();
+  });
+});
+
+describe("Login Screen - Forgot Password Flow", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders Forgot password? button and toggles reset form", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const forgotBtn = screen.getByRole("button", { name: /forgot password\?/i });
+    expect(forgotBtn).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    expect(screen.getByRole("heading", { name: /reset password/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send reset link/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /← back to sign in/i })).toBeInTheDocument();
+
+    // Toggle back to sign in
+    const backBtn = screen.getByRole("button", { name: /← back to sign in/i });
+    await act(async () => {
+      fireEvent.click(backBtn);
+    });
+
+    expect(screen.queryByRole("button", { name: /send reset link/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign in to dashboard/i })).toBeInTheDocument();
+  });
+
+  it("calls resetPasswordForEmail and shows confirmation message", async () => {
+    mockResetPasswordForEmail.mockResolvedValueOnce({ error: null });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const forgotBtn = screen.getByRole("button", { name: /forgot password\?/i });
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    await act(async () => {
+      fireEvent.change(emailInputs[0], { target: { value: "candidate@example.com" } });
+    });
+
+    const sendBtn = screen.getByRole("button", { name: /send reset link/i });
+    await act(async () => {
+      fireEvent.click(sendBtn);
+    });
+
+    expect(mockResetPasswordForEmail).toHaveBeenCalledWith(
+      "candidate@example.com",
+      expect.objectContaining({
+        redirectTo: expect.stringContaining("/reset-password"),
+      })
+    );
+
+    expect(await screen.findByText(/if an account exists for that email, a password reset link has been sent/i)).toBeInTheDocument();
+    expect(screen.getByText(/didn't receive the email\? please check your spam or junk folder as well\./i)).toBeInTheDocument();
+  });
+});
+
+describe("Login Screen - Sign Up Password Strength Meter", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("displays password strength checklist and blocks submission until strong", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={[{ pathname: "/login", state: { mode: "signup" } }]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const nameInput = screen.getByPlaceholderText(/jane doe/i);
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    const emailInput = emailInputs[1];
+    const passwordInput = screen.getByPlaceholderText(/create a strong password/i);
+    const confirmInput = screen.getByPlaceholderText(/re-enter password/i);
+    const submitBtn = screen.getByRole("button", { name: /create free account/i });
+
+    // Initially disabled
+    expect(submitBtn).toBeDisabled();
+
+    // Fill valid name and email
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: "Jane Candidate" } });
+      fireEvent.change(emailInput, { target: { value: "jane@company.com" } });
+    });
+    expect(submitBtn).toBeDisabled();
+
+    // Type a weak password
+    await act(async () => {
+      fireEvent.change(passwordInput, { target: { value: "weakpass" } });
+      fireEvent.change(confirmInput, { target: { value: "weakpass" } });
+    });
+
+    // Password strength meter should appear with Weak badge
+    expect(screen.getByText(/strength:/i)).toBeInTheDocument();
+    expect(screen.getByText(/weak/i)).toBeInTheDocument();
+    expect(submitBtn).toBeDisabled();
+
+    // Type a password that passes all 7 rules
+    await act(async () => {
+      fireEvent.change(passwordInput, { target: { value: "Tr0ng!P@ss2026#" } });
+      fireEvent.change(confirmInput, { target: { value: "Tr0ng!P@ss2026#" } });
+    });
+
+    expect(screen.getByText(/strong/i)).toBeInTheDocument();
+    expect(submitBtn).toBeEnabled();
+  });
+});
+
+describe("Login Screen - Email Format Validation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("rejects invalid email syntax on Sign In and blocks submission", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    const passwordInputs = screen.getAllByPlaceholderText(/••••••••/i);
+    const signInBtn = screen.getByRole("button", { name: /sign in to dashboard/i });
+
+    await act(async () => {
+      fireEvent.change(emailInputs[0], { target: { value: "invalid-email" } });
+      fireEvent.change(passwordInputs[0], { target: { value: "SomePassword123!" } });
+      fireEvent.submit(signInBtn.closest("form")!);
+    });
+
+    expect(mockSignInWithPassword).not.toHaveBeenCalled();
+    expect(await screen.findByText(/please enter a valid email address/i)).toBeInTheDocument();
+  });
+
+  it("rejects invalid email syntax on Forgot Password flow", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const forgotBtn = screen.getByRole("button", { name: /forgot password\?/i });
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    const sendBtn = screen.getByRole("button", { name: /send reset link/i });
+
+    await act(async () => {
+      fireEvent.change(emailInputs[0], { target: { value: "candidate@nodomain" } });
+      fireEvent.click(sendBtn);
+    });
+
+    expect(mockResetPasswordForEmail).not.toHaveBeenCalled();
+    expect(await screen.findByText(/email domain must include a top-level domain/i)).toBeInTheDocument();
+  });
+});
+
+describe("Login Screen - Email OTP Signup & Unverified Sign In", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("navigates to /verify-email when signup requires email confirmation (no immediate session)", async () => {
+    mockSignUp.mockResolvedValueOnce({
+      data: {
+        user: { id: "new-user-123", email: "candidate@example.com" },
+        session: null,
+      },
+      error: null,
+    });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={[{ pathname: "/login", state: { mode: "signup" } }]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/verify-email"
+                element={<div data-testid="verify-screen">Verify Screen</div>}
+              />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const nameInput = screen.getByPlaceholderText(/jane doe/i);
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    const passwordInput = screen.getByPlaceholderText(/create a strong password/i);
+    const confirmInput = screen.getByPlaceholderText(/re-enter password/i);
+    const submitBtn = screen.getByRole("button", { name: /create free account/i });
+
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: "Candidate Name" } });
+      fireEvent.change(emailInputs[1], { target: { value: "candidate@example.com" } });
+      fireEvent.change(passwordInput, { target: { value: "Str0ng!P@ss2026#" } });
+      fireEvent.change(confirmInput, { target: { value: "Str0ng!P@ss2026#" } });
+    });
+
+    await act(async () => {
+      fireEvent.click(submitBtn);
+    });
+
+    expect(mockSignUp).toHaveBeenCalledWith({
+      email: "candidate@example.com",
+      password: "Str0ng!P@ss2026#",
+      options: expect.objectContaining({
+        data: { full_name: "Candidate Name" },
+      }),
+    });
+
+    expect(await screen.findByTestId("verify-screen")).toBeInTheDocument();
+  });
+
+  it("navigates to /verify-email without revealing account existence when email has empty identities (anti-enumeration)", async () => {
+    mockSignUp.mockResolvedValueOnce({
+      data: {
+        user: { id: "existing-user-123", email: "existing@example.com", identities: [] },
+        session: null,
+      },
+      error: null,
+    });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={[{ pathname: "/login", state: { mode: "signup" } }]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/verify-email"
+                element={<div data-testid="verify-screen">Verify Screen</div>}
+              />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const nameInput = screen.getByPlaceholderText(/jane doe/i);
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    const passwordInput = screen.getByPlaceholderText(/create a strong password/i);
+    const confirmInput = screen.getByPlaceholderText(/re-enter password/i);
+    const submitBtn = screen.getByRole("button", { name: /create free account/i });
+
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: "Candidate Name" } });
+      fireEvent.change(emailInputs[1], { target: { value: "existing@example.com" } });
+      fireEvent.change(passwordInput, { target: { value: "Str0ng!P@ss2026#" } });
+      fireEvent.change(confirmInput, { target: { value: "Str0ng!P@ss2026#" } });
+      fireEvent.click(submitBtn);
+    });
+
+    // Navigates uniformly to verify-email, never displaying "An account with this email already exists"
+    expect(await screen.findByTestId("verify-screen")).toBeInTheDocument();
+    expect(screen.queryByText(/already exists/i)).not.toBeInTheDocument();
+  });
+
+  it("navigates to /verify-email without revealing account existence when error indicates already registered", async () => {
+    mockSignUp.mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: { message: "User already registered" },
+    });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={[{ pathname: "/login", state: { mode: "signup" } }]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/verify-email"
+                element={<div data-testid="verify-screen">Verify Screen</div>}
+              />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const nameInput = screen.getByPlaceholderText(/jane doe/i);
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    const passwordInput = screen.getByPlaceholderText(/create a strong password/i);
+    const confirmInput = screen.getByPlaceholderText(/re-enter password/i);
+    const submitBtn = screen.getByRole("button", { name: /create free account/i });
+
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: "Candidate Name" } });
+      fireEvent.change(emailInputs[1], { target: { value: "existing@example.com" } });
+      fireEvent.change(passwordInput, { target: { value: "Str0ng!P@ss2026#" } });
+      fireEvent.change(confirmInput, { target: { value: "Str0ng!P@ss2026#" } });
+      fireEvent.click(submitBtn);
+    });
+
+    // Navigates uniformly without exposing error message to potential attacker
+    expect(await screen.findByTestId("verify-screen")).toBeInTheDocument();
+    expect(screen.queryByText(/user already registered/i)).not.toBeInTheDocument();
+  });
+
+  it("displays verification prompt when unverified user tries to sign in", async () => {
+    mockSignInWithPassword.mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: { message: "Email not confirmed" },
+    });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/verify-email"
+                element={<div data-testid="verify-screen">Verify Screen</div>}
+              />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    const passwordInputs = screen.getAllByPlaceholderText(/••••••••/i);
+    const signInBtn = screen.getByRole("button", { name: /sign in to dashboard/i });
+
+    await act(async () => {
+      fireEvent.change(emailInputs[0], { target: { value: "unverified@example.com" } });
+      fireEvent.change(passwordInputs[0], { target: { value: "Str0ng!P@ss2026#" } });
+      fireEvent.click(signInBtn);
+    });
+
+    expect(
+      await screen.findByText(/your email address has not been verified yet/i)
+    ).toBeInTheDocument();
+
+    const verifyOtpBtn = screen.getByRole("button", { name: /enter verification code/i });
+    expect(verifyOtpBtn).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(verifyOtpBtn);
+    });
+
+    expect(await screen.findByTestId("verify-screen")).toBeInTheDocument();
   });
 });
