@@ -87,6 +87,7 @@ This document is the official Software Requirements Specification (SRS) and Requ
 |---|---|---|
 | **FR-31** | The system shall allow the platform owner to add, edit, or remove an interview role and its interviewer briefing without a code change. | Should |
 | **FR-32** | The system shall report to the platform owner the number of sessions run, their durations, and the resulting infrastructure cost over a chosen period. | Should |
+| **FR-33** | The system shall show the Placement Cell anonymous, aggregate cohort statistics (interviews per role per week, completion rate, average score per category), shall never reveal an individual candidate’s identity, transcript or scores, and shall hide any group of fewer than 5 candidates. | Could |
 
 ---
 
@@ -170,7 +171,7 @@ This document is the official Software Requirements Specification (SRS) and Requ
 | **OI-3** | Write per-role evaluation rubrics. | FR-20, NFR-18, NFR-19 | Elicitation pair | Role rubrics documented in evaluation service. |
 | **OI-4** | Validate 100-concurrent-session figure. | NFR-06 | Placement Cell liaison | Placement Cell consultation. |
 | **OI-5** | Decide whether FR-30 (text alternative) is in scope. | FR-30, NFR-14 | Team lead | Scoped in for Sprint 4/5. |
-| **OI-6** | Consult Placement Cell on desired aggregate data. | FR-33 | Placement Cell liaison | Stakeholder interview. |
+| **OI-6** | Consult Placement Cell on desired aggregate data. | FR-33 | Placement Cell liaison | Stakeholder interview. Until then FR-33 is the minimal anonymous view in RJ-13. |
 
 ---
 
@@ -188,19 +189,19 @@ Every requirement maps to code, tests, and current delivery status.
 | **FR-01** | Must | Email/password account creation & sign in | #23, #119 | `apps/web/src/context/AuthContext.tsx`, `apps/api/src/routes/auth.ts` | `apps/api/src/__tests__/auth.test.ts` | Done | Backed by Supabase Auth |
 | **FR-02** | Should | Google OAuth account creation & sign in | #119 | `apps/web/src/screens/login/Login.tsx`, `apps/web/src/context/AuthContext.tsx` | `apps/web/src/screens/login/Login.test.tsx` | Done | Google OAuth via Supabase |
 | **FR-03** | Must | Candidate sign out | #23 | `apps/web/src/context/AuthContext.tsx`, `apps/web/src/components/Navbar.tsx` | `apps/web/src/screens/login/Login.test.tsx` | Done | Invalidates active session |
-| **FR-04** | Should | Password reset via email code | #197 | `apps/web/src/screens/reset-password/ResetPassword.tsx` | | In Progress | |
+| **FR-04** | Should | Password reset via email code | #197, #259 | `apps/web/src/screens/reset-password/ResetPassword.tsx` | | Done | Reset by an emailed link (Supabase), not a typed code. The requirement says a one-time code: decide whether to change the text |
 | **FR-05** | Should | End session on browser close unless 'stay signed in' | #198 | `apps/web/src/context/AuthContext.tsx` | | In Progress | |
 | **FR-06** | Must | Role selection list before session start | #24 | `apps/web/src/screens/new-interview/NewInterview.tsx`, `packages/contracts/src/index.ts` | `apps/api/src/__tests__/session.test.ts` | Done | Shared contract ROLES catalogue |
-| **FR-07** | Should | Select interview focus within role | #135 | `apps/web/src/screens/new-interview/NewInterview.tsx` | | In Progress | |
+| **FR-07** | Should | Select interview focus within role | #135 | `apps/web/src/screens/new-interview/NewInterview.tsx` | | Done | Focus chips on the setup screen; stored on the session (P-7) |
 | **FR-08** | Should | Resume file upload | #25, #123 | `apps/api/src/routes/resume.ts`, `apps/web/src/screens/dashboard/Dashboard.tsx` | `apps/api/src/__tests__/resume-summary.test.ts`, `apps/api/src/__tests__/session.test.ts`, `apps/web/src/screens/new-interview/NewInterview.test.tsx` | Done | PDF is read in memory and only the extracted text and profile are stored |
 | **FR-09** | Should | Ask question referencing resume content | #87, #123 | `apps/api/src/services/briefing.service.ts` | `apps/api/src/__tests__/briefing.test.ts`, `apps/api/src/__tests__/voice-token.test.ts` | Done | Injected into Gemini Live prompt |
 | **FR-10** | Could | GitHub username context retrieval | #195 | — | | In Progress | |
-| **FR-11** | Could | Custom profile text context upload | #160 | `apps/api/src/services/briefing.service.ts` | | In Progress | |
+| **FR-11** | Could | Custom profile text context upload | #160 | `apps/api/src/services/briefing.service.ts` | | Done | Job description pasted at setup and used in the briefing (PK-9) |
 | **FR-12** | Must | Spoken interview without typing | #54, #110, #141, #144, #145 | `apps/web/src/lib/voiceAdapter.ts`, `apps/web/src/lib/geminiLiveAdapter.ts`, `apps/web/src/screens/interview-room/useInterview.ts` | `apps/web/src/lib/geminiLiveAdapter.test.ts`, `apps/web/src/lib/voiceAdapter.test.ts`, `apps/web/src/screens/interview-room/InterviewRoom.test.tsx` | Done | `GeminiLiveVoiceAdapter` wired into `InterviewRoom` with `BrowserWebSpeechVoiceAdapter` + `POST /next-question` fallback (`ADR-0014`), late-result guard, 5s pause timeout, no-voices warning, and 9 s thinking-silence encouragement prompts (`#145`) |
 | **FR-13** | Must | Dynamic follow-up question based on preceding answer | #87, #113 | `apps/api/src/services/briefing.service.ts`, `apps/api/src/services/interviewer.service.ts` | `apps/api/src/__tests__/briefing.test.ts`, `apps/api/src/__tests__/next-question.test.ts` | Done | Contextual prompt guidance |
 | **FR-14** | Should | Interruption handling (barge-in stops AI speech) | #54, #105, #141 | `apps/web/src/lib/geminiLiveAdapter.ts`, `apps/web/src/lib/transcriptAccumulator.ts`, `apps/web/src/screens/interview-room/useInterview.ts` | `apps/web/src/lib/geminiLiveAdapter.test.ts`, `apps/web/src/lib/__tests__/transcriptAccumulator.test.ts`, `apps/web/src/screens/interview-room/InterviewRoom.test.tsx` | Done | Live barge-in stops `PlaybackQueue` immediately and room uses `GeminiLiveVoiceAdapter` (`ADR-0014`; turn saving completes in VI-2) |
 | **FR-15** | Must | No repeated questions in same session | #87 | `apps/api/src/services/briefing.service.ts` | `apps/api/src/__tests__/briefing.test.ts` | Done | Enforced by session prompt history |
-| **FR-16** | Could | No repeated questions across last 3 sessions | #159, #215 | `apps/api/src/services/session.service.ts`, `apps/api/src/services/briefing.service.ts` | `apps/api/src/__tests__/briefing.test.ts` | In Progress | |
+| **FR-16** | Could | No repeated questions across last 3 sessions | #159, #215 | `apps/api/src/services/session.service.ts`, `apps/api/src/services/briefing.service.ts` | `apps/api/src/__tests__/briefing.test.ts` | Done | Questions from the last 3 sessions for the role go into the briefing (PK-7) |
 | **FR-17** | Should | Interviewer persona matching role and focus | #87 | `apps/api/src/services/briefing.service.ts` | `apps/api/src/__tests__/briefing.test.ts` | Done | Role-tailored persona prompt |
 | **FR-18** | Must | Early exit from interview session | #26, #126 | `apps/web/src/screens/interview-room/useInterview.ts`, `apps/api/src/services/session.service.ts` | `apps/api/src/__tests__/session.test.ts` | Done | `POST /api/sessions/:id/end` |
 | **FR-19** | Could | Record early-end reason | #154 | `apps/web/src/screens/interview-room/InterviewRoom.tsx` | | In Progress | |
@@ -214,9 +215,10 @@ Every requirement maps to code, tests, and current delivery status.
 | **FR-27** | Must | Restrict access to candidate's own sessions (404) | #26, #27 | `apps/api/src/services/session.service.ts` (`getOwnedSession`) | `apps/api/src/__tests__/session.test.ts`, `apps/api/src/__tests__/feedback.test.ts` | Done | Ownership check returns 404 |
 | **FR-28** | Must | Delete own past sessions & data | #97, #124 | `apps/api/src/services/session.service.ts`, `apps/api/src/routes/sessions.ts`, `apps/web/src/screens/results/ResultsScreen.tsx` | `apps/api/src/__tests__/session.test.ts`, `apps/api/src/__tests__/session-deletion.integration.test.ts`, `apps/web/src/screens/results/ResultsScreen.test.tsx` | Done | Cascade delete on user session |
 | **FR-29** | Could | Mark session for retention past 30 days | #191 | `apps/api/src/services/session.service.ts` | | In Progress | |
-| **FR-30** | Should | Full typed interview mode (no microphone needed) | #156 | `apps/web/src/screens/interview-room/TypedAnswerBox.tsx`, `apps/api/src/routes/sessions.ts` | | In Progress | Spoken & typed answer fallback |
+| **FR-30** | Should | Full typed interview mode (no microphone needed) | #156 | `apps/web/src/screens/interview-room/TypedAnswerBox.tsx`, `apps/api/src/routes/sessions.ts` | | Done | Typed answers in the room (PK-4) |
 | **FR-31** | Should | Add/edit roles without code change | #172 | — | — | Deferred | Out of scope for MVP; roles defined in shared contracts |
 | **FR-32** | Should | Owner dashboard reporting session count, duration, cost | #201 | `apps/web/src/screens/admin-dashboard/AdminDashboard.tsx` | | In Progress | Sprint 5 task RJ-10 |
+| **FR-33** | Could | Aggregate cohort statistics for the Placement Cell, no individual data | #274 | — | | In Progress | Sprint 5 task RJ-13, after RJ-10. Minimal version until the OI-6 consultation says what the Placement Cell wants |
 | **NFR-01** | Must | Spoken response within 5 seconds for ≥95% of turns | #146 | `apps/web/src/lib/geminiLiveAdapter.ts` | `apps/web/src/lib/geminiLiveAdapter.test.ts` | In Progress | Not measured yet (VI-7) |
 | **NFR-02** | Should | Barge-in interruption stops audio within 500 ms | #105, #110, #141 | `apps/web/src/lib/geminiLiveAdapter.ts`, `apps/web/src/screens/interview-room/useInterview.ts` | `apps/web/src/lib/geminiLiveAdapter.test.ts`, `apps/web/src/lib/__tests__/transcriptAccumulator.test.ts`, `apps/web/src/screens/interview-room/InterviewRoom.test.tsx` | In Progress | Live adapter wired into room (`ADR-0014`); client stops playback immediately on `interrupted`; 50-event live timing measurement in test report |
 | **NFR-03** | Must | Structured feedback within 15 seconds for ≥95% of sessions | #86, #122 | `apps/api/src/services/evaluator.service.ts`, `apps/api/src/worker.ts` | `apps/api/src/__tests__/evaluator.test.ts`, `apps/api/src/__tests__/evaluate-cli.test.ts` | Done | Timed benchmarked background worker |
