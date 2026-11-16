@@ -161,7 +161,8 @@ export interface GeneratePlanOptions {
  * Generates an ordered plan of weak topics with concrete actions,
  * citing only validated resource IDs from V-3 (apps/api/src/data/resources.ts).
  * The plan is ordered strictly by weakness (lowest score first).
- * Preserves completed status for stable action IDs when provided (V-6).
+ * Preserves completed status for stable action IDs when provided (V-6, V-7).
+ * Drops topics whose score improves above the weakness threshold (> 3) (V-7).
  */
 export function generateImprovementPlan(
   topics: TopicScore[],
@@ -175,6 +176,7 @@ export function generateImprovementPlan(
       : new Set(options.completedActionIds ?? []);
 
   // Filter weak topics only (scores <= threshold)
+  // Topics with score > threshold are dropped from the improvement roadmap (V-7).
   const weakTopics = topics.filter((t) => t.score <= threshold);
 
   // Ordered by weakness: lowest score first (1, then 2, then 3).
@@ -190,7 +192,7 @@ export function generateImprovementPlan(
         id: actionId,
         action: `Study ${r.title} to improve ${t.topic} foundations (${r.type}: ${r.description})`,
         resourceId: r.id,
-        completed: completedIds.has(actionId),
+        completed: completedIds.has(actionId) || completedIds.has(r.id),
       };
     });
 
@@ -455,7 +457,7 @@ export async function refreshInsightsForUser(
 
   const parsed = InsightsOutputSchema.parse(json);
 
-  // Preserve previously completed actions across plan regenerations (V-6)
+  // Preserve previously completed actions across plan regenerations (V-6, V-7)
   const existingRecord = await prisma.improvementPlan.findUnique({
     where: { userId },
   });
@@ -465,10 +467,14 @@ export async function refreshInsightsForUser(
     for (const tp of existingRecord.plan as any[]) {
       if (Array.isArray(tp?.actions)) {
         for (const act of tp.actions) {
-          if (act?.completed && act?.id) {
-            completedActionIds.add(act.id);
+          if (act?.completed) {
+            if (act?.id) completedActionIds.add(act.id);
+            if (act?.resourceId) completedActionIds.add(act.resourceId);
           }
         }
+      } else if (tp?.completed) {
+        if (tp?.id) completedActionIds.add(tp.id);
+        if (tp?.resourceId) completedActionIds.add(tp.resourceId);
       }
     }
   }
