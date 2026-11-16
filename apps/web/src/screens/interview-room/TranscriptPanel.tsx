@@ -23,7 +23,7 @@ export const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <Sparkles className="size-5 text-primary" />
-          <h3 className="font-display text-base font-semibold text-foreground">
+          <h3 className="heading text-base text-foreground">
             Recorded Session Transcript
           </h3>
           <Badge variant="secondary" className="font-mono text-xs">
