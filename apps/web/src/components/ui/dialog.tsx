@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 /* Shared with alert-dialog.tsx so both overlays look the same. */
 export const overlayClass = "fixed inset-0 z-50 bg-black/60"
 export const contentClass =
-  "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border bg-popover p-6 text-popover-foreground outline-none sm:max-w-lg"
+  "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border-(length:--border-w) bg-popover [box-shadow:var(--shadow-card)] p-6 text-popover-foreground outline-none sm:max-w-lg"
 
 const Dialog = DialogPrimitive.Root
 const DialogTrigger = DialogPrimitive.Trigger
@@ -52,7 +52,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("mb-0 font-display text-lg leading-tight font-semibold text-popover-foreground", className)}
+      className={cn("mb-0 heading text-lg leading-tight text-popover-foreground", className)}
       {...props}
     />
   )

@@ -231,7 +231,7 @@ export const GuidePage: React.FC = () => {
           <Sparkles className="size-4" />
           <span>Candidate Improvement Plan</span>
         </div>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+        <h1 className="heading text-3xl text-foreground">
           Improvement Guide
         </h1>
         <p className="text-muted-foreground text-base max-w-3xl">
@@ -242,7 +242,7 @@ export const GuidePage: React.FC = () => {
       {/* 1. Weaknesses Section */}
       <section aria-labelledby="weaknesses-heading" className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 id="weaknesses-heading" className="font-display text-xl font-semibold flex items-center gap-2">
+          <h2 id="weaknesses-heading" className="heading text-xl flex items-center gap-2">
             <TrendingUp className="size-5 text-primary" />
             Topic Weaknesses
           </h2>
@@ -288,7 +288,7 @@ export const GuidePage: React.FC = () => {
       {/* 2. Roadmap Section */}
       <section aria-labelledby="roadmap-heading" className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 id="roadmap-heading" className="font-display text-xl font-semibold flex items-center gap-2">
+          <h2 id="roadmap-heading" className="heading text-xl flex items-center gap-2">
             <Compass className="size-5 text-primary" />
             Improvement Roadmap
           </h2>
@@ -378,7 +378,7 @@ export const GuidePage: React.FC = () => {
       {/* 3. Resources Section */}
       <section aria-labelledby="resources-heading" className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 id="resources-heading" className="font-display text-xl font-semibold flex items-center gap-2">
+          <h2 id="resources-heading" className="heading text-xl flex items-center gap-2">
             <BookOpen className="size-5 text-primary" />
             Curated Learning Resources
           </h2>
