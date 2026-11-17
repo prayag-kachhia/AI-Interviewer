@@ -15,7 +15,7 @@ function Progress({
       data-slot="progress"
       value={value}
       max={max}
-      className={cn("relative h-2 w-full overflow-hidden rounded-full bg-secondary", className)}
+      className={cn("relative h-2 w-full overflow-hidden rounded-(--r-pill) bg-secondary", className)}
       {...props}
     >
       <ProgressPrimitive.Indicator

@@ -30,58 +30,170 @@
 }
 
 /*
- * Design tokens, adapted from the Stitch "Chronometer Deck" design: warm charcoal and gold in
- * dark, the same family as bronze on paper in light. Orange (not amber) for warnings so it
- * never reads as the gold primary. Screens use them as classes (bg-background,
- * text-muted-foreground, border-border, ...), never as raw hex values.
+ * Unlayered, so it beats legacy.css's `body` rule: the page paints with the theme's own
+ * background, ink and body font, not the old --bg-color. P-12 deletes this along with legacy.css.
+ */
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  background-image: var(--page-pattern);
+  background-size: 64px 64px;
+}
+
+/*
+ * Two themes, each with its own character, not just its own colours. Every value a screen needs
+ * to look different between them is a variable here; the components/ui primitives read them, so
+ * a screen built on the primitives follows the theme without any `dark:` classes.
+ *
+ * Light is the Stitch "Swiss broadsheet": bone paper, ink, square corners, thick ink borders, a
+ * hard offset shadow, uppercase black headings and monospace labels. Dark is the Stitch
+ * "Haute" theme: obsidian and bronze, a serif display face, Cinzel capitals for labels, square
+ * corners, hairline borders and a faint bronze glow.
+ * Screens use these as classes (bg-background, text-muted-foreground, border-border, ...),
+ * never as raw hex values.
  */
 :root {
-  --background: #f7f7f5;
-  --foreground: #161618;
+  --background: #f5f5f0;
+  --foreground: #0a0a0a;
   --card: #ffffff;
-  --card-foreground: #161618;
+  --card-foreground: #0a0a0a;
   --popover: #ffffff;
-  --popover-foreground: #161618;
-  --primary: #805600;
-  --primary-foreground: #ffffff;
-  --ring: #805600;
-  --secondary: #efeee9;
-  --secondary-foreground: #161618;
-  --muted: #efeee9;
-  --muted-foreground: #5f5b52;
-  --accent: #efeee9;
-  --accent-foreground: #161618;
+  --popover-foreground: #0a0a0a;
+  /* The primary button is ink on bone: white on the brand orange is only 3.6:1. */
+  --primary: #0a0a0a;
+  --primary-foreground: #f5f5f0;
+  /* Cobalt, the Swiss second colour, doubles as the focus ring: 7:1 against bone. */
+  --ring: #0022ff;
+  --secondary: #eaeae2;
+  --secondary-foreground: #0a0a0a;
+  --muted: #eaeae2;
+  --muted-foreground: #55554d;
+  --accent: #eaeae2;
+  --accent-foreground: #0a0a0a;
+  /* The Swiss hazard orange, darkened until it passes AA as text (5:1) and under white text. */
+  --brand: #c82d00;
+  --brand-foreground: #ffffff;
   --destructive: #e11d48;
   --success: #059669;
   --warning: #ea580c;
-  --border: #e2dfd6;
+  --border: #0a0a0a;
   /* Form-field and outline-button borders: 3:1 against cards and the page (WCAG 1.4.11). */
-  --input: #8f8a7e;
-  --radius: 0.5rem;
+  --input: #0a0a0a;
+
+  --r-sm: 0px;
+  --r-md: 0px;
+  --r-lg: 0px;
+  --r-xl: 0px;
+  --r-pill: 0px;
+  --border-w: 2px;
+  --shadow-card: 4px 4px 0 0 var(--foreground);
+  --font-heading: 'Space Grotesk', 'Inter', ui-sans-serif, sans-serif;
+  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-label: 'JetBrains Mono', ui-monospace, monospace;
+  --label-transform: uppercase;
+  --label-tracking: 0.06em;
+  --heading-weight: 800;
+  --heading-transform: uppercase;
+  --heading-tracking: -0.03em;
+  --heading-size-adjust: none;
+  --page-pattern: none;
 }
 
 .dark {
-  --background: #131315;
-  --foreground: #e5e1e4;
-  --card: #1c1b1e;
-  --card-foreground: #e5e1e4;
-  --popover: #1c1b1e;
-  --popover-foreground: #e5e1e4;
-  /* Gold is light, so text on it is dark. */
-  --primary: #f2ca50;
-  --primary-foreground: #2b2200;
-  --ring: #f2ca50;
-  --secondary: #2a2a2c;
-  --secondary-foreground: #e5e1e4;
-  --muted: #2a2a2c;
-  --muted-foreground: #a39e93;
-  --accent: #2a2a2c;
-  --accent-foreground: #e5e1e4;
+  --background: #0c0c0e;
+  --foreground: #f7f6f2;
+  --card: #131317;
+  --card-foreground: #f7f6f2;
+  --popover: #18181e;
+  --popover-foreground: #f7f6f2;
+  /* Bronze is light, so text on it is near-black. */
+  --primary: #c5a059;
+  --primary-foreground: #0c0c0e;
+  --ring: #c5a059;
+  --secondary: #18181e;
+  --secondary-foreground: #e6e5e0;
+  --muted: #18181e;
+  --muted-foreground: #a2a19b;
+  --accent: #18181e;
+  --accent-foreground: #e6e5e0;
   --destructive: #f43f5e;
   --success: #34d399;
   --warning: #fb923c;
-  --border: #36322b;
-  --input: #6e695f;
+  --border: #2a2a32;
+  --input: #7a766c;
+  --brand: #c5a059;
+  --brand-foreground: #0c0c0e;
+
+  --r-sm: 0px;
+  --r-md: 0px;
+  --r-lg: 2px;
+  --r-xl: 2px;
+  --r-pill: 2px;
+  --border-w: 1px;
+  --shadow-card: 0 0 45px -10px rgb(197 160 89 / 0.1);
+  --font-heading: 'Cormorant Garamond', Georgia, serif;
+  --font-body: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-label: 'Cinzel', Georgia, serif;
+  --label-transform: uppercase;
+  --label-tracking: 0.08em;
+  --heading-weight: 500;
+  --heading-transform: none;
+  --heading-tracking: -0.01em;
+  /* Cormorant's letters are small for their size; this evens its x-height out with the other fonts. */
+  --heading-size-adjust: 0.46;
+}
+
+/*
+ * Graphite: a third, technical look. Zinc and white with one emerald accent, a soft rounded
+ * grid, Inter headings and monospace labels in sentence case, and a faint ruled page. It is also
+ * a dark theme, so ThemeContext puts both `.dark` and `.graphite` on <html>; this block overrides
+ * the dark one above it.
+ */
+.graphite {
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  --card: #121215;
+  --card-foreground: #f4f4f5;
+  --popover: #18181b;
+  --popover-foreground: #f4f4f5;
+  /* White buttons with black text, the way a terminal prompt would. */
+  --primary: #fafafa;
+  --primary-foreground: #09090b;
+  --ring: #34d399;
+  --secondary: #18181b;
+  --secondary-foreground: #e4e4e7;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #f87171;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --border: #27272a;
+  --input: #71717a;
+  --brand: #34d399;
+  --brand-foreground: #052e1b;
+
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 10px;
+  --r-pill: 9999px;
+  --border-w: 1px;
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 12px 24px -16px rgb(0 0 0 / 0.8);
+  --font-heading: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-label: 'JetBrains Mono', ui-monospace, monospace;
+  --label-transform: none;
+  --label-tracking: 0;
+  --heading-weight: 600;
+  --heading-transform: none;
+  --heading-tracking: -0.035em;
+  --heading-size-adjust: none;
+  --page-pattern:
+    linear-gradient(to right, #131316 1px, transparent 1px),
+    linear-gradient(to bottom, #131316 1px, transparent 1px);
 }
 
 /*
@@ -90,9 +202,9 @@
  * theme because each one points at a variable above.
  */
 @theme inline {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body);
   /* Headings. */
-  --font-display: 'Space Grotesk', 'Inter', ui-sans-serif, sans-serif;
+  --font-display: var(--font-heading);
   /* Timers and scores only, where fixed-width digits stop the numbers jittering. */
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
@@ -117,8 +229,27 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+}
+
+/* A heading: its family, weight, case and tracking all come from the theme. */
+@utility heading {
+  font-family: var(--font-display);
+  font-size-adjust: var(--heading-size-adjust);
+  font-weight: var(--heading-weight);
+  text-transform: var(--heading-transform);
+  letter-spacing: var(--heading-tracking);
+}
+
+/* A short label (button, badge): the theme picks the font and case. */
+@utility label {
+  font-family: var(--font-label);
+  text-transform: var(--label-transform);
+  letter-spacing: var(--label-tracking);
 }

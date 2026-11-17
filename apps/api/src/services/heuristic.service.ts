@@ -1,5 +1,87 @@
 import type { CandidateProfile } from '@interview/contracts';
 
+const CRITICAL_RESUME_HEADERS = [
+  // Skills
+  'skills', 'technical skills', 'skills & competencies', 'core competencies', 'technologies', 'tech stack', 'key skills',
+  // Experience
+  'experience', 'work experience', 'employment history', 'work history', 'professional experience', 'employment',
+  // Education
+  'education', 'academic background', 'academics', 'qualifications', 'academic history',
+  // Projects
+  'projects', 'key projects', 'personal projects', 'notable projects', 'academic projects'
+];
+
+/**
+ * Checks whether the text contains contact information (email or phone number).
+ */
+export function hasContactInfo(text: string): boolean {
+  if (!text) return false;
+
+  // 1. Check Email
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i;
+  if (emailRegex.test(text)) {
+    return true;
+  }
+
+  // 2. Check Phone (first 25 non-empty lines)
+  const phoneRegex = /(?:(?:\+?\d{1,3}[-.\s]?)?(?:\(?\d{2,4}\)?[-.\s]?)?\d{3,4}[-.\s]?\d{3,4}(?:[-.\s]?\d{1,4})?)/;
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+  for (const line of lines.slice(0, 25)) {
+    const cleaned = line.replace(/[^\d+() -]/g, '');
+    if (cleaned.length >= 10 && /\d{4,}/.test(cleaned)) {
+      if (phoneRegex.test(line)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Checks whether the text contains at least one common resume section:
+ * Experience, Education, Skills, or Projects.
+ */
+export function hasResumeSection(text: string): boolean {
+  if (!text) return false;
+
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+
+  for (const line of lines) {
+    if (/^--\s*\d+\s*of\s*\d+\s*--/i.test(line) || /^page\s*\d+/i.test(line)) {
+      continue;
+    }
+
+    const colonIdx = line.indexOf(':');
+    const headerCandidate = line.toLowerCase().replace(/[:#*_\-•]/g, '').trim();
+
+    if (colonIdx > 0 && colonIdx < 35) {
+      const beforeColon = line.slice(0, colonIdx).toLowerCase().replace(/[:#*_\-•]/g, '').trim();
+      if (CRITICAL_RESUME_HEADERS.some(h => beforeColon === h || beforeColon.startsWith(h + ' ') || beforeColon.endsWith(' ' + h))) {
+        return true;
+      }
+    }
+
+    if (CRITICAL_RESUME_HEADERS.some(h => headerCandidate === h || headerCandidate.startsWith(h + ' ') || headerCandidate.endsWith(' ' + h))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Deterministic check for the heuristic parser to verify whether a document looks like a resume.
+ * Requirement: document must have an email or phone number, PLUS at least one common resume section
+ * (Experience, Education, Skills, or Projects).
+ */
+export function isResumeHeuristically(text: string): boolean {
+  if (!text || text.trim().length === 0) {
+    return false;
+  }
+  return hasContactInfo(text) && hasResumeSection(text);
+}
+
 const COMMON_SKILLS = [
   'JavaScript', 'TypeScript', 'Python', 'Java', 'C++', 'C#', 'Go', 'Rust', 'Ruby', 'PHP', 'Swift', 'Kotlin',
   'HTML', 'HTML5', 'CSS', 'CSS3', 'Tailwind', 'Bootstrap', 'Sass',
