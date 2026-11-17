@@ -8,35 +8,47 @@ Each fixture is a JSON array of 6–10 turns between an interviewer (`AI`) and a
 
 ## Fixture Overview
 
-| Fixture File | Role | Turn Count | Representative Quality | Primary Purpose |
-| :--- | :--- | :---: | :--- | :--- |
-| `excellent.json` | Software Engineer | 8 | Top-tier candidate answers | High-benchmark responses with deep architectural and complexity analysis. |
-| `good.json` | Software Engineer | 8 | Competent candidate answers | Primary fixture loaded in unit tests (`evaluator.test.ts`, `evaluate-cli.test.ts`) for normal evaluation flows. |
-| `average.json` | Software Engineer | 8 | Mixed / intermediate answers | Realistic partial understanding, basic approaches with missing edge cases. |
-| `weak.json` | Software Engineer | 8 | Underprepared candidate answers | Surface-level answers, conceptual confusion, and minimal technical depth. |
-| `empty-answers.json` | Software Engineer | 6 | Interviewer questions with blank responses | Validates the guard condition throwing `'The transcript has no candidate answers to evaluate'`. |
-| `off-topic.json` | Software Engineer | 8 | Rambling, off-topic answers | Checks that answers which ignore the question score low. |
-| `data-analyst-strong.json` | Data Analyst | 8 | Top-tier candidate answers | Precise SQL (window functions, deduplication) and a clear analytical method. |
-| `data-analyst-weak.json` | Data Analyst | 8 | Underprepared candidate answers | Vague SQL, no window functions, no data-quality checks. |
-| `backend-developer-good.json` | Backend Developer | 8 | Competent candidate answers | Cursor pagination, JWT refresh and revocation, trade-offs explained. |
-| `backend-developer-average.json` | Backend Developer | 8 | Mixed / intermediate answers | Workable but shallow designs (offset pagination, basic JWT) without trade-offs. |
-| `tech-stack-python.json` | Software Engineer | 8 | Top-tier candidate answers | Python stack: min-heap (heapq), asyncio queues, cyclic generational GC, pytest. |
-| `tech-stack-java.json` | Software Engineer | 8 | Top-tier candidate answers | Java stack: PriorityQueue, BlockingQueue/ThreadPool, JVM GC (G1/ZGC), JUnit 5. |
-| `filler-heavy-correct.json` | Software Engineer | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): pauses and fillers affect Communication only, keeping high technical scores. |
-| `filler-heavy-data-analyst.json` | Data Analyst | 8 | Competent candidate answers with heavy fillers | Validates score separation (S-5, FR-21): SQL window functions and validation logic retain high scores despite disfluent delivery. |
-| `difficulty-basic.json` | Software Engineer | 8 | Top-tier basic answers | Hash table mechanics, array vs linked list, HTTP status codes, unit testing basics. |
-| `difficulty-advanced.json` | Software Engineer | 8 | Top-tier advanced answers | Distributed PN-Counter CRDTs, deadlock/data race triage, MVCC isolation anomalies, chaos engineering. |
+The directory contains 27 transcript fixtures: 26 scored fixtures with matching expected-score files, plus `empty-answers.json`, which tests rejection of transcripts without candidate answers.
+
+| Fixture File | Role | Difficulty | Turn Count | Representative Quality | Primary Purpose |
+| :--- | :--- | :---: | :---: | :--- | :--- |
+| `excellent.json` | Software Engineer | Advanced | 8 | Top-tier | Deep architectural and complexity analysis. |
+| `good.json` | Software Engineer | Intermediate | 8 | Competent | Standard evaluation and normal interview flow. |
+| `average.json` | Software Engineer | Intermediate | 8 | Mixed | Partial understanding and missing edge cases. |
+| `weak.json` | Software Engineer | Basic | 8 | Underprepared | Surface-level answers and conceptual confusion. |
+| `empty-answers.json` | Software Engineer | Basic | 6 | No candidate answers | Validates rejection of transcripts without candidate answers; no expected-score file. |
+| `off-topic.json` | Software Engineer | Intermediate | 8 | Off-topic | Checks that irrelevant answers receive low scores. |
+| `data-analyst-strong.json` | Data Analyst | Advanced | 8 | Top-tier | SQL window functions, deduplication, and analytical reasoning. |
+| `data-analyst-weak.json` | Data Analyst | Basic | 8 | Underprepared | Vague SQL and missing data-quality checks. |
+| `backend-developer-good.json` | Backend Developer | Advanced | 8 | Competent | Cursor pagination, JWT refresh/revocation, and trade-offs. |
+| `backend-developer-average.json` | Backend Developer | Intermediate | 8 | Mixed | Workable but shallow backend designs. |
+| `tech-stack-python.json` | Software Engineer | Advanced | 8 | Top-tier | Python implementation parity (PN-8). |
+| `tech-stack-java.json` | Software Engineer | Advanced | 8 | Top-tier | Java implementation parity (PN-8). |
+| `filler-heavy-correct.json` | Software Engineer | Intermediate | 8 | Competent, disfluent | Speech fillers should affect communication, not technical scores. |
+| `filler-heavy-data-analyst.json` | Data Analyst | Intermediate | 8 | Competent, disfluent | Tests score separation for SQL and data-quality reasoning. |
+| `difficulty-basic.json` | Software Engineer | Basic | 8 | Strong basic answers | Foundational algorithms, HTTP, and testing knowledge (PN-3). |
+| `difficulty-advanced.json` | Software Engineer | Advanced | 8 | Strong advanced answers | Distributed systems, concurrency, and database reasoning (PN-3). |
+| `concise-correct.json` | Software Engineer | Intermediate | 8 | Concise and accurate | Ensures concise answers are not penalized (S-6 / NFR-19). |
+| `long-vague.json` | Software Engineer | Intermediate | 8 | Verbose and vague | Ensures verbosity does not inflate scores (S-6 / NFR-19). |
+| `se-basic.json` | Software Engineer | Basic | 8 | Solid foundational answers | Recursion, binary search, modularity, and debugging (PN-4). |
+| `se-intermediate.json` | Software Engineer | Intermediate | 8 | Practical trade-off answers | Algorithms, caching, concurrency, and testing (PN-4). |
+| `se-advanced.json` | Software Engineer | Advanced | 8 | Production systems answers | Distributed rate limiting, consistent hashing, Saga, and latency (PN-4). |
+| `da-basic.json` | Data Analyst | Basic | 8 | Foundational analytics answers | SQL joins, duplicates, NULLs, and distribution metrics (PN-4). |
+| `da-intermediate.json` | Data Analyst | Intermediate | 8 | Practical analyst answers | Window functions, rolling averages, funnels, and cohorts (PN-4). |
+| `da-advanced.json` | Data Analyst | Advanced | 8 | Rigorous statistical answers | Experiment design, sequential tests, CUPED, and data modeling (PN-4). |
+| `backend-basic.json` | Backend Developer | Basic | 8 | Foundational backend answers | HTTP, idempotency, schema normalization, and connection pooling (PN-4). |
+| `backend-intermediate.json` | Backend Developer | Intermediate | 8 | Practical backend engineering | Pagination, indexing, caching, and worker queues (PN-4). |
+| `backend-advanced.json` | Backend Developer | Advanced | 8 | High-concurrency architecture | Distributed idempotency, PostgreSQL isolation, resilience, and migrations (PN-4). |
 
 ---
-
 ## Rubric Categories
 
-The production evaluator scores each fixture against the rubric of its role, defined in `rubrics.ts` (`getRubric(roleId)`). Each role has three categories, each scored as an integer on a **1 (poor) to 5 (excellent)** scale:
+The production evaluator scores each fixture against the rubric of its role, defined in `rubrics.ts` (`getRubric(roleId)`). Each role has three calibrated categories, each scored as an integer on a **1 (poor) to 5 (excellent)** scale:
 - **Software Engineer**: Problem Solving & Algorithms; Software Design & Architecture; Technical Communication.
 - **Data Analyst**: SQL & Analytical Reasoning; Data Interpretation & Business Insights; Statistical Understanding & Data Quality.
 - **Backend Developer**: API Design & Architecture; Database Modeling & Performance; System Reliability & Scalability.
 
-> **Known issue:** the `*.expected.json` files still use the old shared categories (Communication, Technical depth, Structure), so their category names don't match these rubrics yet. The overall quality levels below still describe each transcript.
+The benchmark (`scripts/bench.ts`) compares evaluated averages against the per-category `[min, max]` ranges specified in each fixture's matching `*.expected.json`.
 
 The "representative" ranges below are rough hand estimates of the average score. The benchmark checks the wider per-category ranges in each `*.expected.json`.
 
@@ -105,6 +117,36 @@ The "representative" ranges below are rough hand estimates of the average score.
 - **`difficulty-advanced.json`**:
   - Advanced Software Engineer questions (globally consistent distributed counters via PN-Counter CRDTs, deadlock/data race triage and lock-free CAS primitives, transaction isolation anomalies & MVCC snapshot mechanics, automated chaos engineering pipeline).
   - Evaluated against deeper expectations of distributed constraints, concurrency anomalies, and trade-offs. Expected: **4 – 5** across all categories.
+
+### 10. Concise vs. Verbose Answers Fixtures (S-6 / NFR-19)
+- **`concise-correct.json`**:
+  - Four Software Engineer technical interview questions (in-memory LRU cache, financial API idempotency, optimistic vs pessimistic locking, external API testing).
+  - The candidate gives concise, dense, technically complete answers (hash map + doubly linked list with O(1) ops, UUID idempotency keys + unique DB constraint, version checks vs SELECT FOR UPDATE, MSW/nock/WireMock mocking).
+  - Expected ranges: Problem Solving & Algorithms (4–5), Software Design & Architecture (4–5), Technical Communication (4–5).
+- **`long-vague.json`**:
+  - The exact same four Software Engineer technical interview questions.
+  - The candidate responds with lengthy (~2.5x word count), conversational, rambling answers that repeat truisms, omit crucial mechanisms, and propose flawed patterns (linear timestamp scanning, frontend-only button disabling, manual Postman tests).
+  - Expected ranges: Problem Solving & Algorithms (1–3), Software Design & Architecture (1–3), Technical Communication (1–3).
+  - Acceptance criteria (S-6):
+    - Overall score parity: concise answers score at least as well as long vague answers (`conciseAvg >= longVagueAvg`).
+    - Technical score parity: concise answers match or exceed long vague answers in non-communication technical categories (`conciseTechnicalAvg >= longVagueTechnicalAvg`).
+    - Technical quality threshold: concise answers achieve a high technical average (`conciseTechnicalAvg >= 3.50 / 5.00`).
+### 11. Cross-Role Validation Test Set Fixtures (PN-4 / DR-05)
+
+#### Software Engineer
+- **`se-basic.json`** (Basic): Recursion vs iteration stack frame mechanics, binary search O(log N) divide-and-conquer, DRY & Single Responsibility modularity, systematic debugging. Expected: **4 – 5** across categories.
+- **`se-intermediate.json`** (Intermediate): Two Sum algorithmic trade-offs (brute force vs sorted two-pointer vs hash map), thread-safe LRU cache with Doubly Linked List and Hash Map, optimistic vs pessimistic locking, automated test pyramid. Expected: **4 – 5** across categories.
+- **`se-advanced.json`** (Advanced): Multi-tier decentralized rate limiting with fail-open fallback, consistent hashing rings with virtual nodes, Saga pattern with transactional outbox, p99 tail latency triage and CFS quota throttling. Expected: **4 – 5** across categories.
+
+#### Data Analyst
+- **`da-basic.json`** (Basic): SQL join mechanics (INNER/LEFT/FULL OUTER), WHERE vs HAVING execution order, duplicate and NULL identification/imputation, mean vs median in skewed distributions for non-technical stakeholders. Expected: **4 – 5** across categories.
+- **`da-intermediate.json`** (Intermediate): MoM growth with LAG, 7-day rolling average with explicit ROWS BETWEEN framing, 3-dimensional conversion funnel decomposition, cohort retention matrix, pipeline validation invariants. Expected: **4 – 5** across categories.
+- **`da-advanced.json`** (Advanced): A/B test power sizing, sequential testing with alpha-spending, CUPED variance reduction, Simpson's Paradox resolution, Kimball dimensional modeling (fact/snapshot/SCD2), DAU vs MRR divergence analysis. Expected: **4 – 5** across categories.
+
+#### Backend Developer
+- **`backend-basic.json`** (Basic): Standard HTTP verbs and idempotency rules, normalized relational blog schema with foreign keys, Argon2id/bcrypt work factors, connection pooling reuse preventing thread exhaustion. Expected: **4 – 5** across categories.
+- **`backend-intermediate.json`** (Intermediate): Keyset/cursor-based pagination preventing O(N) degradation, B-Tree leftmost prefix composite indexing, Cache-Aside with stampede and penetration defenses, asynchronous queues with DLQs. Expected: **4 – 5** across categories.
+- **`backend-advanced.json`** (Advanced): Idempotent payment processing protocol, PostgreSQL transaction isolation levels (SSI vs write skew), circuit breakers with bulkheads, zero-downtime expand-contract schema migrations with lock_timeout. Expected: **4 – 5** across categories.
 
 The exact range per category is in each fixture's `*.expected.json`.
 

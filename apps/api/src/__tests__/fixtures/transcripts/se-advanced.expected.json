@@ -1,0 +1,24 @@
+{
+  "role": "software-engineer",
+  "difficulty": "advanced",
+  "scores": [
+    {
+      "category": "Problem Solving & Algorithms",
+      "min": 4,
+      "max": 5,
+      "reason": "Deep algorithmic grasp of consistent hashing rings, virtual nodes K/N redistribution, and multi-tier rate limiting algorithms."
+    },
+    {
+      "category": "Software Design & Architecture",
+      "min": 4,
+      "max": 5,
+      "reason": "Exemplary distributed systems architecture using the Saga pattern, transactional outbox, fail-open resilience, and compensating transactions."
+    },
+    {
+      "category": "Technical Communication",
+      "min": 4,
+      "max": 5,
+      "reason": "Mastery of distributed debugging articulating p99 latency tail anomalies, CFS quota throttling, and runtime GC profiling with remarkable clarity."
+    }
+  ]
+}

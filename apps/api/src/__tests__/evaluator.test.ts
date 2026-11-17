@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { TurnSpeaker } from '@interview/contracts';
@@ -6,11 +6,18 @@ import {
   evaluateTranscript,
   buildEvaluationPrompt,
   evaluationSchema,
+  deriveExpectedQuestions,
+  normalizeWhitespace,
   type EvaluationInput,
   type TranscriptTurn,
 } from '../services/evaluator.service';
-import { getRubric, UnknownRoleError, SCORE_SEPARATION_PRINCIPLE } from '../services/rubrics';
-import { evaluateScoreSeparation } from '../../scripts/bench';
+import {
+  getRubric,
+  UnknownRoleError,
+  SCORE_SEPARATION_PRINCIPLE,
+  CONCISE_ANSWERS_PRINCIPLE,
+} from '../services/rubrics';
+import { evaluateScoreSeparation, evaluateConciseAnswers } from '../../scripts/bench';
 
 // Established schema validation for transcript turn fixtures against shared contracts
 const TranscriptTurnSchema = z.object({
@@ -63,6 +70,17 @@ describe('FB4 — evaluator', () => {
       'difficulty-advanced.json',
       'filler-heavy-correct.json',
       'filler-heavy-data-analyst.json',
+      'concise-correct.json',
+      'long-vague.json',
+      'se-basic.json',
+      'se-intermediate.json',
+      'se-advanced.json',
+      'da-basic.json',
+      'da-intermediate.json',
+      'da-advanced.json',
+      'backend-basic.json',
+      'backend-intermediate.json',
+      'backend-advanced.json',
     ] as const;
     for (const name of fixtureNames) {
       const turns = loadTranscriptFixture(name);
@@ -204,6 +222,14 @@ describe('FB4 — evaluator', () => {
     expect(prompt).toContain('Judge technical depth on content only');
     expect(prompt).toContain('Data Interpretation & Business Insights');
     expect(prompt).toContain('explaining why this score was given');
+  });
+
+  it('includes concise answer fairness instruction in the evaluation prompt (S-6, NFR-19)', () => {
+    const prompt = buildEvaluationPrompt(SAMPLE);
+    expect(prompt).toContain('Conciseness and answer length');
+    expect(prompt).toContain(CONCISE_ANSWERS_PRINCIPLE);
+    expect(prompt).toContain('Never penalize a concise answer simply because it is brief');
+    expect(prompt).toContain('Do not reward rambling, repetitive, or vague explanations');
   });
 
   describe('PN-8 — Technology-independent benchmark scoring parity', () => {
@@ -811,6 +837,772 @@ describe('FB4 — evaluator', () => {
       ]);
       expect(resultErrored.pass).toBe(false);
       expect(resultErrored.error).toContain('No successful evaluated runs');
+    });
+  });
+
+  describe('S-6 — Concise vs. verbose answers evaluation (NFR-19)', () => {
+    it('verifies that concise-correct and long-vague have identical questions and valid turn structures', () => {
+      const conciseTurns = loadTranscriptFixture('concise-correct.json');
+      const longVagueTurns = loadTranscriptFixture('long-vague.json');
+
+      expect(conciseTurns.length).toBe(8);
+      expect(longVagueTurns.length).toBe(8);
+
+      const aiConcise = conciseTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      const aiLongVague = longVagueTurns.filter((t) => t.speaker === 'AI').map((t) => t.text);
+      expect(aiConcise).toEqual(aiLongVague);
+
+      const conciseText = conciseTurns.filter((t) => t.speaker === 'CANDIDATE').map((t) => t.text).join(' ');
+      const longVagueText = longVagueTurns.filter((t) => t.speaker === 'CANDIDATE').map((t) => t.text).join(' ');
+
+      const conciseWordCount = conciseText.split(/\s+/).length;
+      const longVagueWordCount = longVagueText.split(/\s+/).length;
+
+      // long-vague candidate text should be significantly more verbose (> 1.8x word count)
+      expect(longVagueWordCount).toBeGreaterThan(conciseWordCount * 1.8);
+    });
+
+    it('demonstrates that a concise, correct answer scores at least as well as a long, vague answer', async () => {
+      const conciseTurns = loadTranscriptFixture('concise-correct.json');
+      const longVagueTurns = loadTranscriptFixture('long-vague.json');
+
+      const mockConciseReply = JSON.stringify({
+        summary: 'Concise, direct, and technically rigorous explanations of LRU caching, idempotency, locking, and test mocking.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 5,
+            comment: 'Awarded 5 because the candidate correctly selected a hash map + doubly linked list with exact O(1) complexity analysis.',
+            strengths: ['O(1) LRU data structure design', 'Correct lock synchronization'],
+            improvements: ['Could mention cache capacity sizing'],
+            quote: 'combine a doubly linked list with a hash map',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 5,
+            comment: 'Awarded 5 because the candidate articulated unique database idempotency keys, versioned optimistic locking, and mock servers.',
+            strengths: ['Idempotency table with unique constraint', 'Optimistic locking version checking'],
+            improvements: ['Could elaborate on distributed lock timeouts'],
+            quote: 'The client generates a unique idempotency key (like a UUID v4) passed via an HTTP header',
+          },
+          {
+            category: 'Technical Communication',
+            score: 5,
+            comment: 'Awarded 5 because the candidate communicated technical solutions clearly and concisely without unnecessary verbosity.',
+            strengths: ['Direct, structured explanations', 'Concise coverage of core mechanisms'],
+            improvements: ['None needed for this level of conciseness'],
+            quote: 'For unit tests, I mock the HTTP client interface or use MSW/nock',
+          },
+        ],
+      });
+
+      const mockLongVagueReply = JSON.stringify({
+        summary: 'Long-winded responses with general explanations that lack specific technical depth, proposing inefficient or fragile designs.',
+        scores: [
+          {
+            category: 'Problem Solving & Algorithms',
+            score: 2,
+            comment: 'Awarded 2 because the candidate proposed scanning arrays or timestamps in O(N) time for an LRU cache rather than constant-time data structures.',
+            strengths: ['Understands that LRU tracks recency'],
+            improvements: ['Use hash map combined with doubly linked list instead of linear scans'],
+            quote: 'Whenever you get an item, you look through the collection to find it',
+          },
+          {
+            category: 'Software Design & Architecture',
+            score: 2,
+            comment: 'Awarded 2 because relying on client-side button disabling and manual Postman testing is fragile and misses standard idempotency patterns.',
+            strengths: ['Recognizes that duplicate payments are harmful'],
+            improvements: ['Implement server-side idempotency keys with unique database constraints'],
+            quote: 'You can have the frontend disable the payment button after the first click',
+          },
+          {
+            category: 'Technical Communication',
+            score: 2,
+            comment: 'Awarded 2 because the explanations are repetitive and rambling, taking considerable time without directly addressing technical specifics.',
+            strengths: ['Polite tone'],
+            improvements: ['Focus directly on answering the technical questions rather than repeating general concepts'],
+            quote: 'In software engineering, testing is super important, so we always emphasize writing good tests',
+          },
+        ],
+      });
+
+      const conciseEval = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: conciseTurns },
+        { generate: async () => ({ text: mockConciseReply }) }
+      );
+
+      const longVagueEval = await evaluateTranscript(
+        { roleId: 'software-engineer', turns: longVagueTurns },
+        { generate: async () => ({ text: mockLongVagueReply }) }
+      );
+
+      const conciseAvg = conciseEval.scores.reduce((a, b) => a + b.score, 0) / conciseEval.scores.length;
+      const longVagueAvg = longVagueEval.scores.reduce((a, b) => a + b.score, 0) / longVagueEval.scores.length;
+
+      // Concise and correct answer must score at least as well (and significantly higher in this case)
+      expect(conciseAvg).toBeGreaterThanOrEqual(longVagueAvg);
+      expect(conciseAvg).toBeGreaterThanOrEqual(4.5);
+      expect(longVagueAvg).toBeLessThanOrEqual(2.5);
+    });
+
+    it('evaluateConciseAnswers passes when concise answer scores higher than long vague answer', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 5 },
+                { category: 'Software Design & Architecture', score: 5 },
+                { category: 'Technical Communication', score: 5 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 14000,
+              promptTokens: 1400,
+              outputTokens: 450,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 2 },
+                { category: 'Software Design & Architecture', score: 2 },
+                { category: 'Technical Communication', score: 2 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(true);
+      expect(result.conciseAvg).toBe(5);
+      expect(result.longVagueAvg).toBe(2);
+      expect(result.conciseTechnicalAvg).toBe(5);
+      expect(result.longVagueTechnicalAvg).toBe(2);
+      expect(result.diff).toBe(3);
+      expect(result.technicalDiff).toBe(3);
+    });
+
+    it('evaluateConciseAnswers passes when concise and long vague answers score equally with high quality', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 4 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 4 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1200,
+              outputTokens: 420,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 4 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 4 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(true);
+      expect(result.diff).toBe(0);
+    });
+
+    it('evaluateConciseAnswers fails when long vague answer scores higher than concise answer', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 3 },
+                { category: 'Software Design & Architecture', score: 3 },
+                { category: 'Technical Communication', score: 3 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1200,
+              outputTokens: 420,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 4 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 4 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(false);
+      expect(result.diff).toBe(-1);
+    });
+
+    it('evaluateConciseAnswers fails when concise answer lacks technical substance even if communication score is high', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 3 },
+                { category: 'Software Design & Architecture', score: 3 },
+                { category: 'Technical Communication', score: 5 }, // overall avg = 3.67, but technical avg = 3.0 (< 3.5)
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1200,
+              outputTokens: 420,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 4 },
+                { category: 'Software Design & Architecture', score: 4 },
+                { category: 'Technical Communication', score: 2 }, // long-vague tech avg = 4.0 > concise tech avg (3.0)
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(false);
+      expect(result.technicalDiff).toBe(-1);
+    });
+
+    it('evaluateConciseAnswers fails when concise answer quality falls below acceptable threshold (< 3.5)', () => {
+      const mockResults = [
+        {
+          name: 'concise-correct',
+          runs: [
+            {
+              wallMs: 10000,
+              promptTokens: 1000,
+              outputTokens: 400,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 2 },
+                { category: 'Software Design & Architecture', score: 2 },
+                { category: 'Technical Communication', score: 2 },
+              ],
+            },
+          ],
+        },
+        {
+          name: 'long-vague',
+          runs: [
+            {
+              wallMs: 12000,
+              promptTokens: 1200,
+              outputTokens: 420,
+              scores: [
+                { category: 'Problem Solving & Algorithms', score: 1 },
+                { category: 'Software Design & Architecture', score: 1 },
+                { category: 'Technical Communication', score: 1 },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const result = evaluateConciseAnswers(mockResults);
+      expect(result.pass).toBe(false);
+    });
+
+    it('evaluateConciseAnswers returns error when required fixtures are missing or errored', () => {
+      const resultMissing = evaluateConciseAnswers([]);
+      expect(resultMissing.pass).toBe(false);
+      expect(resultMissing.error).toContain('Missing required concise answer benchmark fixture(s)');
+
+      const resultErrored = evaluateConciseAnswers([
+        {
+          name: 'concise-correct',
+          runs: [{ wallMs: 1000, promptTokens: 0, outputTokens: 0, scores: [], error: '503 error' }],
+        },
+        {
+          name: 'long-vague',
+          runs: [{ wallMs: 1000, promptTokens: 0, outputTokens: 0, scores: [], error: '503 error' }],
+        },
+      ]);
+      expect(resultErrored.pass).toBe(false);
+      expect(resultErrored.error).toContain('No successful evaluated runs');
+    });
+  });
+
+  describe('PN-9 - Per-answer feedback (#174)', () => {
+    const SAMPLE_PER_ANSWER = [
+      {
+        question: 'Welcome to the Software Engineer interview. Could you describe how you would design an asynchronous notification service that delivers emails and SMS messages reliably?',
+        summary: 'Decoupled API with RabbitMQ/SQS message queue and worker pool with 202 Accepted responses.',
+        strengths: ['Effective asynchronous queuing to decouple external latency', 'Appropriate 202 Accepted HTTP response design'],
+        improvements: ['Elaborate on queue partition keying for per-user FIFO ordering'],
+      },
+      {
+        question: 'What happens if a third-party provider like SendGrid experiences downtime or returns rate-limit errors?',
+        summary: 'Implemented exponential backoff with jitter and dead-letter queue routing for persistent failures.',
+        strengths: ['Exponential backoff with jitter avoids thundering herd', 'DLQ prevents bad messages from poisoning worker pool'],
+        improvements: ['Consider adding circuit breaker to halt requests during prolonged provider outage'],
+      },
+      {
+        question: 'How would you prevent duplicate notifications from being sent to a user if network timeouts occur during the third-party call?',
+        summary: 'Used database-backed idempotency keys in PostgreSQL with status tracking.',
+        strengths: ['Idempotency key protocol prevents duplicate sends on retries', 'Checked provider idempotency header integration'],
+        improvements: ['Discuss atomic state updates or distributed locks to prevent concurrent worker race conditions'],
+      },
+      {
+        question: 'How do you test and verify this notification service?',
+        summary: 'Outlined unit tests with mocked clients and integration tests with Docker Testcontainers.',
+        strengths: ['Thorough testing pyramid using Testcontainers for realistic dependencies', 'Simulated provider network timeouts for DLQ verification'],
+        improvements: ['Add end-to-end stress testing to assess queue throughput under high concurrency'],
+      },
+    ];
+
+    it('returns perAnswer feedback for every candidate answer in the transcript', async () => {
+      const replyWithPerAnswer = JSON.stringify({
+        summary: 'Solid performance across architecture and error handling.',
+        scores: RUBRIC.map((r, i) => scoreFor(r.category, 4)),
+        perAnswer: SAMPLE_PER_ANSWER,
+      });
+
+      const result = await evaluateTranscript(SAMPLE, {
+        generate: async () => ({ text: replyWithPerAnswer }),
+      });
+
+      expect(result.perAnswer).toBeDefined();
+      expect(result.perAnswer).toHaveLength(4);
+      expect(result.perAnswer![0].question).toContain('asynchronous notification service');
+      expect(result.perAnswer![0].summary).toContain('RabbitMQ/SQS');
+      expect(result.perAnswer![0].strengths.length).toBeGreaterThan(0);
+      expect(result.perAnswer![0].improvements.length).toBeGreaterThan(0);
+    });
+
+    it('puts per-answer instructions and perAnswer JSON schema into the evaluation prompt', () => {
+      const prompt = buildEvaluationPrompt(SAMPLE);
+      expect(prompt).toContain('Per-Answer Feedback');
+      expect(prompt).toContain('"perAnswer"');
+      expect(prompt).toContain('"question"');
+      expect(prompt).toContain('"summary"');
+      expect(prompt).toContain('"strengths"');
+      expect(prompt).toContain('"improvements"');
+      expect(prompt).toContain('Provide feedback ONLY for candidate answers');
+    });
+
+    it('evaluationSchema includes perAnswer with required fields', () => {
+      const schema = evaluationSchema(['Problem Solving & Algorithms']);
+      expect(schema.required).not.toContain('perAnswer');
+      expect((schema.properties as any).perAnswer).toBeDefined();
+      const perAnswerProps = (schema.properties as any).perAnswer;
+      expect(perAnswerProps.items.required).toEqual(['question', 'summary', 'strengths', 'improvements']);
+    });
+
+    it('rejects when perAnswer feedback has incomplete answer coverage and requirePerAnswer is true', async () => {
+      // Transcript has 4 candidate answers, but perAnswer only has 2
+      const incompleteReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: SAMPLE_PER_ANSWER.slice(0, 2),
+      });
+
+      await expect(
+        evaluateTranscript(SAMPLE, {
+          generate: async () => ({ text: incompleteReply }),
+          requirePerAnswer: true,
+        })
+      ).rejects.toThrow(/Incomplete per-answer feedback: expected 4 answer\(s\) but received 2/);
+    });
+
+    it('gracefully degrades to undefined perAnswer when perAnswer is incomplete and requirePerAnswer is false', async () => {
+      const incompleteReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: SAMPLE_PER_ANSWER.slice(0, 2),
+      });
+
+      const result = await evaluateTranscript(SAMPLE, {
+        generate: async () => ({ text: incompleteReply }),
+      });
+
+      expect(result.perAnswer).toBeUndefined();
+      expect(result.summary).toBe('Good start.');
+      expect(result.scores).toHaveLength(RUBRIC.length);
+    });
+
+    it('gracefully degrades to undefined perAnswer when perAnswer has schema errors and requirePerAnswer is false', async () => {
+      const malformedPerAnswerReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: [
+          {
+            question: 'Missing required fields',
+          },
+        ],
+      });
+
+      const result = await evaluateTranscript(SAMPLE, {
+        generate: async () => ({ text: malformedPerAnswerReply }),
+      });
+
+      expect(result.perAnswer).toBeUndefined();
+      expect(result.summary).toBe('Good start.');
+      expect(result.scores).toHaveLength(RUBRIC.length);
+    });
+
+    it('rejects when a perAnswer entry has an empty question and requirePerAnswer is true', async () => {
+      const emptyQuestionReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: [
+          { ...SAMPLE_PER_ANSWER[0], question: '' },
+          SAMPLE_PER_ANSWER[1],
+          SAMPLE_PER_ANSWER[2],
+          SAMPLE_PER_ANSWER[3],
+        ],
+      });
+
+      await expect(
+        evaluateTranscript(SAMPLE, {
+          generate: async () => ({ text: emptyQuestionReply }),
+          requirePerAnswer: true,
+        })
+      ).rejects.toThrow();
+    });
+
+    it('rejects when a perAnswer entry has an empty summary and requirePerAnswer is true', async () => {
+      const emptySummaryReply = JSON.stringify({
+        summary: 'Good start.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: [
+          { ...SAMPLE_PER_ANSWER[0], summary: '' },
+          SAMPLE_PER_ANSWER[1],
+          SAMPLE_PER_ANSWER[2],
+          SAMPLE_PER_ANSWER[3],
+        ],
+      });
+
+      await expect(
+        evaluateTranscript(SAMPLE, {
+          generate: async () => ({ text: emptySummaryReply }),
+          requirePerAnswer: true,
+        })
+      ).rejects.toThrow();
+    });
+
+    it('strictly enforces perAnswer when options.requirePerAnswer is true', async () => {
+      await expect(
+        evaluateTranscript(SAMPLE, {
+          generate: async () => ({ text: VALID }),
+          requirePerAnswer: true,
+        })
+      ).rejects.toThrow('The evaluator did not return per-answer feedback');
+    });
+
+    it('maintains backward compatibility when perAnswer is omitted and requirePerAnswer is false', async () => {
+      const result = await evaluateTranscript(SAMPLE, {
+        generate: async () => ({ text: VALID }),
+      });
+      expect(result.perAnswer).toBeUndefined();
+      expect(result.scores).toHaveLength(RUBRIC.length);
+      expect(result.summary).toBeTruthy();
+    });
+
+    it('handles multi-turn conversation preserving question-answer pairing and order', async () => {
+      const multiTurnInput: EvaluationInput = {
+        roleId: 'software-engineer',
+        turns: [
+          { speaker: 'AI', text: 'Question 1: What is a hash map?' },
+          { speaker: 'CANDIDATE', text: 'Answer 1: A hash map provides O(1) average lookup using hash buckets.' },
+          { speaker: 'AI', text: 'Follow-up 1: What happens on collision?' },
+          { speaker: 'CANDIDATE', text: 'Answer 2: Separate chaining with linked lists or open addressing.' },
+        ],
+      };
+
+      const reply = JSON.stringify({
+        summary: 'Clear algorithmic knowledge.',
+        scores: RUBRIC.map((r) => scoreFor(r.category)),
+        perAnswer: [
+          {
+            question: 'Question 1: What is a hash map?',
+            summary: 'Accurately defined hash map with O(1) average lookup and hash buckets.',
+            strengths: ['Correct time complexity'],
+            improvements: ['Mention worst-case O(N) degradation'],
+          },
+          {
+            question: 'Follow-up 1: What happens on collision?',
+            summary: 'Identified separate chaining and open addressing collision resolution.',
+            strengths: ['Identified primary collision resolution strategies'],
+            improvements: ['Explain tree-based bucket optimization in Java 8+'],
+          },
+        ],
+      });
+
+      const result = await evaluateTranscript(multiTurnInput, {
+        generate: async () => ({ text: reply }),
+      });
+
+      expect(result.perAnswer).toHaveLength(2);
+      expect(result.perAnswer![0].question).toBe('Question 1: What is a hash map?');
+      expect(result.perAnswer![1].question).toBe('Follow-up 1: What happens on collision?');
+    });
+
+    describe('question-answer pairing validation', () => {
+      const PAIRING_INPUT: EvaluationInput = {
+        roleId: 'software-engineer',
+        turns: [
+          { speaker: 'AI', text: 'Question 1: What is a hash map?' },
+          { speaker: 'CANDIDATE', text: 'A hash map provides O(1) average lookup.' },
+          { speaker: 'AI', text: 'Follow-up: What happens on collision?' },
+          { speaker: 'CANDIDATE', text: 'Separate chaining or open addressing.' },
+        ],
+      };
+
+      function pairingReply(perAnswer: Array<{ question: string; summary: string; strengths: string[]; improvements: string[] }>) {
+        return JSON.stringify({
+          summary: 'Good answers.',
+          scores: RUBRIC.map((r) => scoreFor(r.category)),
+          perAnswer,
+        });
+      }
+
+      const CORRECT_PER_ANSWER = [
+        {
+          question: 'Question 1: What is a hash map?',
+          summary: 'Defined hash map with O(1) lookup.',
+          strengths: ['Correct complexity'],
+          improvements: ['Mention worst case'],
+        },
+        {
+          question: 'Follow-up: What happens on collision?',
+          summary: 'Identified chaining and open addressing.',
+          strengths: ['Named both strategies'],
+          improvements: ['Explain rehashing'],
+        },
+      ];
+
+      it('accepts correct question-answer pairing', async () => {
+        const result = await evaluateTranscript(PAIRING_INPUT, {
+          generate: async () => ({ text: pairingReply(CORRECT_PER_ANSWER) }),
+        });
+        expect(result.perAnswer).toHaveLength(2);
+        expect(result.perAnswer![0].question).toBe('Question 1: What is a hash map?');
+        expect(result.perAnswer![1].question).toBe('Follow-up: What happens on collision?');
+      });
+
+      it('rejects a wrong question for an answer when requirePerAnswer is true', async () => {
+        const wrong = [
+          { ...CORRECT_PER_ANSWER[0], question: 'Completely different question?' },
+          CORRECT_PER_ANSWER[1],
+        ];
+        await expect(
+          evaluateTranscript(PAIRING_INPUT, {
+            generate: async () => ({ text: pairingReply(wrong) }),
+            requirePerAnswer: true,
+          })
+        ).rejects.toThrow(/entry 1 question does not match/);
+      });
+
+      it('rejects reordered questions when requirePerAnswer is true', async () => {
+        const swapped = [CORRECT_PER_ANSWER[1], CORRECT_PER_ANSWER[0]];
+        await expect(
+          evaluateTranscript(PAIRING_INPUT, {
+            generate: async () => ({ text: pairingReply(swapped) }),
+            requirePerAnswer: true,
+          })
+        ).rejects.toThrow(/entry 1 question does not match/);
+      });
+
+      it('rejects candidate answer without a preceding interviewer question when requirePerAnswer is true', async () => {
+        const noAiFirst: EvaluationInput = {
+          roleId: 'software-engineer',
+          turns: [
+            { speaker: 'CANDIDATE', text: 'I know hash maps.' },
+            { speaker: 'AI', text: 'Tell me more.' },
+            { speaker: 'CANDIDATE', text: 'They use buckets.' },
+          ],
+        };
+        const reply = pairingReply([
+          {
+            question: 'N/A',
+            summary: 'Stated knowledge.',
+            strengths: ['Confidence'],
+            improvements: ['Wait for the question'],
+          },
+          {
+            question: 'Tell me more.',
+            summary: 'Mentioned buckets.',
+            strengths: ['Correct'],
+            improvements: ['Elaborate'],
+          },
+        ]);
+        await expect(
+          evaluateTranscript(noAiFirst, {
+            generate: async () => ({ text: reply }),
+            requirePerAnswer: true,
+          })
+        ).rejects.toThrow(/entry 1 has no preceding interviewer question/);
+      });
+
+      it('accepts whitespace-only differences without false failures', async () => {
+        const whitespaced = [
+          { ...CORRECT_PER_ANSWER[0], question: '  Question  1:  What is a hash map?  ' },
+          { ...CORRECT_PER_ANSWER[1], question: 'Follow-up:  What happens\ton collision?' },
+        ];
+        const result = await evaluateTranscript(PAIRING_INPUT, {
+          generate: async () => ({ text: pairingReply(whitespaced) }),
+        });
+        expect(result.perAnswer).toHaveLength(2);
+      });
+
+      it('deriveExpectedQuestions returns null for orphaned candidate turns', () => {
+        const turns: TranscriptTurn[] = [
+          { speaker: 'CANDIDATE', text: 'No preceding AI turn.' },
+          { speaker: 'AI', text: 'First AI question.' },
+          { speaker: 'CANDIDATE', text: 'Answer to first AI question.' },
+        ];
+        expect(deriveExpectedQuestions(turns)).toEqual([null, 'First AI question.']);
+      });
+
+      it('normalizeWhitespace collapses tabs, newlines, and multiple spaces', () => {
+        expect(normalizeWhitespace('  hello   world  ')).toBe('hello world');
+        expect(normalizeWhitespace('a\tb\nc')).toBe('a b c');
+        expect(normalizeWhitespace('   ')).toBe('');
+      });
+    });
+  });
+
+  describe('PN-4 — Cross-role validation test set (#171)', () => {
+    const PN4_FIXTURE_CONFIGS = [
+      { name: 'se-basic', role: 'software-engineer', difficulty: 'basic' },
+      { name: 'se-intermediate', role: 'software-engineer', difficulty: 'intermediate' },
+      { name: 'se-advanced', role: 'software-engineer', difficulty: 'advanced' },
+      { name: 'da-basic', role: 'data-analyst', difficulty: 'basic' },
+      { name: 'da-intermediate', role: 'data-analyst', difficulty: 'intermediate' },
+      { name: 'da-advanced', role: 'data-analyst', difficulty: 'advanced' },
+      { name: 'backend-basic', role: 'backend-developer', difficulty: 'basic' },
+      { name: 'backend-intermediate', role: 'backend-developer', difficulty: 'intermediate' },
+      { name: 'backend-advanced', role: 'backend-developer', difficulty: 'advanced' },
+    ] as const;
+
+    it('verifies all 9 new PN-4 transcript fixtures load, have valid turn counts and non-empty text', () => {
+      expect(PN4_FIXTURE_CONFIGS).toHaveLength(9);
+
+      for (const config of PN4_FIXTURE_CONFIGS) {
+        const turns = loadTranscriptFixture(`${config.name}.json`);
+        expect(turns).toHaveLength(8);
+
+        const aiTurns = turns.filter((t) => t.speaker === 'AI');
+        const candidateTurns = turns.filter((t) => t.speaker === 'CANDIDATE');
+        expect(aiTurns).toHaveLength(4);
+        expect(candidateTurns).toHaveLength(4);
+
+        for (const turn of turns) {
+          expect(turn.text.trim().length).toBeGreaterThan(10);
+        }
+      }
+    });
+
+    it('verifies all 9 fixtures have corresponding .expected.json with valid ranges and reasons', () => {
+      const rolesRepresented = new Set<string>();
+      const difficultiesRepresented = new Set<string>();
+
+      for (const config of PN4_FIXTURE_CONFIGS) {
+        const fileUrl = new URL(
+          `./fixtures/transcripts/${config.name}.expected.json`,
+          import.meta.url
+        );
+        expect(existsSync(fileUrl)).toBe(true);
+
+        const content = JSON.parse(readFileSync(fileUrl, 'utf-8'));
+        expect(content.role).toBe(config.role);
+        expect(content.difficulty).toBe(config.difficulty);
+        rolesRepresented.add(content.role);
+        difficultiesRepresented.add(content.difficulty);
+
+        const rubricCategories = getRubric(config.role).map((r) => r.category);
+        expect(content.scores).toHaveLength(3);
+
+        const expectedCategories = content.scores.map((s: any) => s.category);
+        expect(expectedCategories.sort()).toEqual([...rubricCategories].sort());
+
+        for (const s of content.scores) {
+          expect(s.min).toBeGreaterThanOrEqual(1);
+          expect(s.max).toBeLessThanOrEqual(5);
+          expect(s.min).toBeLessThanOrEqual(s.max);
+          expect(typeof s.reason).toBe('string');
+          expect(s.reason.trim().length).toBeGreaterThan(15);
+        }
+      }
+
+      // Check full matrix coverage: 3 roles x 3 difficulty levels
+      expect(rolesRepresented).toEqual(
+        new Set(['software-engineer', 'data-analyst', 'backend-developer'])
+      );
+      expect(difficultiesRepresented).toEqual(
+        new Set(['basic', 'intermediate', 'advanced'])
+      );
+    });
+
+    it('verifies unique fixture names across all fixtures', () => {
+      const names = PN4_FIXTURE_CONFIGS.map((c) => c.name);
+      const uniqueNames = new Set(names);
+      expect(uniqueNames.size).toBe(9);
+    });
+
+    it('evaluates mock transcripts for all three roles and confirms role-specific rubric criteria in prompt', async () => {
+      for (const roleId of ['software-engineer', 'data-analyst', 'backend-developer']) {
+        const rubric = getRubric(roleId);
+        const prompt = buildEvaluationPrompt({ roleId, turns: SAMPLE.turns });
+
+        for (const cat of rubric) {
+          expect(prompt).toContain(cat.category);
+        }
+      }
+    });
+
+    it('correctly detects when an evaluated score falls outside the expected range', () => {
+      const expectedRange = { category: 'SQL & Analytical Reasoning', min: 4, max: 5 };
+      const passingScore = 4.3;
+      const failingLow = 3.2;
+      const failingHigh = 5.5;
+
+      const isPass = (score: number) => score >= expectedRange.min && score <= expectedRange.max;
+      expect(isPass(passingScore)).toBe(true);
+      expect(isPass(failingLow)).toBe(false);
+      expect(isPass(failingHigh)).toBe(false);
     });
   });
 });
