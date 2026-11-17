@@ -456,3 +456,453 @@ test("keyboard interactions on plotted points and accessible links navigate to f
   });
   expect(accessibleLink).toHaveAttribute("href", "/interview/sess-key/feedback");
 });
+
+test("given fewer than 3 scored interviews, renders insufficient data state for category trends", async () => {
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "sess-1",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-01T10:00:00Z",
+        endedAt: "2026-11-01T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [
+          { category: "Problem Solving & Algorithms", score: 4.0 },
+          { category: "Software Design & Architecture", score: 4.0 },
+        ],
+      },
+      {
+        id: "sess-2",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-02T10:00:00Z",
+        endedAt: "2026-11-02T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.5,
+        categoryScores: [
+          { category: "Problem Solving & Algorithms", score: 4.5 },
+          { category: "Software Design & Architecture", score: 4.5 },
+        ],
+      },
+    ],
+  });
+
+  render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  const banner = await screen.findByTestId("category-trends-insufficient");
+  expect(banner).toBeInTheDocument();
+  expect(banner).toHaveTextContent(/At least 3 scored interviews are required to calculate category trends/i);
+  expect(banner).toHaveTextContent(/you have 2/i);
+  expect(screen.queryByTestId("category-trends-container")).not.toBeInTheDocument();
+});
+
+test("given 3 or more scored interviews, renders Category-wise Trends with accurate averages and trends (improving, declining, stable)", async () => {
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [
+      // Oldest session
+      {
+        id: "s1-oldest",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-01T10:00:00Z",
+        endedAt: "2026-11-01T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [
+          { category: "Problem Solving & Algorithms", score: 3.0 },
+          { category: "Software Design & Architecture", score: 5.0 },
+          { category: "Technical Communication", score: 4.0 },
+        ],
+      },
+      // Middle session
+      {
+        id: "s2-middle",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-03T10:00:00Z",
+        endedAt: "2026-11-03T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 3.8,
+        categoryScores: [
+          { category: "Problem Solving & Algorithms", score: 4.0 },
+          { category: "Software Design & Architecture", score: 3.5 },
+          { category: "Technical Communication", score: 4.0 },
+        ],
+      },
+      // Newest session
+      {
+        id: "s3-newest",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-05T10:00:00Z",
+        endedAt: "2026-11-05T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 3.7,
+        categoryScores: [
+          { category: "Problem Solving & Algorithms", score: 5.0 },
+          { category: "Software Design & Architecture", score: 2.0 },
+          { category: "Technical Communication", score: 4.0 },
+        ],
+      },
+    ],
+  });
+
+  render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  const container = await screen.findByTestId("category-trends-container");
+  expect(container).toBeInTheDocument();
+
+  // Problem Solving: (3 + 4 + 5) / 3 = 4.0 | older: 3, newer: 5 | delta = +2.0 -> Improving
+  const psAvg = screen.getByTestId("category-avg-problem-solving-algorithms");
+  expect(psAvg).toHaveTextContent("4.0");
+  const psBadge = screen.getByTestId("trend-badge-improving-problem-solving-algorithms");
+  expect(psBadge).toHaveTextContent("Improving");
+
+  // Software Design: (5 + 3.5 + 2) / 3 = 3.5 | older: 5, newer: 2 | delta = -3.0 -> Declining
+  const sdAvg = screen.getByTestId("category-avg-software-design-architecture");
+  expect(sdAvg).toHaveTextContent("3.5");
+  const sdBadge = screen.getByTestId("trend-badge-declining-software-design-architecture");
+  expect(sdBadge).toHaveTextContent("Declining");
+
+  // Technical Communication: (4 + 4 + 4) / 3 = 4.0 | older: 4, newer: 4 | delta = 0 -> Stable
+  const tcAvg = screen.getByTestId("category-avg-technical-communication");
+  expect(tcAvg).toHaveTextContent("4.0");
+  const tcBadge = screen.getByTestId("trend-badge-stable-technical-communication");
+  expect(tcBadge).toHaveTextContent("Stable");
+});
+
+test("given a category with only 1 observation when total sessions >= 3, marks that category as insufficient_data", async () => {
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "s1",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-01T10:00:00Z",
+        endedAt: "2026-11-01T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [
+          { category: "Problem Solving & Algorithms", score: 4.0 },
+        ],
+      },
+      {
+        id: "s2",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-02T10:00:00Z",
+        endedAt: "2026-11-02T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.2,
+        categoryScores: [
+          { category: "Problem Solving & Algorithms", score: 4.5 },
+        ],
+      },
+      {
+        id: "s3",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-03T10:00:00Z",
+        endedAt: "2026-11-03T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.5,
+        categoryScores: [
+          { category: "Problem Solving & Algorithms", score: 5.0 },
+          { category: "Technical Communication", score: 3.5 }, // only 1 occurrence across all sessions
+        ],
+      },
+    ],
+  });
+
+  render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  await screen.findByTestId("category-trends-container");
+
+  // Problem Solving has 3 observations -> Improving
+  expect(screen.getByTestId("trend-badge-improving-problem-solving-algorithms")).toHaveTextContent("Improving");
+
+  // Technical Communication has only 1 observation -> Insufficient data
+  const tcBadge = screen.getByTestId("trend-badge-insufficient-technical-communication");
+  expect(tcBadge).toHaveTextContent("Insufficient data");
+  expect(screen.getByTestId("category-avg-technical-communication")).toHaveTextContent("3.5");
+});
+
+test("filters out invalid category scores and handles repeated categories within same feedback", async () => {
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "s1",
+        userId: "u1",
+        role: "backend-developer",
+        status: "ENDED",
+        startedAt: "2026-11-01T10:00:00Z",
+        endedAt: "2026-11-01T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 3.0,
+        categoryScores: [
+          { category: "", score: 4.0 }, // empty name -> ignored
+          { category: "API Design & Architecture", score: 0.5 }, // out of range -> ignored
+          { category: "API Design & Architecture", score: 3.0 }, // valid
+        ],
+      },
+      {
+        id: "s2",
+        userId: "u1",
+        role: "backend-developer",
+        status: "ENDED",
+        startedAt: "2026-11-02T10:00:00Z",
+        endedAt: "2026-11-02T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 3.5,
+        categoryScores: [
+          // Repeated category in the same session: (3.0 + 4.0) / 2 = 3.5
+          { category: "API Design & Architecture", score: 3.0 },
+          { category: "API Design & Architecture", score: 4.0 },
+        ],
+      },
+      {
+        id: "s3",
+        userId: "u1",
+        role: "backend-developer",
+        status: "ENDED",
+        startedAt: "2026-11-03T10:00:00Z",
+        endedAt: "2026-11-03T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [
+          { category: "API Design & Architecture", score: 4.0 },
+        ],
+      },
+    ],
+  });
+
+  render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  await screen.findByTestId("category-trends-container");
+
+  // Valid scores: s1: 3.0, s2: 3.5 (averaged), s3: 4.0
+  // Average: (3.0 + 3.5 + 4.0) / 3 = 3.5
+  // Older: [3.0], Newer: [4.0], delta = +1.0 -> Improving
+  expect(screen.getByTestId("category-avg-api-design-architecture")).toHaveTextContent("3.5");
+  expect(screen.getByTestId("trend-badge-improving-api-design-architecture")).toHaveTextContent("Improving");
+});
+
+test("groups categories across multiple interview roles without mixing unrelated skills", async () => {
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "s1-swe",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-01T10:00:00Z",
+        endedAt: "2026-11-01T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [{ category: "Problem Solving & Algorithms", score: 3.0 }],
+      },
+      {
+        id: "s2-swe",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-02T10:00:00Z",
+        endedAt: "2026-11-02T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [{ category: "Problem Solving & Algorithms", score: 4.0 }],
+      },
+      {
+        id: "s3-swe",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-03T10:00:00Z",
+        endedAt: "2026-11-03T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [{ category: "Problem Solving & Algorithms", score: 5.0 }],
+      },
+      {
+        id: "s4-da",
+        userId: "u1",
+        role: "data-analyst",
+        status: "ENDED",
+        startedAt: "2026-11-04T10:00:00Z",
+        endedAt: "2026-11-04T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [{ category: "SQL & Analytical Reasoning", score: 4.5 }],
+      },
+    ],
+  });
+
+  render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  await screen.findByTestId("category-trends-container");
+
+  const sweCard = screen.getByTestId("category-trend-card-problem-solving-algorithms");
+  expect(within(sweCard).getByText("Software Engineer")).toBeInTheDocument();
+  expect(within(sweCard).getByText("Problem Solving & Algorithms")).toBeInTheDocument();
+  expect(within(sweCard).getByText("Improving")).toBeInTheDocument();
+
+  const daCard = screen.getByTestId("category-trend-card-sql-analytical-reasoning");
+  expect(within(daCard).getByText("Data Analyst")).toBeInTheDocument();
+  expect(within(daCard).getByText("SQL & Analytical Reasoning")).toBeInTheDocument();
+  expect(within(daCard).getByText("Insufficient data")).toBeInTheDocument();
+});
+
+test("handles duplicate interview dates with deterministic chronological ordering", async () => {
+  const sameDate = "2026-11-01T10:00:00Z";
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "sess-b",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: sameDate,
+        endedAt: "2026-11-01T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [{ category: "Problem Solving & Algorithms", score: 4.0 }],
+      },
+      {
+        id: "sess-a",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: sameDate,
+        endedAt: "2026-11-01T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 3.0,
+        categoryScores: [{ category: "Problem Solving & Algorithms", score: 3.0 }],
+      },
+      {
+        id: "sess-c",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-02T10:00:00Z",
+        endedAt: "2026-11-02T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 5.0,
+        categoryScores: [{ category: "Problem Solving & Algorithms", score: 5.0 }],
+      },
+    ],
+  });
+
+  render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  await screen.findByTestId("category-trends-container");
+
+  // Deterministic sorting (sess-a, sess-b, sess-c)
+  // Scores: [3.0, 4.0, 5.0]
+  // Average: 4.0
+  // Older: [3.0], Newer: [5.0] -> Improving
+  expect(screen.getByTestId("category-avg-problem-solving-algorithms")).toHaveTextContent("4.0");
+  expect(screen.getByTestId("trend-badge-improving-problem-solving-algorithms")).toHaveTextContent("Improving");
+});
+
+test("ignores sessions where feedbackStatus is pending or failed or scores are missing when computing category trends", async () => {
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "s1-ready",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-01T10:00:00Z",
+        endedAt: "2026-11-01T10:30:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.0,
+        categoryScores: [{ category: "Problem Solving & Algorithms", score: 4.0 }],
+      },
+      {
+        id: "s2-pending",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-02T10:00:00Z",
+        endedAt: "2026-11-02T10:30:00Z",
+        feedbackStatus: "pending",
+        overallScore: null,
+        categoryScores: null,
+      },
+      {
+        id: "s3-failed",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-03T10:00:00Z",
+        endedAt: "2026-11-03T10:30:00Z",
+        feedbackStatus: "failed",
+        overallScore: null,
+        categoryScores: null,
+      },
+      {
+        id: "s4-live",
+        userId: "u1",
+        role: "software-engineer",
+        status: "LIVE",
+        startedAt: "2026-11-04T10:00:00Z",
+        endedAt: null,
+        feedbackStatus: null,
+        overallScore: null,
+        categoryScores: null,
+      },
+    ],
+  });
+
+  render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  // Only 1 eligible session -> insufficient data banner shown (you have 1)
+  const banner = await screen.findByTestId("category-trends-insufficient");
+  expect(banner).toHaveTextContent(/you have 1/i);
+  expect(screen.queryByTestId("category-trends-container")).not.toBeInTheDocument();
+});
