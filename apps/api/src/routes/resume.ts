@@ -97,7 +97,15 @@ router.post('/analyze', authenticate, upload.single('resume'), async (req, res) 
   }
 
   // 2. Analyze with Gemini
-  const { profile, source } = await analyzeResumeWithAI(extractedText);
+  const { profile, source, looksLikeResume } = await analyzeResumeWithAI(extractedText);
+
+  if (!looksLikeResume) {
+    res.status(400).json({
+      success: false,
+      message: "This doesn't look like a resume. Please upload your CV as a PDF.",
+    });
+    return;
+  }
 
   // 3. Save to database
   const resume = await prisma.resume.create({
