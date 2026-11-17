@@ -1,11 +1,15 @@
 import '@testing-library/jest-dom/vitest';
 import { test, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { Landing } from './Landing';
+import { ROLES } from '@interview/contracts';
+import { Landing, SESSION_MINUTES } from './Landing';
+import { DEFAULT_TIME_LIMIT_MIN } from '../interview-room/useInterview';
 
 let auth: { user: { id: string } | null; loading: boolean };
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
+// useInterview (imported for its time-limit constant) pulls in the Supabase client, which needs a URL.
+vi.mock('../../lib/supabase', () => ({ supabase: {}, isSupabaseConfigured: false }));
 
 const renderLanding = () =>
   render(
@@ -17,14 +21,17 @@ const renderLanding = () =>
     </MemoryRouter>,
   );
 
-test('signed-out visitor sees hero, three feature cards and CTA links to /login', () => {
+test('signed-out visitor sees the hero, and every link goes to /login except the in-page example link', () => {
   auth = { user: null, loading: false };
   renderLanding();
-  expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
-  expect(screen.getByRole('region', { name: 'Features' }).querySelectorAll('[data-slot="card"]')).toHaveLength(3);
-  const ctas = screen.getAllByRole('link');
-  expect(ctas.length).toBeGreaterThanOrEqual(1);
-  ctas.forEach((a) => expect(a).toHaveAttribute('href', '/login'));
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/practice interviews out loud/i);
+  const links = screen.getAllByRole('link');
+  expect(links.length).toBeGreaterThanOrEqual(3);
+  for (const link of links) {
+    const href = link.getAttribute('href');
+    expect(href === '/login' || href === '#example-report', `unexpected link ${href}`).toBe(true);
+  }
+  expect(screen.getByRole('link', { name: 'See an example report' })).toHaveAttribute('href', '#example-report');
 });
 
 test('signed-in user is redirected to the dashboard', () => {
@@ -42,10 +49,31 @@ test('renders nothing while auth is loading', () => {
 test('shows the three steps of the flow in order', () => {
   auth = { user: null, loading: false };
   renderLanding();
-  const steps = screen.getAllByRole('listitem').map((li) => li.textContent);
+  const steps = within(screen.getByRole('region', { name: 'How it works' }))
+    .getAllByRole('listitem')
+    .map((li) => li.textContent);
   expect(steps).toEqual([
     '01Upload your resume and choose a role',
     '02Answer the interviewer out loud',
     '03Read your feedback and follow the plan',
   ]);
+});
+
+test('lists the real roles and states the real session length', () => {
+  auth = { user: null, loading: false };
+  renderLanding();
+  const roles = screen.getByRole('region', { name: 'What you can practise' });
+  for (const role of ROLES) {
+    expect(within(roles).getByText(role.label)).toBeInTheDocument();
+  }
+  expect(SESSION_MINUTES).toBe(DEFAULT_TIME_LIMIT_MIN);
+  expect(screen.getByText(`${SESSION_MINUTES} min`)).toBeInTheDocument();
+});
+
+test('the sample report is clearly labelled as an example', () => {
+  auth = { user: null, loading: false };
+  renderLanding();
+  const report = screen.getByRole('region', { name: 'What your feedback looks like' });
+  expect(within(report).getByText('Example')).toBeInTheDocument();
+  expect(within(report).getByText(/made up to show the format/i)).toBeInTheDocument();
 });
