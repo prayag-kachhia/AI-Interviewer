@@ -25,6 +25,9 @@ It is a practice tool, not a hiring platform: there are no employer accounts.
 
 ## 2. The big picture
 
+> [!NOTE]
+> **Archived / Replaced:** This early overview has been superseded by the full production deployment and architecture specification with Mermaid diagrams in [docs/design.md](design.md) (Issue [#202](https://github.com/prayag-kachhia/AI-Interviewer/issues/202), D-1).
+
 ```
  Browser (React app, apps/web)
    │  1. sign in ──────────────────────────────> Supabase Auth  (issues a JWT access token)
@@ -112,6 +115,9 @@ tsconfig.base.json            shared strict TypeScript settings
 compiler, `tsc`) is required before every PR, and CI runs it.
 
 ## 5. One interview, end to end
+
+> [!NOTE]
+> **Archived / Replaced:** This section documents the early prototype flow (including legacy browser speech and client-side question banks that were deleted in K-8). The complete production sequence flow, state machines, and end-to-end request-chain walkthrough with JSON payloads are in [docs/design.md](design.md) (Issue [#202](https://github.com/prayag-kachhia/AI-Interviewer/issues/202), D-1).
 
 Follow these steps with the files open; it's the fastest way to learn the codebase.
 
