@@ -126,6 +126,7 @@ describe('MicCheck Component (VI-4, #143)', () => {
     });
 
     expect(screen.getByText('Sound Detected')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Sound Detected');
     expect(screen.getByText(/✅ Microphone is working properly\./i)).toBeInTheDocument();
   });
 
@@ -225,5 +226,102 @@ describe('MicCheck Component (VI-4, #143)', () => {
     expect(mockTrack.stop).toHaveBeenCalled();
     expect(mockAudioContext.close).toHaveBeenCalled();
     expect(window.cancelAnimationFrame).toHaveBeenCalled();
+  });
+
+  it('handles first visit with unlabeled devices and updates device list after granting permission', async () => {
+    // Before permission: unlabeled/empty device
+    mockEnumerateDevices.mockResolvedValueOnce([
+      { deviceId: '', kind: 'audioinput', label: '' },
+    ]);
+    // After permission: labeled device returned
+    mockEnumerateDevices.mockResolvedValueOnce([
+      { deviceId: 'mic-airpods', kind: 'audioinput', label: 'AirPods Pro Microphone' },
+    ]);
+
+    render(<MicCheck />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Microphone 1' })).toBeInTheDocument();
+    });
+
+    const testButton = screen.getByRole('button', { name: 'Test Microphone' });
+    await act(async () => {
+      fireEvent.click(testButton);
+    });
+
+    // Verifies devices were refreshed and updated to the labeled device
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'AirPods Pro Microphone' })).toBeInTheDocument();
+      // Verifies testing remains active without resetting to inactive
+      expect(screen.getByRole('button', { name: 'Stop Test' })).toBeInTheDocument();
+    });
+  });
+
+  it('stops tracks immediately if component unmounts while getUserMedia is pending', async () => {
+    let resolveGUM!: (stream: unknown) => void;
+    mockGetUserMedia.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveGUM = resolve;
+      })
+    );
+
+    const { unmount } = render(<MicCheck />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Test Microphone' }));
+    });
+
+    // Unmount while waiting for user permission dialog
+    unmount();
+
+    // Now user grants permission
+    await act(async () => {
+      resolveGUM(mockStream);
+    });
+
+    // Verify stream was immediately stopped to prevent orphaned recording
+    expect(mockTrack.stop).toHaveBeenCalled();
+  });
+
+  it('refreshes devices when devicechange event fires', async () => {
+    let deviceChangeHandler: (() => void) | null = null;
+    const addEventListenerMock = vi.fn((event: string, handler: () => void) => {
+      if (event === 'devicechange') {
+        deviceChangeHandler = handler;
+      }
+    });
+    const removeEventListenerMock = vi.fn();
+
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: {
+        getUserMedia: mockGetUserMedia,
+        enumerateDevices: mockEnumerateDevices,
+        addEventListener: addEventListenerMock,
+        removeEventListener: removeEventListenerMock,
+      },
+      configurable: true,
+    });
+
+    const { unmount } = render(<MicCheck />);
+
+    await waitFor(() => {
+      expect(addEventListenerMock).toHaveBeenCalledWith('devicechange', expect.any(Function));
+    });
+
+    // Simulate plugging in a new device
+    mockEnumerateDevices.mockResolvedValueOnce([
+      { deviceId: 'mic-headset', kind: 'audioinput', label: 'Wired Headset Mic' },
+    ]);
+
+    await act(async () => {
+      deviceChangeHandler?.();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Wired Headset Mic' })).toBeInTheDocument();
+    });
+
+    unmount();
+    expect(removeEventListenerMock).toHaveBeenCalledWith('devicechange', expect.any(Function));
   });
 });

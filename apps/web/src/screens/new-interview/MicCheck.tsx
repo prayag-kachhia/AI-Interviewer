@@ -29,6 +29,10 @@ export const MicCheck: React.FC<MicCheckProps> = ({ onDeviceChange, className })
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafIdRef = useRef<number | null>(null);
+  const isMountedRef = useRef<boolean>(true);
+  const selectedDeviceIdRef = useRef<string>(selectedDeviceId);
+
+  selectedDeviceIdRef.current = selectedDeviceId;
 
   // Stop active stream and release audio context cleanly
   const stopAudio = useCallback(() => {
@@ -56,6 +60,7 @@ export const MicCheck: React.FC<MicCheckProps> = ({ onDeviceChange, className })
     }
     try {
       const allDevices = await navigator.mediaDevices.enumerateDevices();
+      if (!isMountedRef.current) return;
       const audioInputs = allDevices
         .filter((d) => d.kind === 'audioinput')
         .map((d, index) => ({
@@ -68,14 +73,14 @@ export const MicCheck: React.FC<MicCheckProps> = ({ onDeviceChange, className })
       const stored = getPreferredMicId();
       if (stored && audioInputs.some((d) => d.deviceId === stored)) {
         setSelectedDeviceId(stored);
-      } else if (audioInputs.length > 0 && !selectedDeviceId) {
+      } else if (audioInputs.length > 0 && !selectedDeviceIdRef.current) {
         setSelectedDeviceId(audioInputs[0].deviceId);
         setPreferredMicId(audioInputs[0].deviceId);
       }
     } catch {
       // Ignore enumeration errors
     }
-  }, [selectedDeviceId]);
+  }, []);
 
   // Start capturing audio from selectedDeviceId and analyze level
   const startAudio = useCallback(
@@ -88,7 +93,7 @@ export const MicCheck: React.FC<MicCheckProps> = ({ onDeviceChange, className })
         return;
       }
 
-      const targetDeviceId = deviceIdToUse ?? selectedDeviceId;
+      const targetDeviceId = deviceIdToUse ?? selectedDeviceIdRef.current;
 
       try {
         const constraints: MediaStreamConstraints = {
@@ -96,13 +101,24 @@ export const MicCheck: React.FC<MicCheckProps> = ({ onDeviceChange, className })
         };
 
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!isMountedRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
         streamRef.current = stream;
         setIsTesting(true);
 
         // Re-read devices now that permission is definitely granted (reveals labels)
         await refreshDevices();
+        if (!isMountedRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
 
-        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         if (!AudioCtx) return;
 
         const audioCtx = new AudioCtx();
@@ -152,16 +168,29 @@ export const MicCheck: React.FC<MicCheckProps> = ({ onDeviceChange, className })
         setPermissionError(msg);
       }
     },
-    [refreshDevices, selectedDeviceId, stopAudio]
+    [refreshDevices, stopAudio]
   );
 
-  // Initialize: enumerate devices on mount
+  // Track mount status & clean up on unmount
   useEffect(() => {
-    refreshDevices();
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       stopAudio();
     };
-  }, [refreshDevices, stopAudio]);
+  }, [stopAudio]);
+
+  // Enumerate devices on mount and listen for hardware device changes (plug/unplug)
+  useEffect(() => {
+    void refreshDevices();
+    const mediaDevices = typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined;
+    if (mediaDevices?.addEventListener) {
+      mediaDevices.addEventListener('devicechange', refreshDevices);
+      return () => {
+        mediaDevices.removeEventListener('devicechange', refreshDevices);
+      };
+    }
+  }, [refreshDevices]);
 
   // Handle device selection change
   const handleDeviceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -186,7 +215,12 @@ export const MicCheck: React.FC<MicCheckProps> = ({ onDeviceChange, className })
             <span>Microphone Check</span>
           </CardTitle>
           {isTesting && (
-            <Badge variant={hasDetectedSound ? 'default' : 'secondary'} className="text-xs">
+            <Badge
+              variant={hasDetectedSound ? 'default' : 'secondary'}
+              className="text-xs"
+              role="status"
+              aria-live="polite"
+            >
               {hasDetectedSound ? 'Sound Detected' : 'Listening...'}
             </Badge>
           )}
