@@ -24,9 +24,9 @@ const initials = (name: string) =>
 
 const Section: React.FC<{ icon: LucideIcon; title: string; children: React.ReactNode }> = ({ icon: Icon, title, children }) => (
   <section>
-    <h3 className="mb-3 flex items-center gap-2 border-b border-border pb-2 text-base font-semibold">
+    <h2 className="mb-3 flex items-center gap-2 border-b border-border pb-2 text-base font-semibold">
       <Icon className="size-5 text-primary" /> {title}
-    </h3>
+    </h2>
     {children}
   </section>
 );

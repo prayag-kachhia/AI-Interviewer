@@ -583,9 +583,17 @@ export const HistoryPage: React.FC = () => {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
                     <TrendingUp size={20} style={{ color: "var(--primary)" }} />
-                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 600 }}>Performance Trend</h2>
+                    <h2
+                      id="performance-trend-heading"
+                      style={{ margin: 0, fontSize: "1.25rem", fontWeight: 600 }}
+                    >
+                      Performance Trend
+                    </h2>
                   </div>
-                  <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--text-muted)" }}>
+                  <p
+                    id="performance-trend-description"
+                    style={{ margin: 0, fontSize: "0.875rem", color: "var(--text-muted)" }}
+                  >
                     Overall score progression over time (1–5 scale). Click any point to view results.
                   </p>
                 </div>
@@ -606,8 +614,9 @@ export const HistoryPage: React.FC = () => {
               </div>
 
               <div
-                role="img"
-                aria-label="Performance line graph showing overall interview scores over time on a 1 to 5 scale"
+                role="group"
+                aria-labelledby="performance-trend-heading"
+                aria-describedby="performance-trend-description"
                 style={{ width: "100%", height: "280px" }}
               >
                 <ChartContainer
@@ -741,7 +750,7 @@ export const HistoryPage: React.FC = () => {
                         <td>{d.roleLabel}</td>
                         <td>{d.score} / 5</td>
                         <td>
-                          <Link to={`/interview/${d.sessionId}/feedback`}>
+                          <Link to={`/interview/${d.sessionId}/feedback`} tabIndex={-1}>
                             View feedback for {d.roleLabel} on {d.fullDate}
                           </Link>
                         </td>
@@ -972,78 +981,78 @@ export const HistoryPage: React.FC = () => {
                     </div>
                   </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                      <Link
-                        to={`/interview/${session.id}/feedback`}
-                        className="btn btn-outline"
-                        style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
-                      >
-                        View Results
-                        <ArrowRight size={16} />
-                      </Link>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="text-destructive hover:bg-destructive/10 hover:text-destructive border-border"
-                        onClick={(e) => handleDeleteClick(e, session)}
-                        disabled={deleting}
-                        title={`Delete interview for ${roleName} on ${formatDate(session.startedAt)}`}
-                        data-testid={`history-delete-${session.id}`}
-                      >
-                        <Trash2 size={16} aria-hidden />
-                        Delete
-                      </Button>
-                    </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                    <Link
+                      to={`/interview/${session.id}/feedback`}
+                      className="btn btn-outline"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+                    >
+                      View Results
+                      <ArrowRight size={16} />
+                    </Link>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive border-border"
+                      onClick={(e) => handleDeleteClick(e, session)}
+                      disabled={deleting}
+                      title={`Delete interview for ${roleName} on ${formatDate(session.startedAt)}`}
+                      data-testid={`history-delete-${session.id}`}
+                    >
+                      <Trash2 size={16} aria-hidden />
+                      Delete
+                    </Button>
                   </div>
-                  );
-            })}
                 </div>
+              );
+            })}
+          </div>
         </>
       )}
 
-          <AlertDialog
-            open={sessionToDelete !== null}
-            onOpenChange={(open) => {
-              if (!open && !deleting) {
-                handleCancelDelete();
-              }
-            }}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete Interview?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Are you sure you want to delete this {selectedRoleName} interview from {selectedDateFormatted}? This action is permanent and cannot be undone. Its recording, transcript, and feedback will be permanently deleted.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
+      <AlertDialog
+        open={sessionToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            handleCancelDelete();
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Interview?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this {selectedRoleName} interview from {selectedDateFormatted}? This action is permanent and cannot be undone. Its recording, transcript, and feedback will be permanently deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
 
-              {deleteError && (
-                <div className="alert alert-error" role="alert" style={{ marginBottom: "0.5rem" }}>
-                  <AlertCircle size={16} />
-                  <span>{deleteError}</span>
-                </div>
-              )}
+          {deleteError && (
+            <div className="alert alert-error" role="alert" style={{ marginBottom: "0.5rem" }}>
+              <AlertCircle size={16} />
+              <span>{deleteError}</span>
+            </div>
+          )}
 
-              <AlertDialogFooter>
-                <AlertDialogCancel
-                  disabled={deleting}
-                  onClick={handleCancelDelete}
-                >
-                  Cancel
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  disabled={deleting}
-                  loading={deleting}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleConfirmDelete();
-                  }}
-                >
-                  {deleting ? "Deleting…" : "Delete interview"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      );
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={deleting}
+              onClick={handleCancelDelete}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              loading={deleting}
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmDelete();
+              }}
+            >
+              {deleting ? "Deleting…" : "Delete interview"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
 };

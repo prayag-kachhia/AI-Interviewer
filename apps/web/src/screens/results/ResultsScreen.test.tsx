@@ -1,6 +1,7 @@
 // ResultsScreen.test.tsx
 import "@testing-library/jest-dom/vitest";
 import { test, expect, vi, afterEach } from "vitest";
+import { axe } from "vitest-axe";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ResultsScreen } from "./ResultsScreen";
@@ -1003,4 +1004,49 @@ test("displays an error alert if downloading markdown fails (RH-8)", async () =>
   ).toBeInTheDocument();
 
   URL.createObjectURL = originalCreateObjectURL;
+});
+
+test("has no accessibility violations in ready feedback state", async () => {
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: "2026-11-17T10:00:00.000Z",
+      endedAt: "2026-11-17T10:10:00.000Z",
+      keep: false,
+    },
+  });
+
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Solid interview performance.",
+    scores: [
+      { category: "Communication", score: 4, comment: "Good", strengths: ["Clear"], improvements: ["Pacing"], quote: "Example quote" },
+      { category: "System Design", score: 5, comment: "Great", strengths: ["Architecture"], improvements: [], quote: "" },
+      { category: "Problem Solving", score: 3, comment: "Fair", strengths: [], improvements: ["Edge cases"], quote: "" },
+    ],
+  });
+
+  vi.mocked(getTurns).mockResolvedValue({ success: true, data: [] });
+
+  const { container } = renderResults();
+  await screen.findByText("Solid interview performance.");
+
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test("has no accessibility violations in pending feedback state", async () => {
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "pending",
+  });
+
+  const { container } = renderResults();
+  await screen.findByRole("status");
+
+  expect(await axe(container)).toHaveNoViolations();
 });

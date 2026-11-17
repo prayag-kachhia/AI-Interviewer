@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { axe } from 'vitest-axe';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Dashboard } from './Dashboard';
@@ -166,5 +167,48 @@ describe('Dashboard Achievements Section', () => {
     const fiveBadge = await screen.findByTestId('achievement-badge-five-interviews');
     expect(fiveBadge).toHaveAttribute('data-unlocked', 'true');
     expect(screen.getByTestId('achievements-unlocked-count')).toHaveTextContent('4 of 4 Unlocked');
+  });
+
+  it('has no accessibility violations in populated dashboard state', async () => {
+    vi.mocked(getSessions).mockResolvedValue({
+      success: true,
+      data: [
+        {
+          id: 's-1',
+          userId: 'u1',
+          role: 'software-engineer',
+          status: 'ENDED',
+          startedAt: '2026-11-01T10:00:00.000Z',
+          endedAt: '2026-11-01T10:20:00.000Z',
+          feedbackStatus: 'ready',
+          overallScore: 4.0,
+        },
+      ],
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    await screen.findByTestId('achievements-section');
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('has no accessibility violations in empty dashboard state', async () => {
+    vi.mocked(getSessions).mockResolvedValue({
+      success: true,
+      data: [],
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    await screen.findByTestId('achievements-section');
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { test, expect, vi } from 'vitest';
+import { axe } from 'vitest-axe';
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { ROLES } from '@interview/contracts';
@@ -90,4 +91,15 @@ test('the sample report is clearly labelled as an example', () => {
   const report = screen.getByRole('region', { name: 'What your feedback looks like' });
   expect(within(report).getByText('Example')).toBeInTheDocument();
   expect(within(report).getByText(/made up to show the format/i)).toBeInTheDocument();
+});
+
+test('has no accessibility violations (signed out and signed in)', async () => {
+  auth = { user: null, loading: false };
+  const signedOut = renderLanding();
+  expect(await axe(signedOut.container)).toHaveNoViolations();
+  signedOut.unmount();
+
+  auth = { user: { id: 'u1' }, loading: false };
+  const signedIn = renderLanding();
+  expect(await axe(signedIn.container)).toHaveNoViolations();
 });
