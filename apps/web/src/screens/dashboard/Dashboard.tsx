@@ -21,6 +21,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { deriveAchievements } from './achievements';
 import type { HistorySession } from '../../types';
 
@@ -39,18 +40,17 @@ function getBadgeIcon(id: string) {
   }
 }
 
-function getBadgeIconClass(id: string): string {
+/** Tinted square behind a badge icon; locked badges are neutral. */
+function getBadgeIconClass(id: string, unlocked: boolean): string {
+  if (!unlocked) return 'bg-secondary text-muted-foreground';
   switch (id) {
-    case 'first-interview':
-      return 'primary';
     case 'five-interviews':
-      return 'warning';
-    case 'improved-score':
-      return 'success';
     case 'consistency-streak':
-      return 'warning';
+      return 'bg-warning/15 text-warning';
+    case 'improved-score':
+      return 'bg-success/15 text-success';
     default:
-      return 'primary';
+      return 'bg-primary/10 text-primary';
   }
 }
 
@@ -182,11 +182,13 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const unlockedCount = achievements.filter((a) => a.unlocked).length;
+
   return (
-    <div className="container page-wrapper">
-      <div style={{ marginBottom: '3.5rem', textAlign: 'center' }}>
-        <h1 className="text-gradient" style={{ marginBottom: '0.75rem' }}>Good to see you, {firstName} 👋</h1>
-        <p style={{ fontSize: '1.25rem', color: 'var(--text-muted)' }}>Build your AI-powered interview profile.</p>
+    <div className="mx-auto max-w-5xl px-6 pt-28 pb-20">
+      <div className="mb-14 text-center">
+        <h1 className="mb-3 font-display text-4xl font-bold tracking-tight text-foreground">Good to see you, {firstName} 👋</h1>
+        <p className="text-xl text-muted-foreground">Build your AI-powered interview profile.</p>
       </div>
 
       <Card className="mx-auto max-w-[750px]">
@@ -232,8 +234,22 @@ export const Dashboard: React.FC = () => {
           )}
 
           <div
-            className={`upload-area ${file ? 'active' : ''} ${isDragging ? 'drag-over' : ''}`}
+            role="button"
+            tabIndex={loading ? -1 : 0}
+            aria-label="Choose a PDF resume"
+            className={cn(
+              'flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-dashed border-border px-6 py-10 text-center transition-colors outline-none hover:border-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+              (file || isDragging) && 'border-primary',
+              isDragging && 'bg-primary/5',
+              loading && 'cursor-not-allowed opacity-60',
+            )}
             onClick={() => !loading && fileInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.key === ' ') && !loading) {
+                e.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
@@ -243,22 +259,22 @@ export const Dashboard: React.FC = () => {
               ref={fileInputRef}
               onChange={handleFileChange}
               accept="application/pdf"
-              style={{ display: 'none' }}
+              className="hidden"
               disabled={loading}
             />
 
             {file ? (
-              <div>
-                <FileText className="upload-icon" />
-                <div className="upload-text">{file.name}</div>
-                <div className="upload-hint">{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to analyze</div>
-              </div>
+              <>
+                <FileText className="mb-2 size-10 text-primary" />
+                <div className="font-medium text-foreground">{file.name}</div>
+                <div className="text-sm text-muted-foreground">{(file.size / (1024 * 1024)).toFixed(2)} MB • Ready to analyze</div>
+              </>
             ) : (
-              <div>
-                <UploadCloud className="upload-icon" />
-                <div className="upload-text">Drag & drop your PDF here</div>
-                <div className="upload-hint">or click to browse from your device</div>
-              </div>
+              <>
+                <UploadCloud className="mb-2 size-10 text-muted-foreground" />
+                <div className="font-medium text-foreground">Drag & drop your PDF here</div>
+                <div className="text-sm text-muted-foreground">or click to browse from your device</div>
+              </>
             )}
           </div>
         </CardContent>
@@ -282,227 +298,121 @@ export const Dashboard: React.FC = () => {
         </CardFooter>
       </Card>
 
-      <div className="card" style={{ maxWidth: '750px', margin: '2rem auto 0' }} data-testid="achievements-section">
-        <div className="card-header" style={{ marginBottom: '1.25rem' }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '0.75rem',
-            }}
-          >
-            <div>
-              <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                <Award size={22} style={{ color: 'var(--primary-color)' }} />
-                Achievements
-              </h2>
-              <p style={{ margin: '0.25rem 0 0', color: 'var(--text-muted)' }}>
-                Milestones and streaks earned from your mock interviews.
-              </p>
-            </div>
+      <Card className="mx-auto mt-8 max-w-[750px]" data-testid="achievements-section">
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle className="flex items-center gap-2">
+              <Award className="size-5 text-primary" />
+              Achievements
+            </CardTitle>
             {!sessionsLoading && !sessionsError && (
-              <span
-                data-testid="achievements-unlocked-count"
-                style={{
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  color: 'var(--primary-color)',
-                  backgroundColor: 'var(--primary-light, rgba(99, 102, 241, 0.12))',
-                  padding: '0.25rem 0.75rem',
-                  borderRadius: '9999px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                }}
-              >
-                {achievements.filter((a) => a.unlocked).length} of {achievements.length} Unlocked
-              </span>
+              <Badge variant="secondary" data-testid="achievements-unlocked-count">
+                {unlockedCount} of {achievements.length} Unlocked
+              </Badge>
             )}
           </div>
-        </div>
+          <CardDescription>Milestones and streaks earned from your mock interviews.</CardDescription>
+        </CardHeader>
 
-        {sessionsLoading && (
-          <div role="status" className="alert alert-info" style={{ justifyContent: 'center' }}>
-            <Loader2 size={20} className="animate-spin" />
-            <span>Loading achievements…</span>
-          </div>
-        )}
+        <CardContent className="flex flex-col gap-4">
+          {sessionsLoading && (
+            <Alert className="justify-center">
+              <Loader2 className="motion-safe:animate-spin" />
+              <AlertTitle>Loading achievements…</AlertTitle>
+            </Alert>
+          )}
 
-        {sessionsError && (
-          <div className="alert alert-error" role="alert">
-            <AlertCircle size={20} />
-            <span>{sessionsError}</span>
-          </div>
-        )}
+          {sessionsError && (
+            <Alert variant="error">
+              <AlertCircle />
+              <AlertTitle>{sessionsError}</AlertTitle>
+            </Alert>
+          )}
 
-        {!sessionsLoading && !sessionsError && (
-          <div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                gap: '1rem',
-              }}
-            >
-              {achievements.map((badge) => (
-                <div
-                  key={badge.id}
-                  data-testid={`achievement-badge-${badge.id}`}
-                  data-unlocked={badge.unlocked}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '1rem',
-                    padding: '1.25rem',
-                    borderRadius: 'var(--radius-lg, 0.75rem)',
-                    background: 'var(--surface-color)',
-                    border: badge.unlocked
-                      ? '1px solid var(--border-color)'
-                      : '1px dashed var(--border-color)',
-                    opacity: badge.unlocked ? 1 : 0.65,
-                    transition: 'all 0.2s ease',
-                  }}
-                >
+          {!sessionsLoading && !sessionsError && (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {achievements.map((badge) => (
                   <div
-                    className={`stat-icon ${badge.unlocked ? getBadgeIconClass(badge.id) : 'disabled'}`}
-                    style={{ width: '44px', height: '44px' }}
+                    key={badge.id}
+                    data-testid={`achievement-badge-${badge.id}`}
+                    data-unlocked={badge.unlocked}
+                    className={cn(
+                      'flex items-start gap-4 rounded-xl border bg-card p-5',
+                      !badge.unlocked && 'border-dashed opacity-65',
+                    )}
                   >
-                    {getBadgeIcon(badge.id)}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '0.5rem',
-                        marginBottom: '0.25rem',
-                      }}
-                    >
-                      <h4
-                        style={{
-                          margin: 0,
-                          fontSize: '0.95rem',
-                          fontWeight: 600,
-                          color: badge.unlocked ? 'var(--text-main)' : 'var(--text-muted)',
-                        }}
-                      >
-                        {badge.title}
-                      </h4>
-                      {badge.unlocked ? (
-                        <span
-                          data-testid="badge-status-unlocked"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            color: 'var(--success-color, #10b981)',
-                            backgroundColor: 'var(--success-bg, #d1fae5)',
-                            padding: '0.15rem 0.5rem',
-                            borderRadius: '9999px',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          <CheckCircle size={11} />
-                          Unlocked
-                        </span>
-                      ) : (
-                        <span
-                          data-testid="badge-status-locked"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.25rem',
-                            fontSize: '0.75rem',
-                            fontWeight: 500,
-                            color: 'var(--text-muted, #71717a)',
-                            backgroundColor: 'var(--border-color, #e2e8f0)',
-                            padding: '0.15rem 0.5rem',
-                            borderRadius: '9999px',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          <Lock size={11} />
-                          Locked
-                        </span>
-                      )}
+                    <div className={cn('flex size-11 shrink-0 items-center justify-center rounded-md', getBadgeIconClass(badge.id, badge.unlocked))}>
+                      {getBadgeIcon(badge.id)}
                     </div>
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: '0.825rem',
-                        color: 'var(--text-muted)',
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {badge.description}
-                    </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <h3 className={cn('text-sm font-semibold', badge.unlocked ? 'text-foreground' : 'text-muted-foreground')}>
+                          {badge.title}
+                        </h3>
+                        {badge.unlocked ? (
+                          <Badge variant="success" data-testid="badge-status-unlocked">
+                            <CheckCircle /> Unlocked
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" data-testid="badge-status-locked">
+                            <Lock /> Locked
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{badge.description}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-            {sessions.filter((s) => s.status === 'ENDED').length === 0 && (
-              <p
-                style={{
-                  margin: '1.25rem 0 0',
-                  textAlign: 'center',
-                  fontSize: '0.875rem',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Complete your first mock interview to start unlocking badges!
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="dashboard-grid" style={{ maxWidth: '750px', margin: '2.5rem auto' }}>
-        <div className="stat-card">
-          <div className={`stat-icon ${hasProfile ? 'success' : 'warning'}`}>
-            {hasProfile ? <CheckCircle size={24} /> : <AlertCircle size={24} />}
-          </div>
-          <div className="stat-content">
-            <h4>Profile Status</h4>
-            <p>
-              {hasProfile
-                ? latestResume?.source === 'heuristic'
-                  ? 'Analyzed (Basic Parse)'
-                  : latestResume?.source === 'ai'
-                  ? 'Analyzed with AI'
-                  : 'Analyzed & Ready'
-                : 'Awaiting Resume'}
-            </p>
-          </div>
-        </div>
-
-        {hasProfile ? (
-          <div className="stat-card clickable" onClick={() => navigate('/profile')}>
-            <div className="stat-icon primary">
-              <UserCircle2 size={24} />
-            </div>
-            <div className="stat-content" style={{ flexGrow: 1 }}>
-              <h4>Candidate Profile</h4>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--primary-color)' }}>
-                <p style={{ color: 'var(--primary-color)' }}>View Profile</p>
-                <ArrowRight size={20} />
+                ))}
               </div>
+              {sessions.filter((s) => s.status === 'ENDED').length === 0 && (
+                <p className="text-center text-sm text-muted-foreground">
+                  Complete your first mock interview to start unlocking badges!
+                </p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="mx-auto mt-10 grid max-w-[750px] gap-4 sm:grid-cols-2">
+        <Card>
+          <CardContent className="flex items-center gap-4">
+            <div className={cn('flex size-12 shrink-0 items-center justify-center rounded-md', hasProfile ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning')}>
+              {hasProfile ? <CheckCircle className="size-6" /> : <AlertCircle className="size-6" />}
             </div>
-          </div>
-        ) : (
-          <div className="stat-card">
-            <div className="stat-icon disabled">
-              <UserCircle2 size={24} />
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground">Profile Status</h3>
+              <p className="font-medium text-foreground">
+                {hasProfile
+                  ? latestResume?.source === 'heuristic'
+                    ? 'Analyzed (Basic Parse)'
+                    : latestResume?.source === 'ai'
+                    ? 'Analyzed with AI'
+                    : 'Analyzed & Ready'
+                  : 'Awaiting Resume'}
+              </p>
             </div>
-            <div className="stat-content">
-              <h4>Candidate Profile</h4>
-              <p style={{ color: 'var(--text-muted)' }}>Not generated yet</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="flex items-center gap-4">
+            <div className={cn('flex size-12 shrink-0 items-center justify-center rounded-md', hasProfile ? 'bg-primary/10 text-primary' : 'bg-secondary text-muted-foreground')}>
+              <UserCircle2 className="size-6" />
             </div>
-          </div>
-        )}
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-muted-foreground">Candidate Profile</h3>
+              {hasProfile ? (
+                <Button variant="ghost" size="sm" className="-ml-3" onClick={() => navigate('/profile')}>
+                  View Profile <ArrowRight />
+                </Button>
+              ) : (
+                <p className="text-muted-foreground">Not generated yet</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
