@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import axios from 'axios';
 import { getSession, postTurn, postNextQuestion, endSession } from '../../lib/api';
 import { ROLES } from '@interview/contracts';
-import type { InterviewVoiceState, SessionStatus, TurnData, TurnSpeaker } from '../../types';
+import type { InterviewVoiceState, SessionStatus, TurnData } from '../../types';
 import {
   BrowserWebSpeechVoiceAdapter,
   type VoiceSessionAdapter,
@@ -76,7 +76,6 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const statusRef = useRef<SessionStatus>('LIVE');
   const isMutedRef = useRef(false);
   const voiceStateRef = useRef<InterviewVoiceState>('IDLE');
-  const liveSpeakerRef = useRef<TurnSpeaker | null>(null);
   const hasAiSpokenRef = useRef(false);
   const hasPromptedThinkingRef = useRef(false);
   const candidateSpokeSinceAiRef = useRef(false);
@@ -245,7 +244,6 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       if (!event.isFinal) {
         if (event.speaker === 'AI') {
           markAiQuestionActive();
-          liveSpeakerRef.current = 'AI';
           setLiveCandidateSpeech('');
           setCurrentAiQuestion(event.text);
           return;
@@ -253,7 +251,6 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
 
         if (event.speaker === 'CANDIDATE') {
           markCandidateSpoke();
-          liveSpeakerRef.current = 'CANDIDATE';
           setLiveCandidateSpeech(event.text);
           return;
         }
@@ -277,11 +274,6 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
         if (!adapterRef.current?.isExternalProvider) {
           await requestNextQuestion();
         }
-      }
-
-      // Gemini Live asks follow-ups directly over WebSocket; only fallback mode needs /next-question.
-      if (!adapterRef.current?.isExternalProvider) {
-        await requestNextQuestion();
       }
     },
     [markAiQuestionActive, markCandidateSpoke, persistTurnToServer, requestNextQuestion]

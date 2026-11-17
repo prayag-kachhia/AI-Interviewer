@@ -287,20 +287,16 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
     });
 
     // Only the first postTurn should be in-flight before it settles.
-    await waitFor(() => expect(api.postTurn).toHaveBeenCalledTimes(1));
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
+    await waitFor(() => {
+      expect(api.postTurn).toHaveBeenCalledTimes(1);
+      expect(api.postTurn).toHaveBeenCalledWith('s1', 'AI', 'Question 1?');
     });
-    expect(api.postTurn).toHaveBeenCalledTimes(1);
-    expect(api.postTurn).toHaveBeenCalledWith('s1', 'AI', 'Question 1?');
 
     await act(async () => {
       resolveFirst({
         success: true,
         data: makeTurn({ id: 'ai-1', speaker: 'AI', turnIndex: 1, text: 'Question 1?' }),
       });
-      await Promise.resolve();
     });
 
     await waitFor(() => expect(api.postTurn).toHaveBeenCalledTimes(3));
@@ -385,6 +381,7 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
     const browser = mockState.browserInstances[0];
     expect(screen.getByText(/switched to browser speech fallback/i)).toBeInTheDocument();
     await waitFor(() => expect(api.postNextQuestion).toHaveBeenCalledWith('s1'));
+    expect(api.postNextQuestion).toHaveBeenCalledTimes(1);
     expect(browser.speakAiQuestion).toHaveBeenCalledWith('Tell me about your Redis caching layer.');
     expect(api.postTurn).not.toHaveBeenCalledWith('s1', 'AI', expect.any(String));
     expect(screen.getByText(/"Tell me about your Redis caching layer\."/)).toBeInTheDocument();
