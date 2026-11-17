@@ -1,84 +1,47 @@
 import { Request, Response, NextFunction } from 'express';
-import { createClient } from '@supabase/supabase-js';
-import prisma from '../db';
-import { isAdminEmail, isUserEmailConfirmed } from '../services/admin.service';
-
-const supabase = createClient(
-  process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-);
+import { createAuthMiddleware } from './auth';
+import { isAdminEmail } from '../services/admin.service';
 
 /**
- * Authorization middleware for admin-only endpoints (FR-32, Issue #201).
- *
- * Enforces strict 404 responses for:
- * - Unauthenticated requests (no token, malformed token, invalid or expired token)
- * - Users with unconfirmed/unverified email addresses
- * - Authenticated users whose verified email is not in the server-side ADMIN_EMAILS configuration
- * - Any caller when ADMIN_EMAILS is unset or empty
- *
- * Returns 404 (Not Found) rather than 401 or 403 to prevent endpoint enumeration (FR-27).
+ * Stage 1: Authenticate the admin request using the canonical authentication mechanism,
+ * responding with HTTP 404 on failure to prevent endpoint enumeration (FR-27).
+ * Reuses the existing authentication implementation without repeating token verification.
  */
-export const adminOnly = async (
+export const adminAuthenticate = createAuthMiddleware({
+  unauthorizedStatus: 404,
+  unauthorizedMessage: 'Not found',
+});
+
+/**
+ * Stage 2: Authorize that the authenticated user's email is confirmed
+ * and included in the server-side ADMIN_EMAILS configuration.
+ * Kept separate from authentication.
+ */
+export const requireAdmin = (
   req: Request,
   res: Response,
   next: NextFunction
-): Promise<void> => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+): void => {
+  const user = req.user;
+  if (!user || !user.isEmailConfirmed || !isAdminEmail(user.email)) {
     res.status(404).json({ success: false, message: 'Not found' });
     return;
   }
+  next();
+};
 
-  const token = authHeader.slice('Bearer '.length).trim();
-  if (!token) {
-    res.status(404).json({ success: false, message: 'Not found' });
-    return;
-  }
-
-  try {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser(token);
-
-    if (error || !user || !user.email) {
-      res.status(404).json({ success: false, message: 'Not found' });
-      return;
-    }
-
-    const isConfirmed = isUserEmailConfirmed(user);
-    const email = user.email.trim().toLowerCase();
-
-    // An unverified account must never receive admin privileges.
-    if (!isConfirmed || !isAdminEmail(email)) {
-      res.status(404).json({ success: false, message: 'Not found' });
-      return;
-    }
-
-    let localUser = await prisma.user.findUnique({
-      where: { supabaseUserId: user.id },
-    });
-    if (!localUser) {
-      localUser = await prisma.user.findUnique({
-        where: { email },
-      });
-    }
-
-    req.user = {
-      id: localUser?.id ?? user.id,
-      supabaseUserId: user.id,
-      email,
-      name:
-        localUser?.name ||
-        user.user_metadata?.full_name ||
-        user.user_metadata?.name ||
-        'Admin',
-      isEmailConfirmed: true,
-    };
-
-    next();
-  } catch (error) {
-    res.status(404).json({ success: false, message: 'Not found' });
-  }
+/**
+ * Combined admin authorization middleware for admin-only endpoints (FR-32, Issue #201).
+ * Reuses the canonical authentication mechanism without duplicating token verification,
+ * keeps authorization separate, and guarantees HTTP 404 for all unauthorized requests.
+ */
+export const adminOnly = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void => {
+  adminAuthenticate(req, res, (err) => {
+    if (err) return next(err);
+    requireAdmin(req, res, next);
+  });
 };

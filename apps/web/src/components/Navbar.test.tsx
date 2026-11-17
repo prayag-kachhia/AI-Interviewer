@@ -113,3 +113,34 @@ test('renders the Admin link in mobile menu for an authorized admin', () => {
   const menu = screen.getByRole('navigation', { name: 'Menu' });
   expect(within(menu).getByRole('link', { name: 'Admin' })).toBeInTheDocument();
 });
+
+test('uses xl responsive breakpoint when admin navigation is present to prevent overflow at 1024px-1100px', () => {
+  // Admin user
+  auth = {
+    user: { id: 'u2', email: 'admin@example.com', name: 'Admin User', isAdmin: true },
+    signOut: vi.fn().mockResolvedValue(undefined),
+  };
+  const { unmount } = renderAt('/dashboard');
+
+  const adminMenuButton = screen.getByRole('button', { name: 'Open menu' });
+  expect(adminMenuButton).toHaveClass('xl:hidden');
+
+  fireEvent.click(adminMenuButton);
+  const adminMobileMenu = screen.getByRole('navigation', { name: 'Menu' });
+  expect(adminMobileMenu).toHaveClass('xl:hidden');
+  unmount();
+
+  // Regular non-admin user
+  auth = {
+    user: { id: 'u1', email: 'regular@example.com', name: 'Regular User', isAdmin: false },
+    signOut: vi.fn().mockResolvedValue(undefined),
+  };
+  renderAt('/dashboard');
+
+  const regularMenuButton = screen.getByRole('button', { name: 'Open menu' });
+  expect(regularMenuButton).toHaveClass('lg:hidden');
+
+  fireEvent.click(regularMenuButton);
+  const regularMobileMenu = screen.getByRole('navigation', { name: 'Menu' });
+  expect(regularMobileMenu).toHaveClass('lg:hidden');
+});

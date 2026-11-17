@@ -336,6 +336,38 @@ describe('Owner Dashboard & Admin Stats API (FR-32, Issue #201)', () => {
       expect(res.body.data.interviewsPast14Days).toHaveLength(14);
       expect(res.body.data.feedbackCounts).toEqual({ ready: 40, failed: 1 });
       expect(Array.isArray(res.body.data.averageScoresByRole)).toBe(true);
+      expect(__getUserMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('verifies token exactly once per request and does not duplicate token verification', async () => {
+      __getUserMock.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'admin-user-single-verify',
+            email: 'admin@example.com',
+            user_metadata: { full_name: 'Single Verify Admin' },
+            email_confirmed_at: '2026-11-17T00:00:00Z',
+          },
+        },
+        error: null,
+      });
+
+      (prisma.user.findUnique as any).mockResolvedValueOnce({
+        id: 'admin-local-sv',
+        email: 'admin@example.com',
+        name: 'Single Verify Admin',
+      });
+
+      (prisma.user.count as any).mockResolvedValueOnce(1);
+      (prisma.session.findMany as any).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+      (prisma.feedback.count as any).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+
+      const res = await request(app)
+        .get('/api/admin/stats')
+        .set('Authorization', 'Bearer single-token');
+
+      expect(res.status).toBe(200);
+      expect(__getUserMock).toHaveBeenCalledTimes(1);
     });
 
     it('returns HTTP 200 when user is confirmed via legacy confirmed_at field', async () => {
