@@ -1,6 +1,6 @@
 import prisma from '../db';
 import { AppError, NotFoundError } from '../errors';
-import { FeedbackStatus, ROLES, type CreateSessionInput } from '@interview/contracts';
+import { EndReason, FeedbackStatus, ROLES, type CreateSessionInput } from '@interview/contracts';
 
 // The role list lives in @interview/contracts so the API and the web app share it.
 const VALID_ROLE_IDS = new Set(ROLES.map((r) => r.id));
@@ -33,6 +33,26 @@ export class SessionEndedError extends AppError {
   constructor(message: string = 'This session has already ended') {
     super(409, message);
   }
+}
+
+export class InvalidEndReasonError extends AppError {
+  constructor(message: string = 'Invalid end reason') {
+    super(400, message);
+  }
+}
+
+export function validateEndReason(val: unknown): EndReason | null {
+  if (val === undefined || val === null || val === '') {
+    return null;
+  }
+  if (typeof val !== 'string') {
+    throw new InvalidEndReasonError('Invalid end reason');
+  }
+  const normalized = val.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (EndReason.options.includes(normalized as EndReason)) {
+    return normalized as EndReason;
+  }
+  throw new InvalidEndReasonError(`Unknown end reason: ${val}`);
 }
 
 /**
@@ -121,6 +141,60 @@ export function computeOverallScore(scores: unknown): number | null {
   return Math.round((sum / validScores.length) * 10) / 10;
 }
 
+/**
+ * Extracts minimal, validated category scores from rubric feedback scores.
+ * Only accepts entries with a non-empty string category and a finite numeric score between 1 and 5.
+ * Strips comments, quotes, strengths, and improvements (RH-6).
+ * If duplicate categories exist within the same feedback, their scores are averaged.
+ * Returns an array of { category, score } objects, or null if no valid category scores exist.
+ */
+export function extractCategoryScores(scores: unknown): Array<{ category: string; score: number }> | null {
+  const items = Array.isArray(scores)
+    ? scores
+    : scores && typeof scores === 'object' && Array.isArray((scores as { scores?: unknown }).scores)
+      ? (scores as { scores: unknown[] }).scores
+      : null;
+
+  if (!items || items.length === 0) {
+    return null;
+  }
+
+  const categoryMap = new Map<string, number[]>();
+
+  for (const item of items) {
+    if (typeof item === 'object' && item !== null && 'category' in item && 'score' in item) {
+      const cat = (item as { category?: unknown }).category;
+      const val = (item as { score?: unknown }).score;
+
+      if (
+        typeof cat === 'string' &&
+        cat.trim().length > 0 &&
+        typeof val === 'number' &&
+        Number.isFinite(val) &&
+        val >= 1 &&
+        val <= 5
+      ) {
+        const trimmed = cat.trim();
+        const existing = categoryMap.get(trimmed) ?? [];
+        existing.push(val);
+        categoryMap.set(trimmed, existing);
+      }
+    }
+  }
+
+  if (categoryMap.size === 0) {
+    return null;
+  }
+
+  const result: Array<{ category: string; score: number }> = [];
+  for (const [category, valList] of categoryMap.entries()) {
+    const avg = valList.reduce((a, b) => a + b, 0) / valList.length;
+    result.push({ category, score: Math.round(avg * 10) / 10 });
+  }
+
+  return result;
+}
+
 /** The user's sessions, newest first, with their feedback status, overall score, and whether they ended early. */
 export async function listSessions(userId: string) {
   const sessions = await prisma.session.findMany({
@@ -138,6 +212,7 @@ export async function listSessions(userId: string) {
         ? 'pending'
         : null,
     overallScore: feedback?.status === 'ready' ? computeOverallScore(feedback.scores) : null,
+    categoryScores: feedback?.status === 'ready' ? extractCategoryScores(feedback.scores) : null,
     endedEarly:
       session.endedAt !== null &&
       session.endedAt.getTime() - session.startedAt.getTime() < EARLY_END_THRESHOLD_MINUTES * 60_000,
@@ -230,7 +305,7 @@ export async function addTurn(
  * mark the session ENDED and insert a `session.ended` job row. Either both
  * happen or neither does.
  */
-export async function endSession(sessionId: string, userId: string) {
+export async function endSession(sessionId: string, userId: string, endReason?: EndReason | null) {
   const session = await getOwnedSession(sessionId, userId);
 
   if (session.status === 'ENDED') {
@@ -241,7 +316,11 @@ export async function endSession(sessionId: string, userId: string) {
   const [updatedSession] = await prisma.$transaction([
     prisma.session.update({
       where: { id: sessionId },
-      data: { status: 'ENDED', endedAt: new Date() },
+      data: {
+        status: 'ENDED',
+        endedAt: new Date(),
+        endReason: endReason ?? null,
+      },
     }),
     prisma.job.create({
       data: {

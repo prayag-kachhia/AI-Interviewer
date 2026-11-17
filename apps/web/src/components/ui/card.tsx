@@ -1,13 +1,13 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
-/* Depth comes from the card being a step lighter than the page, not from a shadow. */
+/* Dark: depth is the card being a step lighter than the page. Light: a hard ink shadow. */
 function Card({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card"
       className={cn(
-        "flex flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground",
+        "flex flex-col gap-6 rounded-xl border-(length:--border-w) bg-card py-6 [box-shadow:var(--shadow-card)] text-card-foreground",
         className
       )}
       {...props}
@@ -29,7 +29,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      className={cn("font-display text-xl leading-tight font-semibold tracking-tight", className)}
+      className={cn("heading text-xl leading-tight", className)}
       {...props}
     />
   )

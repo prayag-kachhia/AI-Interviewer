@@ -33,7 +33,13 @@ import {
 } from "../../lib/api";
 import { useFeedback, useTurns } from "./useFeedback";
 import { PerAnswerFeedbackSection } from "./PerAnswerFeedbackSection";
-import type { TurnSpeaker } from "@interview/contracts";
+import {
+  calculateSummaryStats,
+  downloadMarkdownFile,
+  generateMarkdownFilename,
+  generateMarkdownReport,
+} from "./resultsSummary";
+import { formatEndReason, type Session, type TurnSpeaker } from "@interview/contracts";
 import "./ResultsScreen.css";
 
 const chartConfig = {
@@ -72,16 +78,24 @@ export function ResultsScreen() {
   const [keep, setKeep] = useState(false);
   const [keepLoading, setKeepLoading] = useState(true);
   const [keepError, setKeepError] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadSession() {
+      setSessionLoading(true);
       try {
         const response = await getSession(sessionId!);
 
         if (!cancelled) {
-          setKeep(response.data?.keep ?? false);
+          if (response.data) {
+            setSession(response.data as Session);
+            setKeep(response.data.keep ?? false);
+          }
         }
       } catch {
         if (!cancelled) {
@@ -90,6 +104,7 @@ export function ResultsScreen() {
       } finally {
         if (!cancelled) {
           setKeepLoading(false);
+          setSessionLoading(false);
         }
       }
     }
@@ -102,6 +117,10 @@ export function ResultsScreen() {
       cancelled = true;
     };
   }, [sessionId]);
+
+  const stats = useMemo(() => {
+    return calculateSummaryStats(isLoading ? null : turns, sessionLoading ? null : session);
+  }, [isLoading, turns, sessionLoading, session]);
 
   const radarData = useMemo(() => {
     if (!feedback?.scores || feedback.scores.length === 0) return [];
@@ -156,6 +175,33 @@ export function ResultsScreen() {
     }
   };
 
+  const handleDownloadMarkdown = () => {
+    setIsDownloading(true);
+    setDownloadError(null);
+    try {
+      const reportSession: Session = session ?? {
+        id: sessionId!,
+        userId: "",
+        role: "interview",
+        status: "ENDED",
+        startedAt: "",
+        endedAt: null,
+      };
+      const content = generateMarkdownReport({
+        session: reportSession,
+        feedback,
+        turns,
+        stats,
+      });
+      const filename = generateMarkdownFilename(reportSession);
+      downloadMarkdownFile(content, filename);
+    } catch {
+      setDownloadError("Unable to download interview report. Please try again.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!window.confirm("Are you sure you want to delete this interview? This action cannot be undone.")) return;
     setDeleting(true);
@@ -170,69 +216,152 @@ export function ResultsScreen() {
   };
 
   return (
-      <div className="container page-wrapper mx-auto max-w-5xl space-y-6 px-4 py-8">
-        {(!feedback || feedback.status === "pending") && (
-        <Alert role="status" className="border-border bg-card">
-          <AlertTitle className="text-base font-semibold">Preparing Feedback</AlertTitle>
-          <AlertDescription className="mt-1 space-y-1">
-            <p>Preparing your feedback… this can take a moment.</p>
-            {isLongWait && <p className="font-medium text-warning">This is taking longer than usual.</p>}
-            {feedbackError && <p className="font-medium text-destructive">{feedbackError}</p>}
-          </AlertDescription>
-        </Alert>
-        )}
-{keepError && (
-  <Alert variant="error" role="alert">
-    <AlertDescription>{keepError}</AlertDescription>
-  </Alert>
-)}
+        <div className="container page-wrapper mx-auto max-w-5xl space-y-6 px-4 py-8">
+          {(!feedback || feedback.status === "pending") && (
+            <Alert role="status" className="border-border bg-card">
+              <AlertTitle className="text-base font-semibold">Preparing Feedback</AlertTitle>
+              <AlertDescription className="mt-1 space-y-1">
+                <p>Preparing your feedback… this can take a moment.</p>
+                {isLongWait && <p className="font-medium text-warning">This is taking longer than usual.</p>}
+                {feedbackError && <p className="font-medium text-destructive">{feedbackError}</p>}
+              </AlertDescription>
+            </Alert>
+      )}
 
-<p className="text-sm text-muted-foreground">
-  Kept interviews are protected from automatic 30-day cleanup.
-</p>
+          {keepError && (
+            <Alert variant="error" role="alert">
+              <AlertDescription>{keepError}</AlertDescription>
+            </Alert>
+          )}
 
-<Button
-  type="button"
-  variant="outline"
-  onClick={handleToggleKeep}
-  loading={keepLoading}
-  aria-pressed={keep}
->
-  {keepLoading
-    ? "Updating…"
-    : keep
-      ? "Unkeep interview"
-      : "Keep interview"}
-</Button>
+          {downloadError && (
+            <Alert variant="error" role="alert">
+              <AlertDescription>{downloadError}</AlertDescription>
+            </Alert>
+          )}
 
-        {feedback?.status === "failed" && (
-        <Alert variant="error" role="alert">
-          <AlertTitle className="text-base font-semibold">Feedback Unavailable</AlertTitle>
-          <AlertDescription className="mt-1 space-y-3">
-            <p>We couldn't generate feedback for this session.</p>
-            {retryError && <p className="text-destructive">{retryError}</p>}
-            <div>
-              <Button type="button" onClick={handleRetry} loading={retrying}>
-                {retrying ? "Retrying…" : "Try again"}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              Kept interviews are protected from automatic 30-day cleanup.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDownloadMarkdown}
+                disabled={sessionLoading || isLoading || isDownloading}
+                loading={isDownloading}
+              >
+                Download Markdown
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleToggleKeep}
+                loading={keepLoading}
+                aria-pressed={keep}
+              >
+                {keepLoading
+                  ? "Updating…"
+                  : keep
+                    ? "Unkeep interview"
+                    : "Keep interview"}
               </Button>
             </div>
-          </AlertDescription>
-        </Alert>
-        )}
+          </div>
 
-        {feedback?.status === "ready" && (
+          {/* Summary Statistics Section (RH-8) */}
+          <section aria-label="Interview Summary Statistics">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3" data-testid="summary-stats-section">
+              <Card data-testid="stat-questions-asked">
+                <CardHeader className="pb-2">
+                  <CardDescription className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Questions Asked
+                  </CardDescription>
+                  <CardTitle className="font-mono text-2xl font-bold text-foreground">
+                    {isLoading ? (
+                      <span className="text-muted-foreground" aria-busy="true">Loading…</span>
+                    ) : stats.questionsAsked !== null ? (
+                      stats.questionsAsked
+                    ) : (
+                      <span className="text-muted-foreground">Unavailable</span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+
+              <Card data-testid="stat-answers-given">
+                <CardHeader className="pb-2">
+                  <CardDescription className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Answers Given
+                  </CardDescription>
+                  <CardTitle className="font-mono text-2xl font-bold text-foreground">
+                    {isLoading ? (
+                      <span className="text-muted-foreground" aria-busy="true">Loading…</span>
+                    ) : stats.answersGiven !== null ? (
+                      stats.answersGiven
+                    ) : (
+                      <span className="text-muted-foreground">Unavailable</span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+
+              <Card data-testid="stat-duration">
+                <CardHeader className="pb-2">
+                  <CardDescription className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Duration
+                  </CardDescription>
+                  <CardTitle className="font-mono text-2xl font-bold text-foreground">
+                    {sessionLoading ? (
+                      <span className="text-muted-foreground" aria-busy="true">Loading…</span>
+                    ) : stats.durationSeconds !== null ? (
+                      stats.formattedDuration
+                    ) : (
+                      <span className="text-muted-foreground">Unavailable</span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+            </div>
+          </section>
+
+          {feedback?.status === "failed" && (
+            <Alert variant="error" role="alert">
+              <AlertTitle className="text-base font-semibold">Feedback Unavailable</AlertTitle>
+              <AlertDescription className="mt-1 space-y-3">
+                <p>We couldn't generate feedback for this session.</p>
+                {retryError && <p className="text-destructive">{retryError}</p>}
+                <div>
+                  <Button type="button" onClick={handleRetry} loading={retrying}>
+                    {retrying ? "Retrying…" : "Try again"}
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {feedback?.status === "ready" && (
             <div className="space-y-6">
               <div className="flex flex-col gap-1">
-                <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-                  Your Feedback
-                </h1>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="heading text-2xl text-foreground sm:text-3xl">
+                    Your Feedback
+                  </h1>
+                  {(session?.endedEarly || session?.endReason) && (
+                    <Badge data-testid="results-ended-early" variant="pending" className="text-xs">
+                      Ended early{session.endReason ? ` (${formatEndReason(session.endReason)})` : ""}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Detailed performance review and competency evaluation
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <Card className="flex flex-col justify-between">
+                <Card>
                   <CardHeader>
                     <CardTitle>Overall Summary</CardTitle>
                     {averageScore && (
@@ -274,7 +403,7 @@ export function ResultsScreen() {
                             config={chartConfig}
                             className="aspect-square max-h-[280px] w-full"
                           >
-                            <RadarChart data={radarData}>
+                            <RadarChart data={radarData} outerRadius="46%">
                               <PolarGrid stroke="var(--border)" className="stroke-border" />
                               <PolarAngleAxis
                                 dataKey="category"
@@ -292,11 +421,13 @@ export function ResultsScreen() {
                                 content={<ChartTooltipContent hideLabel indicator="line" />}
                               />
                               <Radar
-                                name="Score"
-                                dataKey="score"
-                                stroke="var(--primary)"
-                                fill="var(--primary)"
-                                fillOpacity={0.35}
+                                {...({
+                                  name: "Score",
+                                  dataKey: "score",
+                                  stroke: "var(--primary)",
+                                  fill: "var(--primary)",
+                                  fillOpacity: 0.35,
+                                } as any)}
                               />
                             </RadarChart>
                           </ChartContainer>
@@ -332,7 +463,7 @@ export function ResultsScreen() {
 
               {feedback.scores && feedback.scores.length > 0 && (
                 <div className="space-y-4">
-                  <h2 className="font-display text-xl font-semibold tracking-tight text-foreground">
+                  <h2 className="heading text-xl text-foreground">
                     Category Details
                   </h2>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -394,69 +525,69 @@ export function ResultsScreen() {
                 </div>
               )}
             </div>
-      )}
+          )}
 
-                <details
-                  open
-                  className="transcript-section rounded-xl border border-border bg-card p-6 text-card-foreground shadow-xs"
-                >
-                  <summary className="cursor-pointer text-lg font-semibold text-foreground select-none">
-                    Transcript
-                  </summary>
-        <div className="mt-4">
-                            {isLoading ? (
-                              <p className="loading-state text-sm text-muted-foreground">Loading transcript…</p>
-                            ) : error ? (
-                              <p className="error-state text-sm text-destructive" role="alert">
-                                {error}
-                              </p>
-                            ) : turns.length === 0 ? (
-                              <p className="empty-state text-sm text-muted-foreground">No transcript turns recorded.</p>
-                            ) : (
-                              <ol className="m-0 flex list-none flex-col gap-3 p-0">
-                                {turns.map((turn) => (
-                <li
-                  key={turn.id || `${turn.turnIndex}-${turn.timestampSec}`}
-                  data-testid={`transcript-turn-${turn.turnIndex}`}
-                  className={cn(
-                    "rounded-lg border p-3.5 transition-colors",
-                    turn.speaker === "AI"
-                      ? "border-primary/20 bg-primary/5 dark:bg-primary/10"
-                      : "border-border bg-secondary/30 dark:bg-secondary/20"
-                  )}
-                >
-                          <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                            <span>{formatSpeaker(turn.speaker)}</span>
-                            <span aria-hidden="true">•</span>
-                            <span>{formatElapsedTime(turn.timestampSec)}</span>
-                          </div>
-                          <div className="text-sm leading-relaxed text-foreground">{turn.text}</div>
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
-            </details>
-
-            <PerAnswerFeedbackSection perAnswer={feedback?.perAnswer} />
-
-            <div className="flex flex-col gap-2 pt-2">
-              {deleteError && (
-                <Alert variant="error" role="alert">
-                  <AlertDescription>{deleteError}</AlertDescription>
-                </Alert>
+          <details
+            open
+            className="transcript-section rounded-xl border border-border bg-card p-6 text-card-foreground shadow-xs"
+          >
+            <summary className="cursor-pointer text-lg font-semibold text-foreground select-none">
+              Transcript
+            </summary>
+            <div className="mt-4">
+              {isLoading ? (
+                <p className="loading-state text-sm text-muted-foreground">Loading transcript…</p>
+              ) : error ? (
+                <p className="error-state text-sm text-destructive" role="alert">
+                  {error}
+                </p>
+              ) : turns.length === 0 ? (
+                <p className="empty-state text-sm text-muted-foreground">No transcript turns recorded.</p>
+              ) : (
+                <ol className="m-0 flex list-none flex-col gap-3 p-0">
+                  {turns.map((turn) => (
+                    <li
+                      key={turn.id || `${turn.turnIndex}-${turn.timestampSec}`}
+                      data-testid={`transcript-turn-${turn.turnIndex}`}
+                      className={cn(
+                        "rounded-lg border p-3.5 transition-colors",
+                        turn.speaker === "AI"
+                          ? "border-primary/20 bg-primary/5 dark:bg-primary/10"
+                          : "border-border bg-secondary/30 dark:bg-secondary/20"
+                      )}
+                    >
+                      <div className="mb-1 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                        <span>{formatSpeaker(turn.speaker)}</span>
+                        <span aria-hidden="true">•</span>
+                        <span>{formatElapsedTime(turn.timestampSec)}</span>
+                      </div>
+                      <div className="text-sm leading-relaxed text-foreground">{turn.text}</div>
+                    </li>
+                  ))}
+                </ol>
               )}
-              <div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleDelete}
-                  loading={deleting}
-                >
-                  {deleting ? "Deleting…" : "Delete interview"}
-                </Button>
-              </div>
+            </div>
+          </details>
+
+          <PerAnswerFeedbackSection perAnswer={feedback?.perAnswer} />
+
+          <div className="flex flex-col gap-2 pt-2">
+            {deleteError && (
+              <Alert variant="error" role="alert">
+                <AlertDescription>{deleteError}</AlertDescription>
+              </Alert>
+            )}
+            <div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDelete}
+                loading={deleting}
+              >
+                {deleting ? "Deleting…" : "Delete interview"}
+              </Button>
             </div>
           </div>
-        );
+        </div>
+      );
 }

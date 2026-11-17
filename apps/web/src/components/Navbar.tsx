@@ -1,15 +1,54 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router';
-import { UserCircle2, BrainCircuit, Moon, Sun } from 'lucide-react';
+import { Menu, Moon, Sun, SquareTerminal, X } from 'lucide-react';
+import { Logo } from './Logo';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
+import { THEMES, useTheme } from '../context/ThemeContext';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+const LINKS = [
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/new-interview', label: 'New interview' },
+  { to: '/history', label: 'History' },
+  { to: '/guide', label: 'Guide' },
+  { to: '/profile', label: 'Profile' },
+];
+
+const initials = (nameOrEmail: string) =>
+  nameOrEmail.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+
+const NavLink: React.FC<{ to: string; label: string; active: boolean; className?: string }> = ({ to, label, active, className }) => (
+  <Button
+    asChild
+    variant="ghost"
+    size="sm"
+    className={cn('shrink-0', active ? 'bg-secondary text-foreground' : 'text-muted-foreground', className)}
+  >
+    <Link to={to} aria-current={active ? 'page' : undefined}>{label}</Link>
+  </Button>
+);
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const themeIndex = THEMES.findIndex((t) => t.id === theme);
+  const themeLabel = THEMES[themeIndex]?.label ?? '';
+  const nextLabel = THEMES[(themeIndex + 1) % THEMES.length].label;
+  // Below lg the links don't fit in a row (a half-screen window is ~960px), so they go in a menu.
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnEscape = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [menuOpen]);
 
   const handleLogout = async () => {
     try {
@@ -25,8 +64,6 @@ export const Navbar: React.FC = () => {
     }
   };
 
-  const isActive = (path: string) => location.pathname === path;
-
   if (
     !user ||
     location.pathname === '/reset-password' ||
@@ -36,33 +73,63 @@ export const Navbar: React.FC = () => {
   }
 
   return (
-    <nav className="navbar">
-      <div className="container navbar-content">
-        <Link to="/" className="navbar-brand">
-          <BrainCircuit size={28} color="var(--primary-color)" />
-          AI Interviewer
+    // Fixed and 70px tall: pages clear it with pt-28.
+    <header className="fixed inset-x-0 top-0 z-50 flex h-[70px] items-center border-b border-border bg-background/90 backdrop-blur">
+      <nav aria-label="Main" className="mx-auto flex w-full max-w-[1200px] items-center justify-between gap-4 px-6">
+        <Link to="/" className="flex shrink-0 items-center gap-2 font-display text-xl font-bold text-foreground no-underline">
+          <Logo className="size-7 text-foreground" />
+          <span className="hidden sm:inline">AI Interviewer</span>
         </Link>
-        <div className="navbar-links">
-          <Link to="/dashboard" className={`navbar-link ${isActive('/dashboard') ? 'active' : ''}`}>Dashboard</Link>
-          <Link to="/history" className={`navbar-link ${isActive('/history') ? 'active' : ''}`}>History</Link>
-          <Link to="/guide" className={`navbar-link ${isActive('/guide') ? 'active' : ''}`}>Guide</Link>
-          <Link to="/profile" className={`navbar-link ${isActive('/profile') ? 'active' : ''}`}>Profile</Link>
-          
-          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
-            {theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
-          </Button>
-          
-          <div className="navbar-user-section">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)', fontWeight: 500 }}>
-              <UserCircle2 size={20} color="var(--text-muted)" />
-              {user.email}
-            </div>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              Sign out
-            </Button>
-          </div>
+
+        <div className="hidden items-center gap-1 lg:flex">
+          {LINKS.map(({ to, label }) => (
+            <NavLink key={to} to={to} label={label} active={location.pathname === to} />
+          ))}
         </div>
-      </div>
-    </nav>
+
+        <div className="flex shrink-0 items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={`Theme: ${themeLabel}. Switch to ${nextLabel}`}
+            title={`Theme: ${themeLabel}`}
+          >
+            {theme === 'light' ? <Sun className="size-5" /> : theme === 'dark' ? <Moon className="size-5" /> : <SquareTerminal className="size-5" />}
+          </Button>
+          <Avatar>
+            <AvatarFallback>{initials(user.name || user.email)}</AvatarFallback>
+          </Avatar>
+          <span className="hidden max-w-[16ch] truncate text-sm font-medium text-foreground xl:inline">{user.email}</span>
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            Sign out
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="lg:hidden"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-menu"
+          >
+            {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          </Button>
+        </div>
+      </nav>
+
+      {menuOpen && (
+        <div
+          id="mobile-menu"
+          role="navigation"
+          aria-label="Menu"
+          className="absolute inset-x-0 top-full flex flex-col gap-1 border-b border-border bg-background p-3 lg:hidden"
+        >
+          {LINKS.map(({ to, label }) => (
+            <NavLink key={to} to={to} label={label} active={location.pathname === to} className="justify-start" />
+          ))}
+        </div>
+      )}
+    </header>
   );
 };

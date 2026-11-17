@@ -9,6 +9,11 @@ import {
   Sparkles,
   CheckCircle2,
   TrendingUp,
+  Trash2,
+  TrendingDown,
+  Minus,
+  HelpCircle,
+  Layers,
 } from "lucide-react";
 import {
   LineChart,
@@ -17,15 +22,39 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-import { ROLES } from "@interview/contracts";
-import { getSessions } from "../../lib/api";
+import { ROLES, formatEndReason } from "@interview/contracts";
+import { getSessions, deleteSession } from "../../lib/api";
 import type { SessionData } from "../../types";
+import { Button } from "../../components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../components/ui/alert-dialog";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
 } from "../../components/ui/chart";
+
+export const CATEGORY_TREND_WINDOW_SIZE = 10;
+export const TREND_DELTA_THRESHOLD = 0.3;
+
+export interface CategoryTrendItem {
+  role: string;
+  roleLabel: string;
+  category: string;
+  averageScore: number;
+  sessionCount: number;
+  trend: "improving" | "declining" | "stable" | "insufficient_data";
+  delta: number | null;
+}
 
 const chartConfig = {
   score: {
@@ -34,11 +63,77 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
 export const HistoryPage: React.FC = () => {
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionToDelete, setSessionToDelete] = useState<SessionData | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  const handleDeleteClick = (e: React.MouseEvent, session: SessionData) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleteError(null);
+    setSessionToDelete(session);
+  };
+
+  const handleCancelDelete = () => {
+    if (deleting) return;
+    setSessionToDelete(null);
+    setDeleteError(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!sessionToDelete || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await deleteSession(sessionToDelete.id);
+      if (res && res.success === false) {
+        throw new Error(res.message || "Failed to delete the interview");
+      }
+      setSessions((prev) => prev.filter((s) => s.id !== sessionToDelete.id));
+      setSessionToDelete(null);
+    } catch {
+      setDeleteError("Failed to delete the interview. Please try again.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return dateString;
+    return d.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const formatShortDate = (dateString: string) => {
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return dateString;
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const selectedRoleName = sessionToDelete
+    ? (ROLES.find((r) => r.id === sessionToDelete.role)?.label ?? sessionToDelete.role)
+    : "";
+  const selectedDateFormatted = sessionToDelete ? formatDate(sessionToDelete.startedAt) : "";
 
   useEffect(() => {
     let cancelled = false;
@@ -64,27 +159,6 @@ export const HistoryPage: React.FC = () => {
       cancelled = true;
     };
   }, []);
-
-  const formatDate = (dateString: string) => {
-    const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return dateString;
-    return d.toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const formatShortDate = (dateString: string) => {
-    const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return dateString;
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  };
 
   // Performance graph data: chronological order (oldest to newest), only valid finite 1-5 scores
   const chartData = useMemo(() => {
@@ -130,6 +204,229 @@ export const HistoryPage: React.FC = () => {
       };
     });
   }, [sessions]);
+
+  // Eligible sessions for category trends: ready feedback with at least one valid category score
+  const eligibleSessions = useMemo(() => {
+    return sessions
+      .filter((s) => {
+        return (
+          s.feedbackStatus === "ready" &&
+          Array.isArray(s.categoryScores) &&
+          s.categoryScores.some(
+            (cs) =>
+              typeof cs?.category === "string" &&
+              cs.category.trim().length > 0 &&
+              typeof cs?.score === "number" &&
+              Number.isFinite(cs.score) &&
+              cs.score >= 1 &&
+              cs.score <= 5
+          )
+        );
+      })
+      .sort((a, b) => {
+        const timeA = new Date(a.startedAt).getTime();
+        const timeB = new Date(b.startedAt).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+        return a.id.localeCompare(b.id);
+      });
+  }, [sessions]);
+
+  // Category-wise trends calculation across the latest eligible interviews (fixed window)
+  const categoryTrends = useMemo((): CategoryTrendItem[] => {
+    if (eligibleSessions.length < 3) {
+      return [];
+    }
+
+    const windowSessions = eligibleSessions.slice(-CATEGORY_TREND_WINDOW_SIZE);
+
+    const categoryMap = new Map<
+      string,
+      {
+        role: string;
+        roleLabel: string;
+        category: string;
+        scores: number[];
+      }
+    >();
+
+    for (const session of windowSessions) {
+      if (!Array.isArray(session.categoryScores)) continue;
+
+      const roleLabel = ROLES.find((r) => r.id === session.role)?.label ?? session.role;
+
+      // Ensure each category is only counted once per session (averaging if duplicates exist within session)
+      const sessionCatScores = new Map<string, number[]>();
+      for (const item of session.categoryScores) {
+        if (
+          typeof item?.category === "string" &&
+          item.category.trim().length > 0 &&
+          typeof item?.score === "number" &&
+          Number.isFinite(item.score) &&
+          item.score >= 1 &&
+          item.score <= 5
+        ) {
+          const trimmed = item.category.trim();
+          const existing = sessionCatScores.get(trimmed) ?? [];
+          existing.push(item.score);
+          sessionCatScores.set(trimmed, existing);
+        }
+      }
+
+      for (const [category, scoreList] of sessionCatScores.entries()) {
+        const key = `${session.role}:::${category}`;
+        if (!categoryMap.has(key)) {
+          categoryMap.set(key, {
+            role: session.role,
+            roleLabel,
+            category,
+            scores: [],
+          });
+        }
+        const avgSessionScore = scoreList.reduce((a, b) => a + b, 0) / scoreList.length;
+        categoryMap.get(key)!.scores.push(avgSessionScore);
+      }
+    }
+
+    const items: CategoryTrendItem[] = [];
+
+    for (const data of categoryMap.values()) {
+      const { role, roleLabel, category, scores } = data;
+      const sum = scores.reduce((acc, curr) => acc + curr, 0);
+      const averageScore = Math.round((sum / scores.length) * 10) / 10;
+
+      let trend: CategoryTrendItem["trend"] = "insufficient_data";
+      let delta: number | null = null;
+
+      if (scores.length >= 2) {
+        const half = Math.floor(scores.length / 2);
+        const older = scores.slice(0, half);
+        const newer = scores.slice(scores.length - half);
+
+        const avgOlder = older.reduce((a, b) => a + b, 0) / older.length;
+        const avgNewer = newer.reduce((a, b) => a + b, 0) / newer.length;
+        delta = Math.round((avgNewer - avgOlder) * 10) / 10;
+
+        if (delta >= TREND_DELTA_THRESHOLD) {
+          trend = "improving";
+        } else if (delta <= -TREND_DELTA_THRESHOLD) {
+          trend = "declining";
+        } else {
+          trend = "stable";
+        }
+      }
+
+      items.push({
+        role,
+        roleLabel,
+        category,
+        averageScore,
+        sessionCount: scores.length,
+        trend,
+        delta,
+      });
+    }
+
+    // Sort categories deterministically: by role label, then category name
+    return items.sort((a, b) => {
+      const roleCmp = a.roleLabel.localeCompare(b.roleLabel);
+      if (roleCmp !== 0) return roleCmp;
+      return a.category.localeCompare(b.category);
+    });
+  }, [eligibleSessions]);
+
+  const renderTrendBadge = (trend: CategoryTrendItem["trend"], slug: string) => {
+    switch (trend) {
+      case "improving":
+        return (
+          <span
+            data-testid={`trend-badge-improving-${slug}`}
+            aria-label="Trend: Improving"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.35rem",
+              color: "var(--success, #059669)",
+              backgroundColor: "rgba(16, 185, 129, 0.12)",
+              border: "1px solid rgba(16, 185, 129, 0.25)",
+              padding: "0.2rem 0.65rem",
+              borderRadius: "9999px",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+            }}
+          >
+            <TrendingUp size={14} aria-hidden="true" />
+            <span>Improving</span>
+          </span>
+        );
+      case "declining":
+        return (
+          <span
+            data-testid={`trend-badge-declining-${slug}`}
+            aria-label="Trend: Declining"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.35rem",
+              color: "var(--destructive, #e11d48)",
+              backgroundColor: "rgba(239, 68, 68, 0.12)",
+              border: "1px solid rgba(239, 68, 68, 0.25)",
+              padding: "0.2rem 0.65rem",
+              borderRadius: "9999px",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+            }}
+          >
+            <TrendingDown size={14} aria-hidden="true" />
+            <span>Declining</span>
+          </span>
+        );
+      case "stable":
+        return (
+          <span
+            data-testid={`trend-badge-stable-${slug}`}
+            aria-label="Trend: Stable"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.35rem",
+              color: "var(--muted-foreground, #5f5b52)",
+              backgroundColor: "rgba(100, 116, 139, 0.12)",
+              border: "1px solid rgba(100, 116, 139, 0.25)",
+              padding: "0.2rem 0.65rem",
+              borderRadius: "9999px",
+              fontSize: "0.8rem",
+              fontWeight: 600,
+            }}
+          >
+            <Minus size={14} aria-hidden="true" />
+            <span>Stable</span>
+          </span>
+        );
+      case "insufficient_data":
+      default:
+        return (
+          <span
+            data-testid={`trend-badge-insufficient-${slug}`}
+            aria-label="Trend: Insufficient data"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.35rem",
+              color: "var(--text-muted, #71717a)",
+              backgroundColor: "rgba(113, 113, 122, 0.08)",
+              border: "1px solid rgba(113, 113, 122, 0.2)",
+              padding: "0.2rem 0.65rem",
+              borderRadius: "9999px",
+              fontSize: "0.8rem",
+              fontWeight: 500,
+            }}
+          >
+            <HelpCircle size={14} aria-hidden="true" />
+            <span>Insufficient data</span>
+          </span>
+        );
+    }
+  };
 
   const renderFeedbackStatus = (status: SessionData["feedbackStatus"]) => {
     switch (status) {
@@ -218,6 +515,13 @@ export const HistoryPage: React.FC = () => {
         </div>
       )}
 
+      {deleteError && !sessionToDelete && (
+        <div className="alert alert-error" role="alert">
+          <AlertCircle size={20} />
+          <span>{deleteError}</span>
+        </div>
+      )}
+
       {!loading && !error && sessions.length === 0 && (
         <div
           className="card"
@@ -256,7 +560,7 @@ export const HistoryPage: React.FC = () => {
 
       {!loading && !error && sessions.length > 0 && (
         <>
-          {/* Performance Graph Section */}
+          {/* Performance Graph Section (RH-5) */}
           {chartData.length > 0 ? (
             <div
               className="card"
@@ -323,7 +627,10 @@ export const HistoryPage: React.FC = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                     <XAxis
                       dataKey="sessionId"
-                      tickFormatter={(id) => chartData.find((d) => d.sessionId === id)?.displayDate ?? id}
+                      tickFormatter={(id: string | number) => {
+                        const sessionId = String(id);
+                        return chartData.find((d) => d.sessionId === sessionId)?.displayDate ?? sessionId;
+                      }}
                       stroke="var(--border)"
                       tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                       tickLine={{ stroke: "var(--border)" }}
@@ -464,6 +771,136 @@ export const HistoryPage: React.FC = () => {
             </div>
           )}
 
+          {/* Category-wise Trends Section (RH-6) */}
+          {eligibleSessions.length >= 3 ? (
+            <div
+              className="card"
+              data-testid="category-trends-container"
+              style={{
+                padding: "1.5rem",
+                marginBottom: "2rem",
+              }}
+            >
+              <div style={{ marginBottom: "1.25rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                  <Layers size={20} style={{ color: "var(--primary)" }} />
+                  <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 600 }}>Category-wise Trends</h2>
+                </div>
+                <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--text-muted)" }}>
+                  Average scores and trajectories across your recent interviews (latest{" "}
+                  {Math.min(eligibleSessions.length, CATEGORY_TREND_WINDOW_SIZE)} eligible sessions).
+                  Trends compare the newer half of interviews against the older half (improving: &ge; +0.3, declining: &le; -0.3, stable: within &plusmn;0.2).
+                </p>
+              </div>
+
+              {categoryTrends.length > 0 ? (
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                    gap: "1rem",
+                  }}
+                >
+                  {categoryTrends.map((cat) => {
+                    const slug = slugify(cat.category);
+                    return (
+                      <div
+                        key={`${cat.role}:::${cat.category}`}
+                        data-testid={`category-trend-card-${slug}`}
+                        style={{
+                          padding: "1.25rem",
+                          borderRadius: "var(--radius, 0.5rem)",
+                          border: "1px solid var(--border)",
+                          backgroundColor: "var(--card)",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "space-between",
+                          gap: "0.75rem",
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: "0.5rem",
+                              marginBottom: "0.35rem",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "var(--muted-foreground)",
+                                backgroundColor: "var(--accent, #efeee9)",
+                                padding: "0.15rem 0.5rem",
+                                borderRadius: "9999px",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {cat.roleLabel}
+                            </span>
+                            {renderTrendBadge(cat.trend, slug)}
+                          </div>
+                          <h3 style={{ margin: "0.25rem 0", fontSize: "1rem", fontWeight: 600 }}>
+                            {cat.category}
+                          </h3>
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "baseline",
+                            justifyContent: "space-between",
+                            paddingTop: "0.5rem",
+                            borderTop: "1px solid var(--border)",
+                          }}
+                        >
+                          <div>
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Average: </span>
+                            <strong
+                              data-testid={`category-avg-${slug}`}
+                              style={{ fontSize: "1.15rem", color: "var(--foreground)" }}
+                            >
+                              {cat.averageScore.toFixed(1)}
+                            </strong>
+                            <span style={{ fontSize: "0.75rem", color: "var(--muted-foreground)" }}> / 5.0</span>
+                          </div>
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            {cat.sessionCount} {cat.sessionCount === 1 ? "interview" : "interviews"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--text-muted)" }}>
+                  No rubric category data recorded for these sessions.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div
+              className="card"
+              data-testid="category-trends-insufficient"
+              style={{
+                padding: "1.5rem",
+                marginBottom: "2rem",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                <Layers size={20} style={{ color: "var(--text-muted)" }} />
+                <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 600 }}>Category-wise Trends</h2>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--text-muted)" }}>
+                At least 3 scored interviews are required to calculate category trends (you have {eligibleSessions.length}).
+                Complete more mock interviews to see your rubric category breakdown and skill trajectories over time.
+              </p>
+            </div>
+          )}
+
           {/* Existing Interview Cards */}
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             {sessions.map((session) => {
@@ -499,7 +936,7 @@ export const HistoryPage: React.FC = () => {
                             fontWeight: 600,
                           }}
                         >
-                          Ended early
+                          Ended early{session.endReason ? ` (${formatEndReason(session.endReason)})` : ''}
                         </span>
                       )}
                     </div>
@@ -524,25 +961,89 @@ export const HistoryPage: React.FC = () => {
                       <span style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
                         Feedback: {renderFeedbackStatus(session.feedbackStatus)}
                       </span>
+                      {session.overallScore !== undefined && session.overallScore !== null && (
+                        <>
+                          <span>•</span>
+                          <span data-testid="history-overall-score" style={{ fontWeight: 600 }}>
+                            Score: {session.overallScore}/5
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
 
-                  <div>
-                    <Link
-                      to={`/interview/${session.id}/feedback`}
-                      className="btn btn-outline"
-                      style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
-                    >
-                      View Results
-                      <ArrowRight size={16} />
-                    </Link>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                      <Link
+                        to={`/interview/${session.id}/feedback`}
+                        className="btn btn-outline"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+                      >
+                        View Results
+                        <ArrowRight size={16} />
+                      </Link>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive border-border"
+                        onClick={(e) => handleDeleteClick(e, session)}
+                        disabled={deleting}
+                        title={`Delete interview for ${roleName} on ${formatDate(session.startedAt)}`}
+                        data-testid={`history-delete-${session.id}`}
+                      >
+                        <Trash2 size={16} aria-hidden />
+                        Delete
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              );
+                  );
             })}
-          </div>
+                </div>
         </>
       )}
-    </div>
-  );
+
+          <AlertDialog
+            open={sessionToDelete !== null}
+            onOpenChange={(open) => {
+              if (!open && !deleting) {
+                handleCancelDelete();
+              }
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Interview?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete this {selectedRoleName} interview from {selectedDateFormatted}? This action is permanent and cannot be undone. Its recording, transcript, and feedback will be permanently deleted.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              {deleteError && (
+                <div className="alert alert-error" role="alert" style={{ marginBottom: "0.5rem" }}>
+                  <AlertCircle size={16} />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  disabled={deleting}
+                  onClick={handleCancelDelete}
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={deleting}
+                  loading={deleting}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleConfirmDelete();
+                  }}
+                >
+                  {deleting ? "Deleting…" : "Delete interview"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      );
 };

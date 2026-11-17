@@ -16,7 +16,7 @@ The current plan, with who owns what, is in `docs/final-sprints.md`.
   - `src/screens/<name>/`: one folder per screen, holding its component, hook and tests.
   - `src/lib/api.ts`: every HTTP call to the API.
   - `src/lib/voiceAdapter.ts`: the browser-speech voice adapter and the `VoiceSessionAdapter` interface.
-  - `src/lib/geminiLiveAdapter.ts`: the Gemini Live adapter. The room doesn't use it yet (VI-8).
+  - `src/lib/geminiLiveAdapter.ts`: the Gemini Live adapter. The room connects it first and falls back to the browser-speech adapter if it fails.
   - `src/context/AuthContext.tsx`: Supabase sign-in.
 - `packages/contracts`: Zod schemas shared by both apps (roles, session, turn, feedback). A change
   here affects both apps.

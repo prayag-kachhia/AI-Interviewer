@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { CreateSessionInput, Feedback, ImprovementPlan, VoiceToken } from '@interview/contracts';
+import { CreateSessionInput, EndReason, Feedback, ImprovementPlan, VoiceToken } from '@interview/contracts';
+import type { z } from 'zod';
 import { supabase } from './supabase';
 import type {
   ResumeResponse,
@@ -96,11 +97,8 @@ export const getSessions = async (): Promise<SessionsListResponse> => {
   return data;
 };
 
-export const createSession = async (
-  input: string | (Partial<CreateSessionInput> & { roleId: string })
-): Promise<SessionResponse> => {
-  const payload = typeof input === 'string' ? { roleId: input } : input;
-  const { data } = await api.post<SessionResponse>('/sessions', payload);
+export const createSession = async (setup: z.input<typeof CreateSessionInput>): Promise<SessionResponse> => {
+  const { data } = await api.post<SessionResponse>('/sessions', setup);
   return data;
 };
 
@@ -136,8 +134,12 @@ export const postNextQuestion = async (
   return data;
 };
 
-export const endSession = async (sessionId: string): Promise<SessionResponse> => {
-  const { data } = await api.post<SessionResponse>(`/sessions/${sessionId}/end`);
+export const endSession = async (
+  sessionId: string,
+  endReason?: EndReason | string | null
+): Promise<SessionResponse> => {
+  const payload = endReason ? { endReason } : undefined;
+  const { data } = await api.post<SessionResponse>(`/sessions/${sessionId}/end`, payload);
   return data;
 };
 
