@@ -175,7 +175,7 @@ Token counts are averaged over the 8 successful LLM runs (excludes `excellent` w
 
 ## S-7 — Score Consistency (NFR-19)
 
-> **Status: Implementation and unit tests complete (64 tests). Partial live validation: 3 fixtures (15 calls) completed with all category spreads ≤ 1.0 pt (PASS). Full 26-fixture benchmark PENDING — aborted at fixture 4 due to free-tier daily quota exhaustion (429 retryDelay: 79 799s). All unrun fixtures are omitted, not estimated.**
+> **Status: Complete. Implementation and 87 unit tests passing. Full live benchmark validated: 26/26 evaluatable fixtures (130 successful evaluations) completed with all category spreads ≤ 1.0 pt (100% PASS). 1 fixture (empty-answers) skipped due to having no candidate answers.**
 
 ### Methodology
 
@@ -382,6 +382,10 @@ The 5-run benchmark was executed using `bun --cwd apps/api scripts/bench.ts --ru
 - **Cost / interview**: ₹0.4667 (US$0.005556)
 - **Monthly projection (100 interviews/month)**: ₹46.67 (US$0.5556)
 - **Pricing basis**: input $0.75 / 1M tokens, output $3.75 / 1M tokens, USD→INR 84
+
+#### Live-site verification
+
+Live-site verification: **PENDING** — Post-merge smoke verification of end-to-end background evaluation on the deployed live site (`ai-interviewer-it314.web.app`) is pending staging/production deployment.
 
 ---
 

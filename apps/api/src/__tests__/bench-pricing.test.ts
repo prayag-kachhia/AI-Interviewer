@@ -13,6 +13,7 @@ import {
   parseRetryAfterMs,
   MAX_RETRY_WAIT_MS,
   ExcessiveRetryDelayError,
+  computeFixtureFingerprint,
   isValidCachedFixture,
   isValidCachedRun,
   filterValidCachedRuns,
@@ -1386,6 +1387,114 @@ describe('Benchmark Pricing & Cost Calculation', () => {
       });
     });
 
+    describe('computeFixtureFingerprint & Cache Invalidation', () => {
+      const baseOptions = {
+        model: 'gemini-3.8-flash',
+        prompt: 'You are an interviewer evaluator for SWE...',
+        turns: [{ speaker: 'CANDIDATE' as const, text: 'I used binary search.' }],
+        expected: validExpected,
+      };
+
+      it('computes deterministic SHA-256 fingerprint for identical inputs', () => {
+        const fp1 = computeFixtureFingerprint(baseOptions);
+        const fp2 = computeFixtureFingerprint(baseOptions);
+        expect(fp1).toHaveLength(64);
+        expect(fp1).toBe(fp2);
+      });
+
+      it('produces a different fingerprint when the model changes', () => {
+        const fpBase = computeFixtureFingerprint(baseOptions);
+        const fpOtherModel = computeFixtureFingerprint({ ...baseOptions, model: 'gemini-3.5-flash' });
+        expect(fpOtherModel).not.toBe(fpBase);
+      });
+
+      it('produces a different fingerprint when the prompt changes', () => {
+        const fpBase = computeFixtureFingerprint(baseOptions);
+        const fpNewPrompt = computeFixtureFingerprint({ ...baseOptions, prompt: 'Modified prompt text...' });
+        expect(fpNewPrompt).not.toBe(fpBase);
+      });
+
+      it('produces a different fingerprint when fixture turns change', () => {
+        const fpBase = computeFixtureFingerprint(baseOptions);
+        const fpNewTurns = computeFixtureFingerprint({
+          ...baseOptions,
+          turns: [{ speaker: 'CANDIDATE' as const, text: 'I used linear search.' }],
+        });
+        expect(fpNewTurns).not.toBe(fpBase);
+      });
+
+      it('produces a different fingerprint when expected rubric changes', () => {
+        const fpBase = computeFixtureFingerprint(baseOptions);
+        const fpNewExpected = computeFixtureFingerprint({
+          ...baseOptions,
+          expected: {
+            role: 'Backend Developer',
+            scores: [{ category: 'API Design & Architecture', min: 4, max: 5, reason: 'test' }],
+          },
+        });
+        expect(fpNewExpected).not.toBe(fpBase);
+      });
+
+      it('isValidCachedFixture returns true when fingerprint matches and false when fingerprint differs', () => {
+        const fp = computeFixtureFingerprint(baseOptions);
+        const runs = makeRuns(5).map((r) => ({ ...r, fingerprint: fp }));
+        const fixture: FixtureResult = {
+          name: 'test',
+          role: 'Software Engineer',
+          runs,
+          expected: validExpected,
+          pass: true,
+          failReasons: [],
+          fingerprint: fp,
+        };
+
+        expect(isValidCachedFixture(fixture, 5, validExpected, fp)).toBe(true);
+        expect(isValidCachedFixture(fixture, 5, validExpected, 'different-fingerprint-hex')).toBe(false);
+      });
+
+      it('filterValidCachedRuns excludes cached runs with mismatched fingerprints', () => {
+        const fp = computeFixtureFingerprint(baseOptions);
+        const runs = makeRuns(3).map((r) => ({ ...r, fingerprint: fp }));
+        runs.push({ ...makeRuns(1)[0], fingerprint: 'stale-fingerprint' });
+
+        const filtered = filterValidCachedRuns(runs, validExpected, fp);
+        expect(filtered).toHaveLength(3);
+      });
+
+      it('rejects a cached run with no stored fingerprint when expectedFingerprint is provided', () => {
+        const fp = computeFixtureFingerprint(baseOptions);
+        // makeRuns() does not set fingerprint — fingerprint is undefined
+        const runWithoutFingerprint = makeRuns(1)[0];
+        expect(isValidCachedRun(runWithoutFingerprint, validExpected, fp)).toBe(false);
+      });
+
+      it('rejects a cached fixture with no stored fingerprint when expectedFingerprint is provided', () => {
+        const fp = computeFixtureFingerprint(baseOptions);
+        // runs have no fingerprint property (undefined)
+        const runs = makeRuns(5);
+        const fixture: FixtureResult = {
+          name: 'test-no-fp',
+          role: 'Software Engineer',
+          runs,
+          expected: validExpected,
+          pass: true,
+          failReasons: [],
+          // fingerprint intentionally omitted — simulates old cached entry
+        };
+        expect(isValidCachedFixture(fixture, 5, validExpected, fp)).toBe(false);
+      });
+
+      it('filterValidCachedRuns excludes runs with missing fingerprints when expectedFingerprint is provided', () => {
+        const fp = computeFixtureFingerprint(baseOptions);
+        const runsWithFp = makeRuns(2).map((r) => ({ ...r, fingerprint: fp }));
+        const runsWithoutFp = makeRuns(2); // fingerprint is undefined
+        const mixed = [...runsWithFp, ...runsWithoutFp];
+        const filtered = filterValidCachedRuns(mixed, validExpected, fp);
+        // Only the 2 runs with the correct fingerprint should survive
+        expect(filtered).toHaveLength(2);
+      });
+    });
+
     describe('loadBenchCache & saveBenchCache', () => {
       it('returns empty object if cache file does not exist', () => {
         expect(loadBenchCache('non-existent-cache-file.json')).toEqual({});
@@ -1417,35 +1526,38 @@ describe('Benchmark Pricing & Cost Calculation', () => {
         }
       });
 
-      it('verifies .bench-cache.json contains 26 fully completed fixtures (130 valid runs total)', () => {
-        const seededCachePath = path.resolve(__dirname, '../../.bench-cache.json');
-        if (existsSync(seededCachePath)) {
-          const cache = loadBenchCache(seededCachePath);
-          const fixtureKeys = Object.keys(cache);
-          expect(fixtureKeys).toHaveLength(26);
+      it('verifies seeded cache fixture validation and fails clearly if required fixture is missing in CI', () => {
+        const fixturePath = path.resolve(__dirname, 'fixtures/seeded-cache.json');
+        expect(
+          existsSync(fixturePath),
+          `Required benchmark cache test fixture missing in CI: ${fixturePath}`
+        ).toBe(true);
 
-          let completeCount = 0;
-          let partialCount = 0;
-          let totalValidRuns = 0;
+        const cache = loadBenchCache(fixturePath);
+        const fixtureKeys = Object.keys(cache);
+        expect(fixtureKeys).toHaveLength(2);
 
-          for (const key of fixtureKeys) {
-            const fixture = cache[key];
-            const validRuns = filterValidCachedRuns(fixture.runs, fixture.expected);
-            totalValidRuns += validRuns.length;
+        let completeCount = 0;
+        let partialCount = 0;
+        let totalValidRuns = 0;
 
-            if (isValidCachedFixture(fixture, 5, fixture.expected)) {
-              completeCount++;
-              expect(fixture.runs).toHaveLength(5);
-            } else {
-              partialCount++;
-              expect(fixture.runs.length).toBeLessThan(5);
-            }
+        for (const key of fixtureKeys) {
+          const fixture = cache[key];
+          const validRuns = filterValidCachedRuns(fixture.runs, fixture.expected, fixture.fingerprint);
+          totalValidRuns += validRuns.length;
+
+          if (isValidCachedFixture(fixture, 5, fixture.expected, fixture.fingerprint)) {
+            completeCount++;
+            expect(fixture.runs).toHaveLength(5);
+          } else {
+            partialCount++;
+            expect(fixture.runs.length).toBeLessThan(5);
           }
-
-          expect(completeCount).toBe(26);
-          expect(partialCount).toBe(0);
-          expect(totalValidRuns).toBe(130); // 26 * 5 = 130
         }
+
+        expect(completeCount).toBe(1);
+        expect(partialCount).toBe(1);
+        expect(totalValidRuns).toBe(8); // 5 complete + 3 partial
       });
     });
   });

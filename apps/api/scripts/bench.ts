@@ -11,6 +11,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -634,6 +635,7 @@ export interface RunResult {
   outputTokens: number;
   scores: { category: string; score: number }[];
   error?: string;
+  fingerprint?: string;
 }
 
 export interface FixtureValidationResult {
@@ -709,6 +711,7 @@ export interface FixtureResult {
   pass: boolean | undefined;
   failReasons: string[];
   hasCandidateAnswers?: boolean;
+  fingerprint?: string;
 }
 
 export type SpreadFixtureStatus = 'PASS' | 'FAIL' | 'INCONCLUSIVE' | 'SKIPPED';
@@ -1233,15 +1236,47 @@ export async function runWithRetry<T>(
 
 // ── cache helpers ────────────────────────────────────────────────────────────
 
+export interface ComputeFixtureFingerprintOptions {
+  model: string;
+  prompt: string;
+  turns?: TranscriptTurn[];
+  expected?: FixtureExpected;
+}
+
+/**
+ * Computes a deterministic SHA-256 fingerprint for a fixture evaluation.
+ * Invalidates cache whenever the model, evaluator prompt, transcript turns, or expected rubric changes.
+ */
+export function computeFixtureFingerprint(options: ComputeFixtureFingerprintOptions): string {
+  const hash = createHash('sha256');
+  hash.update(options.model);
+  hash.update('::');
+  hash.update(options.prompt);
+  if (options.turns) {
+    hash.update('::');
+    hash.update(JSON.stringify(options.turns));
+  }
+  if (options.expected) {
+    hash.update('::');
+    hash.update(JSON.stringify(options.expected));
+  }
+  return hash.digest('hex');
+}
+
 /**
  * Validates that an individual cached run was successful with no errors,
- * has valid scores in [1, 5], and contains all expected categories.
+ * has valid scores in [1, 5], matches the expected rubric categories,
+ * and matches the expected fingerprint if provided.
  */
 export function isValidCachedRun(
   run: RunResult | undefined,
-  expected?: FixtureExpected
+  expected?: FixtureExpected,
+  expectedFingerprint?: string
 ): boolean {
   if (!run || run.error || !Array.isArray(run.scores) || run.scores.length === 0) {
+    return false;
+  }
+  if (expectedFingerprint && run.fingerprint !== expectedFingerprint) {
     return false;
   }
   for (const s of run.scores) {
@@ -1272,24 +1307,29 @@ export function isValidCachedRun(
  */
 export function filterValidCachedRuns(
   runs: RunResult[] | undefined,
-  expected?: FixtureExpected
+  expected?: FixtureExpected,
+  expectedFingerprint?: string
 ): RunResult[] {
   if (!Array.isArray(runs)) return [];
-  return runs.filter((r) => isValidCachedRun(r, expected));
+  return runs.filter((r) => isValidCachedRun(r, expected, expectedFingerprint));
 }
 
 /**
  * Validates that a cached FixtureResult contains exactly requestedRuns successful runs,
- * each with valid scores and matching all expected rubric categories.
+ * each with valid scores, matching all expected rubric categories and fingerprint.
  */
 export function isValidCachedFixture(
   cached: FixtureResult | undefined,
   requestedRuns: number,
-  expected?: FixtureExpected
+  expected?: FixtureExpected,
+  expectedFingerprint?: string
 ): boolean {
   if (!cached || !Array.isArray(cached.runs)) return false;
   if (cached.runs.length !== requestedRuns) return false;
-  return cached.runs.every((r) => isValidCachedRun(r, expected));
+  if (expectedFingerprint && cached.fingerprint !== expectedFingerprint) {
+    return false;
+  }
+  return cached.runs.every((r) => isValidCachedRun(r, expected, expectedFingerprint));
 }
 
 export function loadBenchCache(cachePath: string): Record<string, FixtureResult> {
@@ -1407,8 +1447,28 @@ async function main() {
 
     console.log(`\n▶ ${name}  [${role.label}]`);
 
+    // Compute evaluation prompt and cache fingerprint
+    const prompt = brokenPrompt
+      ? buildBrokenPrompt({
+          roleId: role.id,
+          turns,
+          difficulty: expected?.difficulty,
+        })
+      : buildEvaluationPrompt({
+          roleId: role.id,
+          turns,
+          difficulty: expected?.difficulty,
+        });
+
+    const currentFingerprint = computeFixtureFingerprint({
+      model: activeModel,
+      prompt,
+      turns,
+      expected,
+    });
+
     // Check if valid cached result exists
-    if (useCache && isValidCachedFixture(cache[name], runsPerFixture, expected)) {
+    if (useCache && isValidCachedFixture(cache[name], runsPerFixture, expected, currentFingerprint)) {
       const cached = cache[name];
       console.log(`  (reusing ${runsPerFixture}/${runsPerFixture} cached runs from ${path.basename(cachePath)})`);
       for (let r = 0; r < cached.runs.length; r++) {
@@ -1430,7 +1490,7 @@ async function main() {
     // Check for partial valid cached runs that can be topped up
     const existingValidRuns: RunResult[] =
       useCache && cache[name] && Array.isArray(cache[name].runs)
-        ? filterValidCachedRuns(cache[name].runs, expected)
+        ? filterValidCachedRuns(cache[name].runs, expected, currentFingerprint)
         : [];
 
     if (existingValidRuns.length > 0) {
@@ -1501,6 +1561,7 @@ async function main() {
           promptTokens: result.usageMetadata?.promptTokenCount ?? 0,
           outputTokens: result.usageMetadata?.candidatesTokenCount ?? 0,
           scores: result.scores.map((s) => ({ category: s.category, score: s.score })),
+          fingerprint: currentFingerprint,
         };
         runs.push(runResult);
         console.log(
@@ -1540,10 +1601,11 @@ async function main() {
       pass,
       failReasons,
       hasCandidateAnswers: true,
+      fingerprint: currentFingerprint,
     });
 
     const fixtureRes = fixtureResults[fixtureResults.length - 1];
-    if (useCache && isValidCachedFixture(fixtureRes, runsPerFixture, expected)) {
+    if (useCache && isValidCachedFixture(fixtureRes, runsPerFixture, expected, currentFingerprint)) {
       cache[name] = fixtureRes;
       saveBenchCache(cachePath, cache);
     }
@@ -1810,22 +1872,23 @@ async function main() {
     });
     scoreSpreadOk = spreadEval.pass;
 
-    if (spreadEval.skippedFixtures.length > 0) {
-      for (const sk of spreadEval.skippedFixtures) {
-        console.log(`  ⏭️  ${pad(sk.fixtureName, 32, true)}: SKIPPED — ${sk.reason}`);
+    console.log('\nPer-fixture category score spreads:');
+    for (const fixture of spreadEval.fixtureResults) {
+      if (fixture.status === 'SKIPPED') {
+        console.log(`  ⏭️  ${pad(fixture.fixtureName, 32, true)}: SKIPPED — ${fixture.skipReason}`);
+        continue;
       }
-    }
-
-    if (spreadEval.inconclusiveFixtures.length > 0) {
-      for (const inc of spreadEval.inconclusiveFixtures) {
-        console.log(`  ⚠️  ${pad(inc.fixtureName, 32, true)}: INCONCLUSIVE — ${inc.reason}`);
+      if (fixture.status === 'INCONCLUSIVE') {
+        console.log(`  ⚠️  ${pad(fixture.fixtureName, 32, true)}: INCONCLUSIVE — ${fixture.inconclusiveReason}`);
+        continue;
       }
-    }
-
-    if (spreadEval.exceededFixtures.length > 0) {
-      for (const exc of spreadEval.exceededFixtures) {
+      const statusIcon = fixture.status === 'PASS' ? '✅' : '❌';
+      const maxSpreadStr = fixture.maxSpread !== undefined ? `max spread: ${fixture.maxSpread.toFixed(1)} pt` : '';
+      console.log(`  ${statusIcon} ${pad(fixture.fixtureName, 32, true)} (${maxSpreadStr})`);
+      for (const cat of fixture.categories) {
+        const catIcon = cat.pass ? '✅' : '❌';
         console.log(
-          `  ❌ ${pad(exc.fixtureName, 32, true)}: ${exc.category} spread = ${exc.spread.toFixed(2)} > 1.0 pt`
+          `     - ${pad(cat.category, 42, true)}: min=${cat.min.toFixed(1)}, max=${cat.max.toFixed(1)}, spread=${cat.spread.toFixed(1)} pt  ${catIcon}`
         );
       }
     }
