@@ -9,6 +9,7 @@ import {
   Sparkles,
   CheckCircle2,
   TrendingUp,
+  Trash2,
 } from "lucide-react";
 import {
   LineChart,
@@ -18,8 +19,19 @@ import {
   CartesianGrid,
 } from "recharts";
 import { ROLES } from "@interview/contracts";
-import { getSessions } from "../../lib/api";
+import { getSessions, deleteSession } from "../../lib/api";
 import type { SessionData } from "../../types";
+import { Button } from "../../components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../components/ui/alert-dialog";
 import {
   ChartContainer,
   ChartTooltip,
@@ -38,7 +50,67 @@ export const HistoryPage: React.FC = () => {
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionToDelete, setSessionToDelete] = useState<SessionData | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  const handleDeleteClick = (e: React.MouseEvent, session: SessionData) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleteError(null);
+    setSessionToDelete(session);
+  };
+
+  const handleCancelDelete = () => {
+    if (deleting) return;
+    setSessionToDelete(null);
+    setDeleteError(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!sessionToDelete || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await deleteSession(sessionToDelete.id);
+      if (res && res.success === false) {
+        throw new Error(res.message || "Failed to delete the interview");
+      }
+      setSessions((prev) => prev.filter((s) => s.id !== sessionToDelete.id));
+      setSessionToDelete(null);
+    } catch {
+      setDeleteError("Failed to delete the interview. Please try again.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return dateString;
+    return d.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const formatShortDate = (dateString: string) => {
+    const d = new Date(dateString);
+    if (Number.isNaN(d.getTime())) return dateString;
+    return d.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  const selectedRoleName = sessionToDelete
+    ? (ROLES.find((r) => r.id === sessionToDelete.role)?.label ?? sessionToDelete.role)
+    : "";
+  const selectedDateFormatted = sessionToDelete ? formatDate(sessionToDelete.startedAt) : "";
 
   useEffect(() => {
     let cancelled = false;
@@ -64,27 +136,6 @@ export const HistoryPage: React.FC = () => {
       cancelled = true;
     };
   }, []);
-
-  const formatDate = (dateString: string) => {
-    const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return dateString;
-    return d.toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const formatShortDate = (dateString: string) => {
-    const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return dateString;
-    return d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  };
 
   // Performance graph data: chronological order (oldest to newest), only valid finite 1-5 scores
   const chartData = useMemo(() => {
@@ -215,6 +266,13 @@ export const HistoryPage: React.FC = () => {
         <div className="alert alert-error" role="alert">
           <AlertCircle size={20} />
           <span>{error}</span>
+        </div>
+      )}
+
+      {deleteError && !sessionToDelete && (
+        <div className="alert alert-error" role="alert">
+          <AlertCircle size={20} />
+          <span>{deleteError}</span>
         </div>
       )}
 
@@ -527,22 +585,78 @@ export const HistoryPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <div>
-                    <Link
-                      to={`/interview/${session.id}/feedback`}
-                      className="btn btn-outline"
-                      style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
-                    >
-                      View Results
-                      <ArrowRight size={16} />
-                    </Link>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                      <Link
+                        to={`/interview/${session.id}/feedback`}
+                        className="btn btn-outline"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}
+                      >
+                        View Results
+                        <ArrowRight size={16} />
+                      </Link>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive border-border"
+                        onClick={(e) => handleDeleteClick(e, session)}
+                        disabled={deleting}
+                        title={`Delete interview for ${roleName} on ${formatDate(session.startedAt)}`}
+                        data-testid={`history-delete-${session.id}`}
+                      >
+                        <Trash2 size={16} aria-hidden />
+                        Delete
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              );
+                  );
             })}
-          </div>
+                </div>
         </>
       )}
-    </div>
-  );
+
+          <AlertDialog
+            open={sessionToDelete !== null}
+            onOpenChange={(open) => {
+              if (!open && !deleting) {
+                handleCancelDelete();
+              }
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Interview?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete this {selectedRoleName} interview from {selectedDateFormatted}? This action is permanent and cannot be undone. Its recording, transcript, and feedback will be permanently deleted.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              {deleteError && (
+                <div className="alert alert-error" role="alert" style={{ marginBottom: "0.5rem" }}>
+                  <AlertCircle size={16} />
+                  <span>{deleteError}</span>
+                </div>
+              )}
+
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  disabled={deleting}
+                  onClick={handleCancelDelete}
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={deleting}
+                  loading={deleting}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleConfirmDelete();
+                  }}
+                >
+                  {deleting ? "Deleting…" : "Delete interview"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      );
 };
