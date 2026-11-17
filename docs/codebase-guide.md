@@ -25,6 +25,9 @@ It is a practice tool, not a hiring platform: there are no employer accounts.
 
 ## 2. The big picture
 
+> [!NOTE]
+> **Archived / Replaced:** This early overview has been superseded by the full production deployment and architecture specification with Mermaid diagrams in [docs/design.md](design.md) (Issue [#202](https://github.com/prayag-kachhia/AI-Interviewer/issues/202), D-1).
+
 ```
  Browser (React app, apps/web)
    │  1. sign in ──────────────────────────────> Supabase Auth  (issues a JWT access token)
@@ -87,7 +90,7 @@ apps/web/                     @interview/web — React 19 + Vite + react-router
   src/screens/<screen>/       one folder per screen: its components, hooks and tests
   src/components/             Navbar, ProtectedRoute
   src/context/                AuthContext (who is signed in), ThemeContext (light/dark)
-  src/lib/                    api.ts (every API call), supabase.ts, the voice adapters, questionProvider.ts
+  src/lib/                    api.ts (every API call), supabase.ts, the voice adapters (voiceAdapter.ts, geminiLiveAdapter.ts)
   src/types/                  web-only types (most shared ones come from contracts)
 package.json, bun.lock        the workspace: scripts dev / typecheck / test, one lockfile
 tsconfig.base.json            shared strict TypeScript settings
@@ -112,6 +115,9 @@ tsconfig.base.json            shared strict TypeScript settings
 compiler, `tsc`) is required before every PR, and CI runs it.
 
 ## 5. One interview, end to end
+
+> [!NOTE]
+> **Archived / Replaced:** This section documents the early prototype flow (including legacy browser speech and client-side question banks that were deleted in K-8). The complete production sequence flow, state machines, and end-to-end request-chain walkthrough with JSON payloads are in [docs/design.md](design.md) (Issue [#202](https://github.com/prayag-kachhia/AI-Interviewer/issues/202), D-1).
 
 Follow these steps with the files open; it's the fastest way to learn the codebase.
 
@@ -143,12 +149,15 @@ the password. Supabase returns a session with an **access token** (a JWT).
 
 **Step 4 — The interview (LS4).** `screens/interview-room/` is the biggest screen:
 `InterviewRoom.tsx` lays it out and `useInterview.ts` holds the logic.
-- *Setup:* it loads the session (`GET /api/sessions/:id`) and creates a voice adapter
-  (`createVoiceSessionAdapter` in `lib/voiceAdapter.ts`).
-- *Today's voice:* `BrowserWebSpeechVoiceAdapter` uses the browser's own speech synthesis
-  (the AI's voice) and speech recognition (the candidate's words).
-- *Today's questions:* they come from a fixed per-role script in `lib/questionProvider.ts`
-  (`DeterministicQuestionProvider`). The second question quotes something the candidate said.
+- *Setup:* it loads the session (`GET /api/sessions/:id`) and connects a voice adapter in
+  `useInterview.ts`.
+- *Voice:* `GeminiLiveVoiceAdapter` (`lib/geminiLiveAdapter.ts`) connects first, with an
+  ephemeral token from the API. If the token or the socket fails, the room falls back to
+  `BrowserWebSpeechVoiceAdapter` (`lib/voiceAdapter.ts`), which uses the browser's own speech
+  synthesis (the AI's voice) and speech recognition (the candidate's words).
+- *Questions:* with Gemini Live they come from the server-built briefing locked into the voice
+  token. In the fallback and in typed mode the room asks `POST /api/sessions/:id/next-question`
+  for each question.
 - *Each finished turn:* `postTurn` sends `{ speaker: 'AI' | 'CANDIDATE', text }` to
   `POST /api/sessions/:id/turns`.
 - *Checks (`routes/sessions.ts`, `addTurn`):* a bad `speaker` or empty `text` is **400**, someone else's session
@@ -402,8 +411,6 @@ scores, latency and cost. See [evaluation-benchmark.md](evaluation-benchmark.md)
   times. The room doesn't use it yet.
 - `lib/transcriptAccumulator.ts`: joins streamed transcript chunks into whole turns. Only its
   test uses it so far.
-- `lib/questionProvider.ts`: the per-role question scripts and `getNextQuestion`, which never
-  repeats a question and quotes the candidate's last answer in question 2.
 
 **Screens** (one folder each under `screens/`)
 - `login/`: sign in / sign up forms, "Continue with Google", error messages, redirects.
@@ -707,11 +714,11 @@ FR-27. A 403 would confirm that the id exists. Every query filters by `id AND us
 (`getOwnedSession`), so someone else's session is simply "not found".
 
 **How does the voice work today, and what is built for Gemini Live?**
-Today `BrowserWebSpeechVoiceAdapter` (`lib/voiceAdapter.ts`) speaks and listens with the
-browser's speech APIs, and the questions come from a fixed per-role script
-(`lib/questionProvider.ts`). Built but not yet used by the room: `GeminiLiveVoiceAdapter`
-(`lib/geminiLiveAdapter.ts`, V1), and the server-built briefing locked into the voice token
-(V2, P1). See section 12.
+The room connects `GeminiLiveVoiceAdapter` (`lib/geminiLiveAdapter.ts`) first, using an
+ephemeral voice token whose briefing is built on the server. If that fails it falls back to
+`BrowserWebSpeechVoiceAdapter` (`lib/voiceAdapter.ts`), which speaks and listens with the
+browser's speech APIs and gets each question from `POST /api/sessions/:id/next-question`.
+See section 12.
 
 **What is the briefing?** (`services/briefing.service.ts`)
 The interviewer's system instructions: a persona for the role, three timed phases (warm-up,

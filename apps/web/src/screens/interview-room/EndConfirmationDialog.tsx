@@ -58,7 +58,7 @@ export const EndConfirmationDialog: React.FC<EndConfirmationDialogProps> = ({
               <AlertTriangle className="size-5" />
             </div>
             <div>
-              <h3 id="end-dialog-title" className="font-display text-lg font-semibold text-foreground m-0">
+              <h3 id="end-dialog-title" className="heading text-lg text-foreground m-0">
                 End Interview Early?
               </h3>
               <p className="text-xs text-muted-foreground m-0">

@@ -1,18 +1,20 @@
 import '@testing-library/jest-dom/vitest';
 import { test, expect, vi, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Profile } from './Profile';
 import * as api from '../../lib/api';
 
 vi.mock('../../lib/api', () => ({
   getLatestResume: vi.fn(),
+  exportMyData: vi.fn(),
 }));
 
+const mockDeleteAccount = vi.fn();
 vi.mock('../../context/AuthContext', () => ({
   useAuth: () => ({
     user: { id: 'u1', name: 'John Candidate', email: 'john@example.com' },
-    deleteAccount: vi.fn(),
+    deleteAccount: mockDeleteAccount,
   }),
 }));
 
@@ -28,6 +30,7 @@ vi.mock('react-router', async () => {
 afterEach(() => {
   vi.restoreAllMocks();
   mockNavigate.mockReset();
+  mockDeleteAccount.mockReset();
 });
 
 test('given no profile exists, displays "No Profile Found"', async () => {
@@ -152,4 +155,56 @@ test('given legacy resume without source field, displays profile without false w
   expect(screen.queryByText('Basic parse')).not.toBeInTheDocument();
   expect(screen.queryByText(/Analysis:/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/AI analysis unavailable/i)).not.toBeInTheDocument();
+});
+
+const renderWithoutResume = async () => {
+  vi.mocked(api.getLatestResume).mockRejectedValueOnce({ response: { status: 404 } });
+  render(
+    <MemoryRouter>
+      <Profile />
+    </MemoryRouter>
+  );
+  await screen.findByText('No Profile Found');
+};
+
+test('given the user confirms account deletion, deletes and goes to login', async () => {
+  mockDeleteAccount.mockResolvedValueOnce({ success: true });
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /yes, delete everything/i }));
+
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/login', expect.anything()));
+  expect(mockDeleteAccount).toHaveBeenCalledTimes(1);
+});
+
+test('given account deletion fails, keeps the dialog open and shows the error', async () => {
+  mockDeleteAccount.mockResolvedValueOnce({ success: false, message: 'Server said no' });
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /yes, delete everything/i }));
+
+  expect(await screen.findByText('Server said no')).toBeInTheDocument();
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  expect(mockNavigate).not.toHaveBeenCalled();
+});
+
+test('given the user cancels, nothing is deleted', async () => {
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+  fireEvent.click(await screen.findByRole('button', { name: /cancel/i }));
+
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  expect(mockDeleteAccount).not.toHaveBeenCalled();
+});
+
+test('given data export fails, shows the error message', async () => {
+  vi.mocked(api.exportMyData).mockRejectedValueOnce({ response: { data: { message: 'Export broke' } } });
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /download my data/i }));
+
+  expect(await screen.findByText('Export broke')).toBeInTheDocument();
 });

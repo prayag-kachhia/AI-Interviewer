@@ -1,12 +1,16 @@
 import React from 'react';
-import { Volume2, RotateCcw } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { Card, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { VoiceOrb } from './VoiceOrb';
 
 interface InterviewerCardProps {
   isAiSpeaking: boolean;
+  /** The candidate's turn: the orb swells with their voice. */
+  isListening?: boolean;
+  audioLevel?: number;
   interviewComplete: boolean;
   currentAiQuestion: string;
   onReplayAiQuestion: () => void;
@@ -14,6 +18,8 @@ interface InterviewerCardProps {
 
 export const InterviewerCard: React.FC<InterviewerCardProps> = ({
   isAiSpeaking,
+  isListening = false,
+  audioLevel = 0,
   interviewComplete,
   currentAiQuestion,
   onReplayAiQuestion,
@@ -27,22 +33,7 @@ export const InterviewerCard: React.FC<InterviewerCardProps> = ({
           : 'border-border'
       )}
     >
-      {/* Avatar Container */}
-      <div className="relative size-24 flex items-center justify-center">
-        {isAiSpeaking && (
-          <div className="absolute inset-0 rounded-full bg-primary/15 animate-ping opacity-75" />
-        )}
-        <div
-          className={cn(
-            'relative size-18 rounded-full flex items-center justify-center transition-colors duration-200',
-            isAiSpeaking
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'bg-secondary text-primary'
-          )}
-        >
-          <Volume2 className="size-8" />
-        </div>
-      </div>
+      <VoiceOrb state={isAiSpeaking ? 'speaking' : isListening ? 'listening' : 'idle'} level={audioLevel} />
 
       {/* Status Badge */}
       <Badge variant={isAiSpeaking ? 'live' : interviewComplete ? 'ended' : 'outline'}>

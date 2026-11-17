@@ -137,6 +137,12 @@ export type Turn = z.infer<typeof Turn>;
 export const FeedbackStatus = z.enum(["pending", "ready", "failed"]);
 export type FeedbackStatus = z.infer<typeof FeedbackStatus>;
 
+export const CategoryScore = z.object({
+  category: z.string().min(1),
+  score: z.number().min(1).max(5),
+});
+export type CategoryScore = z.infer<typeof CategoryScore>;
+
 export const Session = z.object({
   id: z.string(),
   userId: z.string(),
@@ -157,6 +163,7 @@ export const Session = z.object({
   feedbackStatus: FeedbackStatus.nullable().optional(),
   overallScore: z.number().nullable().optional(),
   endedEarly: z.boolean().optional(),
+  categoryScores: z.array(CategoryScore).nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
