@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { beforeEach, expect, test, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Navbar } from './Navbar';
 
@@ -60,4 +60,23 @@ test('signing out goes to the login screen', async () => {
 
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/login', expect.objectContaining({ state: expect.anything() })));
   expect(auth.signOut).toHaveBeenCalledTimes(1);
+});
+
+test('the menu button opens the links below lg, and a link or Escape closes it', () => {
+  renderAt('/dashboard');
+  expect(screen.queryByRole('navigation', { name: 'Menu' })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+  const menu = screen.getByRole('navigation', { name: 'Menu' });
+  expect(screen.getByRole('button', { name: 'Close menu' })).toHaveAttribute('aria-expanded', 'true');
+  for (const name of ['Dashboard', 'New interview', 'History', 'Guide', 'Profile']) {
+    expect(within(menu).getByRole('link', { name })).toBeInTheDocument();
+  }
+
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.queryByRole('navigation', { name: 'Menu' })).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Guide' }));
+  expect(screen.queryByRole('navigation', { name: 'Menu' })).not.toBeInTheDocument();
 });

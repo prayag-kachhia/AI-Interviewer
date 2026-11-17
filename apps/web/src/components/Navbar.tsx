@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router';
-import { Moon, Sun, SquareTerminal } from 'lucide-react';
+import { Menu, Moon, Sun, SquareTerminal, X } from 'lucide-react';
 import { Logo } from './Logo';
 import { useAuth } from '../context/AuthContext';
 import { THEMES, useTheme } from '../context/ThemeContext';
@@ -19,6 +19,17 @@ const LINKS = [
 const initials = (nameOrEmail: string) =>
   nameOrEmail.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
 
+const NavLink: React.FC<{ to: string; label: string; active: boolean; className?: string }> = ({ to, label, active, className }) => (
+  <Button
+    asChild
+    variant="ghost"
+    size="sm"
+    className={cn('shrink-0', active ? 'bg-secondary text-foreground' : 'text-muted-foreground', className)}
+  >
+    <Link to={to} aria-current={active ? 'page' : undefined}>{label}</Link>
+  </Button>
+);
+
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -27,6 +38,17 @@ export const Navbar: React.FC = () => {
   const themeIndex = THEMES.findIndex((t) => t.id === theme);
   const themeLabel = THEMES[themeIndex]?.label ?? '';
   const nextLabel = THEMES[(themeIndex + 1) % THEMES.length].label;
+  // Below lg the links don't fit in a row (a half-screen window is ~960px), so they go in a menu.
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnEscape = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [menuOpen]);
 
   const handleLogout = async () => {
     try {
@@ -59,21 +81,10 @@ export const Navbar: React.FC = () => {
           <span className="hidden sm:inline">AI Interviewer</span>
         </Link>
 
-        <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
-          {LINKS.map(({ to, label }) => {
-            const active = location.pathname === to;
-            return (
-              <Button
-                key={to}
-                asChild
-                variant="ghost"
-                size="sm"
-                className={cn('shrink-0', active ? 'bg-secondary text-foreground' : 'text-muted-foreground')}
-              >
-                <Link to={to} aria-current={active ? 'page' : undefined}>{label}</Link>
-              </Button>
-            );
-          })}
+        <div className="hidden items-center gap-1 lg:flex">
+          {LINKS.map(({ to, label }) => (
+            <NavLink key={to} to={to} label={label} active={location.pathname === to} />
+          ))}
         </div>
 
         <div className="flex shrink-0 items-center gap-3">
@@ -93,8 +104,32 @@ export const Navbar: React.FC = () => {
           <Button variant="outline" size="sm" onClick={handleLogout}>
             Sign out
           </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="lg:hidden"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-menu"
+          >
+            {menuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
+          </Button>
         </div>
       </nav>
+
+      {menuOpen && (
+        <div
+          id="mobile-menu"
+          role="navigation"
+          aria-label="Menu"
+          className="absolute inset-x-0 top-full flex flex-col gap-1 border-b border-border bg-background p-3 lg:hidden"
+        >
+          {LINKS.map(({ to, label }) => (
+            <NavLink key={to} to={to} label={label} active={location.pathname === to} className="justify-start" />
+          ))}
+        </div>
+      )}
     </header>
   );
 };
