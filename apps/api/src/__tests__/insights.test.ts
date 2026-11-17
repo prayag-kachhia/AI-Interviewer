@@ -13,6 +13,7 @@ import {
   validateTopicPlan,
   validateImprovementPlanRoadmap,
   flattenPlan,
+  updateRoadmapProgress,
   InvalidResourceIdError,
   WEAKNESS_THRESHOLD,
 } from '../services/insights.service';
@@ -30,6 +31,7 @@ vi.mock('../db', () => ({
     improvementPlan: {
       upsert: vi.fn(),
       findUnique: vi.fn(),
+      update: vi.fn(),
     },
   },
 }));
@@ -668,6 +670,405 @@ describe('V-2 · Topic weaknesses from your interviews (Issue #181)', () => {
             expect(isValidResourceId(act.resourceId)).toBe(true);
           }
         }
+      });
+    });
+
+    describe('Roadmap progress tracking (V-6)', () => {
+      const MOCK_EXISTING_PLAN = {
+        id: 'plan-123',
+        userId: USER_ID,
+        topics: [{ topic: 'DBMS', score: 2 }],
+        plan: [
+          {
+            id: 'plan-dbms',
+            topic: 'DBMS',
+            score: 2,
+            actions: [
+              {
+                id: 'act-1',
+                action: 'Study ACID properties',
+                resourceId: 'dbms-acid-transactions',
+                completed: false,
+              },
+              {
+                id: 'act-2',
+                action: 'Review SQL indexing',
+                resourceId: 'dbms-indexing-btree',
+                completed: false,
+              },
+            ],
+          },
+        ],
+        createdAt: new Date('2026-11-15T00:00:00Z'),
+        updatedAt: new Date('2026-11-15T00:00:00Z'),
+      };
+
+      it('marks a roadmap action as completed in the database', async () => {
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(MOCK_EXISTING_PLAN);
+        (prisma.improvementPlan.update as any).mockImplementationOnce(async ({ data }: any) => ({
+          ...MOCK_EXISTING_PLAN,
+          plan: data.plan,
+        }));
+
+        const res = await updateRoadmapProgress(USER_ID, 'act-1', true);
+
+        expect(prisma.improvementPlan.update).toHaveBeenCalledWith({
+          where: { userId: USER_ID },
+          data: {
+            plan: [
+              {
+                id: 'plan-dbms',
+                topic: 'DBMS',
+                score: 2,
+                actions: [
+                  expect.objectContaining({ id: 'act-1', completed: true }),
+                  expect.objectContaining({ id: 'act-2', completed: false }),
+                ],
+              },
+            ],
+          },
+        });
+        expect(res.plan[0].actions[0].completed).toBe(true);
+        expect(res.plan[0].actions[1].completed).toBe(false);
+      });
+
+      it('unmarks a roadmap action (completed: false)', async () => {
+        const completedPlan = {
+          ...MOCK_EXISTING_PLAN,
+          plan: [
+            {
+              ...MOCK_EXISTING_PLAN.plan[0],
+              actions: [
+                { ...MOCK_EXISTING_PLAN.plan[0].actions[0], completed: true },
+                MOCK_EXISTING_PLAN.plan[0].actions[1],
+              ],
+            },
+          ],
+        };
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(completedPlan);
+        (prisma.improvementPlan.update as any).mockImplementationOnce(async ({ data }: any) => ({
+          ...completedPlan,
+          plan: data.plan,
+        }));
+
+        const res = await updateRoadmapProgress(USER_ID, 'act-1', false);
+
+        expect(prisma.improvementPlan.update).toHaveBeenCalledWith({
+          where: { userId: USER_ID },
+          data: {
+            plan: [
+              {
+                id: 'plan-dbms',
+                topic: 'DBMS',
+                score: 2,
+                actions: [
+                  expect.objectContaining({ id: 'act-1', completed: false }),
+                  expect.objectContaining({ id: 'act-2', completed: false }),
+                ],
+              },
+            ],
+          },
+        });
+        expect(res.plan[0].actions[0].completed).toBe(false);
+      });
+
+      it('throws NotFoundError if the user has no improvement plan', async () => {
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(null);
+
+        await expect(updateRoadmapProgress(USER_ID, 'act-1', true)).rejects.toThrow(
+          'Improvement plan not found'
+        );
+        expect(prisma.improvementPlan.update).not.toHaveBeenCalled();
+      });
+
+      it('throws NotFoundError if the action is not found in the plan', async () => {
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(MOCK_EXISTING_PLAN);
+
+        await expect(
+          updateRoadmapProgress(USER_ID, 'non-existent-action', true)
+        ).rejects.toThrow("Roadmap action 'non-existent-action' not found");
+        expect(prisma.improvementPlan.update).not.toHaveBeenCalled();
+      });
+
+      it('carries over completed action states when plan is regenerated via generateImprovementPlan', () => {
+        const topics = [
+          { topic: 'DBMS' as const, score: 2, summary: 'Weak on ACID transactions' },
+          { topic: 'OS' as const, score: 3, summary: 'Needs review on paging' },
+        ];
+        // Stable action ID: `${topic.toLowerCase()}-${resourceId}`
+        const completedActionId = 'dbms-dbms-acid-transactions';
+
+        const regeneratedPlan = generateImprovementPlan(topics, {
+          completedActionIds: [completedActionId],
+        });
+
+        const dbmsTopic = regeneratedPlan.find((t) => t.topic === 'DBMS');
+        expect(dbmsTopic).toBeDefined();
+        const acidAction = dbmsTopic?.actions.find((a) => a.id === completedActionId);
+        expect(acidAction?.completed).toBe(true);
+
+        const otherAction = dbmsTopic?.actions.find((a) => a.id !== completedActionId);
+        expect(otherAction?.completed).toBe(false);
+      });
+
+      it('preserves previously ticked actions across insights refresh (refreshInsightsForUser)', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        // Existing plan in DB with an already ticked item
+        const existingPlanWithTick = {
+          id: 'plan-123',
+          userId: USER_ID,
+          topics: [{ topic: 'DBMS', score: 2 }],
+          plan: [
+            {
+              id: 'plan-dbms',
+              topic: 'DBMS',
+              score: 2,
+              actions: [
+                {
+                  id: 'dbms-dbms-acid-transactions',
+                  action: 'Study ACID properties',
+                  resourceId: 'dbms-acid-transactions',
+                  completed: true,
+                },
+              ],
+            },
+          ],
+        };
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(existingPlanWithTick);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(MOCK_GEMINI_OUTPUT));
+        await refreshInsightsForUser(USER_ID, { generate: mockGenerate });
+
+        expect(prisma.improvementPlan.upsert).toHaveBeenCalled();
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+        const dbmsPlan = savedPlan.find((p: any) => p.topic === 'DBMS');
+        const tickedAct = dbmsPlan?.actions.find((a: any) => a.id === 'dbms-dbms-acid-transactions');
+        expect(tickedAct?.completed).toBe(true);
+      });
+    });
+
+    describe('V-7 · Refresh the guide after new interviews (Issue #186)', () => {
+      const PREVIOUS_PLAN_WITH_PROGRESS = {
+        id: 'plan-123',
+        userId: USER_ID,
+        topics: [
+          { topic: 'DBMS', score: 2, summary: 'Struggled with transaction isolation levels.' },
+          { topic: 'OS', score: 3, summary: 'Weak on paging and virtual memory.' },
+          { topic: 'SQL', score: 2, summary: 'Struggled with complex joins.' },
+        ],
+        plan: [
+          {
+            id: 'plan-dbms',
+            topic: 'DBMS',
+            score: 2,
+            actions: [
+              {
+                id: 'dbms-dbms-acid-transactions',
+                action: 'Study ACID properties',
+                resourceId: 'dbms-acid-transactions',
+                completed: true, // Candidate completed this item
+              },
+              {
+                id: 'dbms-dbms-indexing-b-trees',
+                action: 'Study B-Tree indexes',
+                resourceId: 'dbms-indexing-b-trees',
+                completed: false,
+              },
+            ],
+          },
+          {
+            id: 'plan-os',
+            topic: 'OS',
+            score: 3,
+            actions: [
+              {
+                id: 'os-os-three-easy-pieces',
+                action: 'Study Operating Systems: Three Easy Pieces',
+                resourceId: 'os-three-easy-pieces',
+                completed: true, // Candidate completed this item on OS
+              },
+            ],
+          },
+          {
+            id: 'plan-sql',
+            topic: 'SQL',
+            score: 2,
+            actions: [
+              {
+                id: 'sql-sql-indexing-performance',
+                action: 'Study SQL indexing performance',
+                resourceId: 'sql-indexing-performance',
+                completed: false,
+              },
+            ],
+          },
+        ],
+        createdAt: new Date('2026-11-10T00:00:00Z'),
+        updatedAt: new Date('2026-11-10T00:00:00Z'),
+      };
+
+      it('drops topics that have improved past the weakness threshold (> 3) after new interviews', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(PREVIOUS_PLAN_WITH_PROGRESS);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        // Candidate had another interview and improved DBMS from 2 to 5!
+        // OS is still weak at 3, SQL improved to 4 (> threshold).
+        const UPDATED_GEMINI_OUTPUT = {
+          topics: [
+            { topic: 'DBMS', score: 5, summary: 'Demonstrated expert mastery of ACID, MVCC, and transactions.' },
+            { topic: 'OS', score: 3, summary: 'Still needs practice with paging.' },
+            { topic: 'SQL', score: 4, summary: 'Solid grasp of query execution plans and joins.' },
+            { topic: 'System Design', score: 4, summary: 'Solid architecture.' },
+            { topic: 'OOP', score: 4, summary: 'Good patterns.' },
+            { topic: 'CN', score: 4, summary: 'Solid networking.' },
+            { topic: 'DSA', score: 4, summary: 'Good algorithms.' },
+          ],
+        };
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(UPDATED_GEMINI_OUTPUT));
+        await refreshInsightsForUser(USER_ID, { generate: mockGenerate });
+
+        expect(prisma.improvementPlan.upsert).toHaveBeenCalled();
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+
+        // DBMS (score 5) and SQL (score 4) improved past the threshold and MUST drop out of the plan
+        const dbmsPlan = savedPlan.find((p: any) => p.topic === 'DBMS');
+        const sqlPlan = savedPlan.find((p: any) => p.topic === 'SQL');
+        expect(dbmsPlan).toBeUndefined();
+        expect(sqlPlan).toBeUndefined();
+
+        // OS (score 3) remains weak and MUST remain in the plan
+        const osPlan = savedPlan.find((p: any) => p.topic === 'OS');
+        expect(osPlan).toBeDefined();
+        expect(osPlan.topic).toBe('OS');
+        expect(osPlan.score).toBe(3);
+      });
+
+      it('keeps progress (completed checkboxes) for unchanged weak topics while dropping improved topics', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(PREVIOUS_PLAN_WITH_PROGRESS);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        // DBMS improved to 4 (drops out). OS is still weak (score 3).
+        const UPDATED_GEMINI_OUTPUT = {
+          topics: [
+            { topic: 'DBMS', score: 4, summary: 'Good understanding of transactions now.' },
+            { topic: 'OS', score: 3, summary: 'Still needs practice with paging.' },
+            { topic: 'SQL', score: 2, summary: 'Still weak on complex joins.' },
+            { topic: 'System Design', score: 4, summary: 'Solid architecture.' },
+            { topic: 'OOP', score: 4, summary: 'Good patterns.' },
+            { topic: 'CN', score: 4, summary: 'Solid networking.' },
+            { topic: 'DSA', score: 4, summary: 'Good algorithms.' },
+          ],
+        };
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(UPDATED_GEMINI_OUTPUT));
+        await refreshInsightsForUser(USER_ID, { generate: mockGenerate });
+
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+
+        // DBMS dropped out
+        expect(savedPlan.find((p: any) => p.topic === 'DBMS')).toBeUndefined();
+
+        // OS preserved its completed action
+        const osPlan = savedPlan.find((p: any) => p.topic === 'OS');
+        expect(osPlan).toBeDefined();
+        const osCompletedAction = osPlan.actions.find((a: any) => a.id === 'os-os-three-easy-pieces');
+        expect(osCompletedAction?.completed).toBe(true);
+
+        // SQL is still weak and preserved its actions
+        const sqlPlan = savedPlan.find((p: any) => p.topic === 'SQL');
+        expect(sqlPlan).toBeDefined();
+        expect(sqlPlan.score).toBe(2);
+      });
+
+      it('drops all topics from the roadmap when candidate improves across all topics (> 3)', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(PREVIOUS_PLAN_WITH_PROGRESS);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        // All topics are >= 4 (all strong now)
+        const ALL_STRONG_OUTPUT = {
+          topics: [
+            { topic: 'DBMS', score: 5, summary: 'Mastered.' },
+            { topic: 'OS', score: 4, summary: 'Good.' },
+            { topic: 'SQL', score: 4, summary: 'Good.' },
+            { topic: 'System Design', score: 5, summary: 'Mastered.' },
+            { topic: 'OOP', score: 4, summary: 'Good.' },
+            { topic: 'CN', score: 5, summary: 'Mastered.' },
+            { topic: 'DSA', score: 4, summary: 'Good.' },
+          ],
+        };
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(ALL_STRONG_OUTPUT));
+        await refreshInsightsForUser(USER_ID, { generate: mockGenerate });
+
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+        expect(savedPlan).toEqual([]);
+        const savedTopics = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.topics;
+        expect(savedTopics).toHaveLength(7);
+      });
+
+      it('adapts roadmap via handleInsightsRefresh job when dispatched by worker', async () => {
+        (prisma.session.findMany as any).mockResolvedValueOnce(MOCK_SESSIONS);
+        (prisma.improvementPlan.findUnique as any).mockResolvedValueOnce(PREVIOUS_PLAN_WITH_PROGRESS);
+        (prisma.improvementPlan.upsert as any).mockImplementationOnce(async ({ create }: any) => ({
+          id: 'plan-123',
+          userId: create.userId,
+          topics: create.topics,
+          plan: create.plan,
+        }));
+
+        const UPDATED_GEMINI_OUTPUT = {
+          topics: [
+            { topic: 'DBMS', score: 4, summary: 'Improved transaction knowledge.' },
+            { topic: 'OS', score: 2, summary: 'Struggling with process scheduling.' },
+          ],
+        };
+
+        const mockGenerate = vi.fn().mockResolvedValueOnce(JSON.stringify(UPDATED_GEMINI_OUTPUT));
+
+        const job = {
+          id: 'job-v7-1',
+          type: 'insights.refresh',
+          sessionId: SESSION_ID,
+          payload: { userId: USER_ID },
+          attempts: 1,
+          maxAttempts: 3,
+          status: 'pending',
+          workerId: 'worker-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        await handleInsightsRefresh(job as any, { generate: mockGenerate });
+
+        expect(prisma.improvementPlan.upsert).toHaveBeenCalled();
+        const savedPlan = (prisma.improvementPlan.upsert as any).mock.calls[0][0].create.plan;
+        expect(savedPlan.find((p: any) => p.topic === 'DBMS')).toBeUndefined();
+        expect(savedPlan.find((p: any) => p.topic === 'OS')).toBeDefined();
       });
     });
   });

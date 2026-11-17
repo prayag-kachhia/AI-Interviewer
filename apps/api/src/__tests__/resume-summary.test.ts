@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { summarizeProfile } from '../services/resume-summary';
-import type { CandidateProfile } from '../types';
+import type { CandidateProfile } from '@interview/contracts';
 
 describe('summarizeProfile', () => {
   const profile: CandidateProfile = {

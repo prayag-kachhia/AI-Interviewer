@@ -1,13 +1,18 @@
 import { GoogleGenAI } from '@google/genai';
 import { getResumeAnalysisPrompt } from '../prompts/resume.prompt';
-import { CandidateProfile } from '../types';
+import { CandidateProfile } from '@interview/contracts';
 import { extractResumeHeuristically } from './heuristic.service';
 
-export const analyzeResumeWithAI = async (extractedText: string): Promise<CandidateProfile> => {
+export interface AnalyzeResumeResult {
+  profile: CandidateProfile;
+  source: 'ai' | 'heuristic';
+}
+
+export const analyzeResumeWithAI = async (extractedText: string): Promise<AnalyzeResumeResult> => {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
 
   // If apiKey is missing or the default placeholder "AIzaSy...", use heuristic analysis directly
-  const isPlaceholderKey = !apiKey || apiKey === 'AIzaSy...' || apiKey.startsWith('AIzaSy...') && apiKey.length < 20;
+  const isPlaceholderKey = !apiKey || apiKey === 'AIzaSy...' || (apiKey.startsWith('AIzaSy...') && apiKey.length < 20);
 
   if (!isPlaceholderKey) {
     try {
@@ -21,22 +26,13 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Candid
       });
       const responseText = result.text ?? '';
       
-      // Parse the JSON safely
-      const profileData: CandidateProfile = JSON.parse(responseText);
-      
-      // Basic validation to ensure required fields exist
+      // Validate Gemini's JSON with CandidateProfile contract
+      const raw = JSON.parse(responseText);
+      const profile = CandidateProfile.parse(raw);
+
       return {
-        name: profileData.name || '',
-        email: profileData.email || '',
-        phone: profileData.phone || '',
-        summary: profileData.summary || '',
-        education: Array.isArray(profileData.education) ? profileData.education : [],
-        skills: Array.isArray(profileData.skills) ? profileData.skills : [],
-        projects: Array.isArray(profileData.projects) ? profileData.projects : [],
-        experience: Array.isArray(profileData.experience) ? profileData.experience : [],
-        certifications: Array.isArray(profileData.certifications) ? profileData.certifications : [],
-        achievements: Array.isArray(profileData.achievements) ? profileData.achievements : [],
-        languages: Array.isArray(profileData.languages) ? profileData.languages : [],
+        profile,
+        source: 'ai',
       };
     } catch (error: any) {
       // Logged as an error so a broken key or retired model is visible in the logs, not hidden.
@@ -47,5 +43,8 @@ export const analyzeResumeWithAI = async (extractedText: string): Promise<Candid
   }
 
   // Resilient fallback to heuristic parser
-  return extractResumeHeuristically(extractedText);
+  return {
+    profile: extractResumeHeuristically(extractedText),
+    source: 'heuristic',
+  };
 };

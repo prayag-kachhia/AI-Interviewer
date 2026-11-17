@@ -1,0 +1,24 @@
+{
+  "role": "data-analyst",
+  "difficulty": "advanced",
+  "scores": [
+    {
+      "category": "SQL & Analytical Reasoning",
+      "min": 4,
+      "max": 5,
+      "reason": "Advanced dimensional architecture incorporating Kimball transaction facts, periodic snapshots, accumulating snapshots, and SCD Type 2 dimension mechanics."
+    },
+    {
+      "category": "Data Interpretation & Business Insights",
+      "min": 4,
+      "max": 5,
+      "reason": "Masterful executive communication decomposing DAU growth vs MRR drop via NRR waterfall analysis and strategic cohort monetization recommendations."
+    },
+    {
+      "category": "Statistical Understanding & Data Quality",
+      "min": 4,
+      "max": 5,
+      "reason": "Exceptional statistical rigor detailing sample size power analysis, sequential testing with alpha-spending, CUPED variance reduction, and Simpson's Paradox resolution."
+    }
+  ]
+}

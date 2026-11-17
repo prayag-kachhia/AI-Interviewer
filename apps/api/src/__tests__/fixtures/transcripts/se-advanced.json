@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "How would you design a globally distributed rate limiter that handles tens of thousands of requests per second with sub-millisecond overhead, and what happens if the backing coordination store fails?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "At tens of thousands of requests per second, issuing a synchronous cross-region network roundtrip to a central database or Redis cluster on every HTTP request introduces unacceptable latency (often 50–100ms across oceans). Instead, I use a tiered, decentralized rate limiting architecture. In the primary path, each application instance maintains an in-memory token bucket or sliding-window counter locally. To coordinate limits globally, instances periodically sync batches of consumed tokens asynchronously to a regional Redis cluster using atomic Lua scripts or Redis hashes with sliding window timestamps. If the central Redis cluster experiences a network partition or failover, the local nodes execute a degraded fail-open policy with conservative per-node rate quotas, logging alerts without dropping legitimate user traffic. We protect against distributed clock drift by synchronizing server times using Amazon Time Sync or Google TrueTime."
+  },
+  {
+    "speaker": "AI",
+    "text": "Explain how consistent hashing works, why virtual nodes are essential, and how the system handles the addition or removal of a storage node."
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Consistent hashing maps both keys and cluster nodes onto a circular 32-bit or 64-bit hash ring using a cryptographic hash function like SHA-256 or Murmur3. A key is assigned to the first node encountered when traversing clockwise from the key's hash position. In a standard modulo-based hashing scheme, changing the node count from N to N+1 invalidates nearly 100% of cached keys. In consistent hashing, when a node joins or leaves, only K/N keys are migrated on average, where K is the total number of keys. Virtual nodes, where each physical server maps to 100–250 discrete points along the ring based on distinct hash seeds, are essential for two reasons: first, they ensure uniform statistical distribution across nodes, preventing non-uniform hotspots; second, when a physical machine fails, its load is evenly distributed among all surviving nodes rather than swamping the single immediate successor node."
+  },
+  {
+    "speaker": "AI",
+    "text": "In a distributed microservice architecture, how do you handle business transactions that span multiple services without using distributed two-phase locking (2PC)?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Two-phase commit (2PC) is an anti-pattern in high-throughput cloud environments because it is a synchronous blocking protocol: if the transaction coordinator or any participant hangs, locks are held across all services, severely degrading availability and throughput. Instead, I implement the Saga pattern with eventual consistency. In an orchestration saga, a centralized orchestrator service directs participating services through asynchronous message queues; in choreography, services publish and subscribe to domain events directly. Each local transaction updates that service's database and emits an event via the transactional outbox pattern to guarantee atomic persistence. If a downstream step fails—for instance, payment authorization declines after inventory was reserved—the saga executes backward compensating transactions in reverse order to semantically undo earlier operations, such as releasing reserved inventory."
+  },
+  {
+    "speaker": "AI",
+    "text": "You observe that while median p50 latency for your service is 15 milliseconds, the p99 latency spikes intermittently to 2.5 seconds every few minutes. How do you systematically isolate and resolve the root cause?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "A severe gap between p50 and p99 usually points to periodic stop-the-world pauses, resource starvation, or head-of-line blocking rather than baseline code inefficiency. First, I inspect distributed traces in Jaeger or OpenTelemetry, filtering specifically for requests in the 99th percentile to check whether the latency occurs inside our process or waiting on an external dependency like a database or downstream RPC. If it occurs within our process, I correlate the spikes with system-level metrics: JVM or Go runtime garbage collection logs to check for major GC pause times, CPU throttling metrics from Kubernetes cgroups (checking if CFS quota throttling is capping threads), or thread pool and connection pool saturation. If it is GC pauses, I inspect heap allocation profiles via async-profiler or pprof to eliminate high-allocation hotspots. If it is database connection pool starvation, I adjust pool sizing, check for long-running unindexed queries holding connections, and implement bounded queues with circuit breakers."
+  }
+]

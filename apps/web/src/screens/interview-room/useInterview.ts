@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import axios from 'axios';
 import { getSession, postTurn, postNextQuestion, endSession } from '../../lib/api';
 import { ROLES } from '@interview/contracts';
-import type { InterviewVoiceState, SessionStatus, TurnData } from '../../types';
+import type { InterviewMode, InterviewVoiceState, SessionStatus, TurnData } from '../../types';
 import {
   BrowserWebSpeechVoiceAdapter,
   type VoiceSessionAdapter,
@@ -44,6 +44,8 @@ export const DEFAULT_TIME_LIMIT_MIN = 15;
 const THINKING_SILENCE_MS = 9000;
 const THINKING_AUDIO_THRESHOLD = 0.03;
 const THINKING_PROMPT_CUE = '[the candidate is thinking; offer brief encouragement]';
+export const WRAP_UP_CUE = '2 minutes remain; start wrapping up';
+export const WRAP_UP_THRESHOLD_SECONDS = 120;
 
 export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -54,6 +56,9 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [endedAt, setEndedAt] = useState<string | null>(null);
   const [role, setRole] = useState<string>('software-engineer');
+  const [mode, setMode] = useState<InterviewMode>('voice');
+  const [typedAnswer, setTypedAnswer] = useState('');
+  const [submittingTyped, setSubmittingTyped] = useState(false);
   const [status, setStatus] = useState<SessionStatus>('LIVE');
   const [turns, setTurns] = useState<TurnData[]>([]);
   const [voiceState, setVoiceState] = useState<InterviewVoiceState>('IDLE');
@@ -69,6 +74,9 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const [elapsed, setElapsed] = useState(0);
   const [showAccessibilityFallback, setShowAccessibilityFallback] = useState(false);
   const [fallbackSpeechInput, setFallbackSpeechInput] = useState('');
+  const [connectionFailed, setConnectionFailed] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
+  const [retryAttempt, setRetryAttempt] = useState(0);
 
   const adapterRef = useRef<VoiceSessionAdapter | null>(null);
   const turnsRef = useRef<TurnData[]>([]);
@@ -170,7 +178,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
           }
           setError('');
           const res = await postTurn(sessionId, speaker, trimmed);
-          if (res.success && res.data) {
+          if (res?.success && res.data) {
             const savedTurn = res.data;
             setTurns((prev) => {
               const next = [...prev, savedTurn];
@@ -179,7 +187,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
             });
             return savedTurn;
           } else {
-            setError(res.message || 'Could not save transcript turn.');
+            setError(res?.message || 'Could not save transcript turn.');
             return null;
           }
         } catch (err: unknown) {
@@ -202,17 +210,21 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   );
 
   // Ask PK-3 for the next AI question (server saves the AI turn before returning it).
-  const requestNextQuestion = useCallback(async () => {
-    if (!sessionId || !startedAtRef.current || statusRef.current !== 'LIVE') {
-      return;
-    }
+  const requestNextQuestion = useCallback(
+    async (remainingSec?: number) => {
+      if (!sessionId || !startedAtRef.current || statusRef.current !== 'LIVE') {
+        return;
+      }
 
-    setError('');
-    try {
-      const res = await postNextQuestion(sessionId);
-      if (statusRef.current !== 'LIVE') return;
+      setError('');
+      try {
+        const res =
+          typeof remainingSec === 'number'
+            ? await postNextQuestion(sessionId, remainingSec)
+            : await postNextQuestion(sessionId);
+        if (statusRef.current !== 'LIVE') return;
 
-      if (res.success && res.data) {
+      if (res?.success && res.data) {
         const aiTurn = res.data;
         setCurrentAiQuestion(aiTurn.text);
         setTurns((prev) => {
@@ -228,7 +240,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
           await adapterRef.current.speakAiQuestion(aiTurn.text);
         }
       } else {
-        setError(res.message || 'Could not generate the next interview question.');
+        setError(res?.message || 'Could not generate the next interview question.');
         setShowAccessibilityFallback(true);
       }
     } catch (err: unknown) {
@@ -272,7 +284,10 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
 
         // Gemini Live asks follow-ups directly over WebSocket; only fallback mode needs /next-question.
         if (!adapterRef.current?.isExternalProvider) {
-          await requestNextQuestion();
+          const rem = startedAtRef.current
+            ? Math.max(0, timeLimitMin * 60 - computeElapsedSeconds(startedAtRef.current))
+            : undefined;
+          await requestNextQuestion(rem);
         }
       }
     },
@@ -289,6 +304,9 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
           setStartedAt(res.data.startedAt);
           setEndedAt(res.data.endedAt ?? null);
           setRole(res.data.role);
+          if (res.data.mode) {
+            setMode(res.data.mode);
+          }
           setStatus(res.data.status);
           const existingTurns = res.data.turns ?? [];
           setTurns(existingTurns);
@@ -315,8 +333,10 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   }, [sessionId]);
 
   // Connect Gemini Live first, automatically falling back to Browser Web Speech + /next-question.
+  // In typed mode, skip audio setup completely (PK-4, #156).
   useEffect(() => {
     if (loading || notFound || status !== 'LIVE' || !sessionId || !startedAt) return;
+    if (mode === 'typed') return;
 
     let cancelled = false;
     let fallbackStarted = false;
@@ -338,44 +358,62 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
 
       setVoiceWarning(`Live voice unavailable (${reason}). Switched to browser speech fallback.`);
 
-      await fallbackAdapter.connect(sessionId, {
-        onStateChange: (nextState) => {
-          if (!cancelled && activeAdapter === fallbackAdapter) updateVoiceState(nextState);
-        },
-        onTranscript: (evt) => {
-          if (!cancelled && activeAdapter === fallbackAdapter) {
-            void handleAdapterTranscript(evt);
-          }
-        },
-        onAudioLevel: (lvl) => {
-          if (!cancelled && activeAdapter === fallbackAdapter) setAudioLevel(lvl);
-        },
-        onError: (msg) => {
-          if (!cancelled && activeAdapter === fallbackAdapter) {
-            setVoiceWarning(msg);
-            setShowAccessibilityFallback(true);
-          }
-        },
-      });
+      try {
+        await fallbackAdapter.connect(sessionId, {
+          onStateChange: (nextState) => {
+            if (!cancelled && activeAdapter === fallbackAdapter) {
+              updateVoiceState(nextState);
+              if (nextState === 'ERROR') {
+                setConnectionFailed(true);
+                setConnectionError('Both live voice and browser speech fallback encountered an error.');
+              }
+            }
+          },
+          onTranscript: (evt) => {
+            if (!cancelled && activeAdapter === fallbackAdapter) {
+              void handleAdapterTranscript(evt);
+            }
+          },
+          onAudioLevel: (lvl) => {
+            if (!cancelled && activeAdapter === fallbackAdapter) setAudioLevel(lvl);
+          },
+          onError: (msg) => {
+            if (!cancelled && activeAdapter === fallbackAdapter) {
+              setVoiceWarning(msg);
+              setShowAccessibilityFallback(true);
+              setConnectionFailed(true);
+              setConnectionError(msg || 'Browser speech fallback failed.');
+              updateVoiceState('ERROR');
+            }
+          },
+        });
 
-      if (cancelled || activeAdapter !== fallbackAdapter) return;
+        if (cancelled || activeAdapter !== fallbackAdapter) return;
 
-      if (isMutedRef.current) {
-        fallbackAdapter.setMuted(true);
-      }
+        if (isMutedRef.current) {
+          fallbackAdapter.setMuted(true);
+        }
 
-      if (!fallbackAdapter.isSpeechRecognitionSupported) {
-        setShowAccessibilityFallback(true);
-      }
+        if (!fallbackAdapter.isSpeechRecognitionSupported) {
+          setShowAccessibilityFallback(true);
+        }
 
-      await saveQueueRef.current;
+        await saveQueueRef.current;
 
-      const lastTurn = turnsRef.current[turnsRef.current.length - 1];
-      if (lastTurn?.speaker === 'AI') {
-        setCurrentAiQuestion(lastTurn.text);
-        await fallbackAdapter.speakAiQuestion(lastTurn.text);
-      } else {
-        await requestNextQuestion();
+        const lastTurn = turnsRef.current[turnsRef.current.length - 1];
+        if (lastTurn?.speaker === 'AI') {
+          setCurrentAiQuestion(lastTurn.text);
+          await fallbackAdapter.speakAiQuestion(lastTurn.text);
+        } else {
+          await requestNextQuestion();
+        }
+      } catch (err: unknown) {
+        if (!cancelled && activeAdapter === fallbackAdapter) {
+          const errorMsg = getErrorMessage(err, 'Browser speech fallback connection failed');
+          setConnectionFailed(true);
+          setConnectionError(errorMsg);
+          updateVoiceState('ERROR');
+        }
       }
     };
 
@@ -443,8 +481,10 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     loading,
     notFound,
     status,
+    mode,
     sessionId,
     startedAt,
+    retryAttempt,
     handleAdapterTranscript,
     requestNextQuestion,
     clearThinkingTimer,
@@ -452,6 +492,62 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     resetThinkingTimer,
     updateVoiceState,
   ]);
+
+  // In typed mode, trigger the opening interview question if turns are empty (PK-4, #156).
+  useEffect(() => {
+    if (loading || notFound || status !== 'LIVE' || !sessionId || !startedAt) return;
+    if (mode !== 'typed') return;
+
+    if (turns.length === 0 && !initialQuestionTriggeredRef.current) {
+      initialQuestionTriggeredRef.current = true;
+      void requestNextQuestion();
+    }
+  }, [loading, notFound, status, sessionId, startedAt, mode, turns.length, requestNextQuestion]);
+
+  const switchToTypedMode = useCallback(() => {
+    setMode('typed');
+    setConnectionFailed(false);
+    setConnectionError('');
+    clearThinkingTimer();
+    adapterRef.current?.disconnect();
+    adapterRef.current = null;
+    updateVoiceState('IDLE');
+    setLiveCandidateSpeech('');
+    setAudioLevel(0);
+  }, [clearThinkingTimer, updateVoiceState]);
+
+  const retryVoiceConnection = useCallback(() => {
+    setConnectionFailed(false);
+    setConnectionError('');
+    setError('');
+    setVoiceWarning('');
+    updateVoiceState('IDLE');
+    setRetryAttempt((prev) => prev + 1);
+  }, [updateVoiceState]);
+
+  const handleTypedSubmit = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      const text = typedAnswer.trim();
+      if (!text || submittingTyped || savingTurn || statusRef.current !== 'LIVE' || !sessionId) {
+        return;
+      }
+
+      setSubmittingTyped(true);
+      setError('');
+      try {
+        const savedCandidateTurn = await persistTurnToServer('CANDIDATE', text);
+        if (!savedCandidateTurn || statusRef.current !== 'LIVE') {
+          return;
+        }
+        setTypedAnswer('');
+        await requestNextQuestion();
+      } finally {
+        setSubmittingTyped(false);
+      }
+    },
+    [typedAnswer, submittingTyped, savingTurn, sessionId, persistTurnToServer, requestNextQuestion]
+  );
 
   // Live elapsed timer
   useEffect(() => {
@@ -534,13 +630,13 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       adapterRef.current?.disconnect();
       await saveQueueRef.current;
       const res = await endSession(sessionId);
-      if (res.success && res.data) {
+      if (res?.success && res.data) {
         setStatus('ENDED');
         setEndedAt(res.data.endedAt ?? new Date().toISOString());
         updateVoiceState('IDLE');
         navigate(`/interview/${sessionId}/feedback`);
       } else {
-        setError(res.message || 'Failed to end the interview session.');
+        setError(res?.message || 'Failed to end the interview session.');
       }
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Failed to end the interview session.'));
@@ -551,6 +647,15 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   }, [sessionId, navigate, clearThinkingTimer, updateVoiceState]);
 
   const remainingSeconds = Math.max(0, timeLimitMin * 60 - elapsed);
+  const hasSentWrapUpCueRef = useRef(false);
+
+  useEffect(() => {
+    if (status !== 'LIVE' || !startedAt || hasSentWrapUpCueRef.current) return;
+    if (remainingSeconds <= WRAP_UP_THRESHOLD_SECONDS && remainingSeconds > 0) {
+      hasSentWrapUpCueRef.current = true;
+      adapterRef.current?.sendText(WRAP_UP_CUE);
+    }
+  }, [status, startedAt, remainingSeconds]);
 
   useEffect(() => {
     if (status !== 'LIVE' || !startedAt || hasAutoEndedRef.current) return;
@@ -569,6 +674,12 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     sessionId,
     roleLabel,
     status,
+    mode,
+    typedAnswer,
+    setTypedAnswer,
+    submittingTyped,
+    switchToTypedMode,
+    handleTypedSubmit,
     startedAt,
     endedAt,
     turns,
@@ -579,6 +690,9 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     notFound,
     error,
     voiceWarning,
+    connectionFailed,
+    connectionError,
+    retryVoiceConnection,
     isAiSpeaking,
     isCandidateSpeaking,
     isListening,

@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "When designing a paginated API endpoint for an activity feed table with 50 million rows, why does offset-based pagination degrade, and how does cursor-based or keyset pagination resolve the issue?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Offset-based pagination (LIMIT 20 OFFSET 500000) degrades drastically on large datasets because relational database engines like PostgreSQL or MySQL must still scan, sort, and count past the first 500,000 rows in the index before discarding them and returning the 20 requested rows, resulting in O(N) performance that spikes query latency and disk I/O. Furthermore, offset pagination suffers from the 'drifting window' anomaly: if new activity items are inserted while a user is reading page 1, moving to page 2 causes duplicate items to appear. Keyset or cursor-based pagination solves both problems: instead of an offset, the client passes an opaque cursor encoding the last seen item's sort key (such as created_at and id). The query executes WHERE (created_at, id) < (cursor_created_at, cursor_id) ORDER BY created_at DESC, id DESC LIMIT 20. With a composite B-tree index on (created_at DESC, id DESC), the database seeks directly to the cursor position in O(log N) time and reads the next 20 rows, maintaining stable O(1) page-read performance regardless of how deep the client paginates."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do B-Tree indexes work, and what is the left-to-right rule when creating a composite index across multiple columns like (tenant_id, status, created_at)?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "A B-Tree index is a balanced tree data structure with sorted leaf nodes connected in a doubly linked list, enabling O(log N) search, insertion, and deletion, as well as efficient ordered range scans. The left-to-right composite index rule (or leftmost prefix rule) states that the database query planner can only utilize the index if the query filters include columns starting from the leftmost column in the index definition without gaps. With an index on (tenant_id, status, created_at), queries filtering on tenant_id alone or on tenant_id AND status can fully use the index. However, a query filtering solely on status or created_at cannot traverse the B-Tree from the root because the tree is sorted primarily by tenant_id first. Furthermore, once a range filter (like created_at BETWEEN x AND y or > z) is encountered, subsequent columns in the composite index cannot be used for direct index lookups. Therefore, the optimal ordering rule is: place exact equality columns first (tenant_id, status), followed by range or sorting columns last (created_at)."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you implement the Cache-Aside pattern with Redis, and how do you protect against Cache Stampede and Cache Penetration?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "In Cache-Aside, the application first queries Redis using the item key. If there is a cache hit, it returns the cached data immediately. If there is a cache miss, the application queries the primary database, stores the retrieved result in Redis with an explicit Time-To-Live (TTL), and returns it to the client. Cache stampede (or thundering herd) occurs when a heavily requested hot key expires, causing hundreds of concurrent incoming requests to encounter a miss and simultaneously overwhelm the database. I prevent stampede by using a distributed mutex lock (Redis SET key lock NX EX 5) so only one worker queries the database to repopulate the cache while other requests wait briefly, or by using probabilistic early expiration (XFetch algorithm). Cache penetration occurs when clients repeatedly query non-existent keys (e.g. ID -999), forcing repeated database queries because the key is never cached. I mitigate penetration by either caching empty or null results with a short TTL (like 60 seconds), or evaluating keys against a Bloom filter at the API gateway before querying the database."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you design a reliable background worker pipeline to send order confirmation emails without dropping messages or overloading external email servers?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "When an order is placed, the API route publishes an order_confirmed event payload to a durable message broker like RabbitMQ, Amazon SQS, or Redis BullMQ within the same database transaction using the transactional outbox pattern to prevent lost messages if the broker is momentarily unavailable. Independent worker processes consume messages from the queue with manual acknowledgments (ACKs): a message is only removed from the queue after the email provider API confirms successful transmission. If the external email service returns a transient 500 or 429 rate limit error, the worker releases the message or schedules a retry with exponential backoff and randomized jitter to prevent synchronized retry storms. If the message fails repeatedly across maximum retry attempts (e.g. 5 retries) due to permanent errors like malformed recipient addresses, it is routed to a Dead Letter Queue (DLQ). We configure alerts on DLQ depth and monitor worker concurrency limits to respect the external email provider's rate limits."
+  }
+]

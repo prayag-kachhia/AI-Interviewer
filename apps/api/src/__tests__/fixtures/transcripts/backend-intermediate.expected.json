@@ -1,0 +1,24 @@
+{
+  "role": "backend-developer",
+  "difficulty": "intermediate",
+  "scores": [
+    {
+      "category": "API Design & Architecture",
+      "min": 4,
+      "max": 5,
+      "reason": "Deep technical grasp of keyset/cursor-based pagination contracts eliminating shifting-window anomalies and O(N) offset degradation."
+    },
+    {
+      "category": "Database Modeling & Performance",
+      "min": 4,
+      "max": 5,
+      "reason": "Accurate explanation of B-Tree structure, composite index leftmost prefix rules, and optimal equality-before-range column ordering."
+    },
+    {
+      "category": "System Reliability & Scalability",
+      "min": 4,
+      "max": 5,
+      "reason": "Production-grade resilience strategies detailing Cache-Aside, distributed mutex / probabilistic early expiration for stampedes, Bloom filters, and DLQ backoff pipelines."
+    }
+  ]
+}

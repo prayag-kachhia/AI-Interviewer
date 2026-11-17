@@ -1,0 +1,34 @@
+[
+  {
+    "speaker": "AI",
+    "text": "Welcome to your Backend Developer interview. Can you explain the standard HTTP methods—GET, POST, PUT, PATCH, and DELETE—and what it means for an HTTP method to be idempotent?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "GET retrieves a representation of a resource without modifying server state. POST creates a new subordinate resource. PUT replaces an existing resource completely with the submitted payload, or creates it if it does not exist. PATCH applies a partial update, modifying only the specific fields provided. DELETE removes the specified resource. An HTTP method is idempotent if making multiple identical requests has the exact same side-effect on the server as making a single request. GET is safe and idempotent because reads do not mutate state. PUT and DELETE are idempotent: updating a record to specific values or deleting a record produces the same final state whether executed once or ten times. POST is not idempotent by default because repeating a POST request creates multiple distinct resources unless explicit deduplication keys are used."
+  },
+  {
+    "speaker": "AI",
+    "text": "How would you design a relational database schema for a basic blog platform with Users, Posts, and Comments, including primary and foreign keys?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "I would create three normalized relational tables. The users table has a primary key id (UUID or auto-incrementing integer), email with a UNIQUE constraint, password_hash, username, and created_at. The posts table has a primary key id, user_id as a foreign key referencing users(id) ON DELETE CASCADE, title, content (text), published_status, and created_at. To support fast retrieval of posts by author, I index user_id. The comments table has a primary key id, post_id as a foreign key referencing posts(id) ON DELETE CASCADE, user_id as a foreign key referencing users(id), comment_text, and created_at. I create an index on post_id so loading a blog post with all its comments is a fast index seek rather than a full table scan."
+  },
+  {
+    "speaker": "AI",
+    "text": "How do you securely store user passwords in a database, and why are simple hashing algorithms like MD5 or SHA-256 unacceptable?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Simple hashing functions like MD5 or SHA-256 are cryptographically fast algorithms designed for checksums and message integrity, which makes them vulnerable to modern GPUs that can compute billions of hashes per second using precomputed rainbow tables or brute force attacks. Even salting a SHA-256 hash does not prevent rapid hardware brute-forcing. Instead, user passwords must be hashed using a slow, adaptive cryptographic key derivation function such as Argon2id or bcrypt. These algorithms incorporate three essential defenses: first, a unique cryptographically random salt per user to defeat precomputed rainbow tables; second, a configurable computational work factor or cost parameter that can be increased over time as hardware becomes faster; and third, in the case of Argon2id, configurable memory cost parameters that resist parallelization on specialized GPU or ASIC hardware."
+  },
+  {
+    "speaker": "AI",
+    "text": "What is database connection pooling, and why is creating a fresh connection for every incoming HTTP request problematic?"
+  },
+  {
+    "speaker": "CANDIDATE",
+    "text": "Opening a new relational database connection is a heavy operation: it requires a TCP three-way handshake, TLS cryptographic handshake, process or thread allocation on the database server, user authentication, and memory allocation for query buffers. If an API server creates a new connection on every incoming HTTP request under a load of 1,000 requests per second, the database server will quickly exhaust its connection limit and file descriptors, causing thread thrashing, connection timeouts, and eventual service crashes. A connection pool maintains a warm, pre-allocated set of active database connections (for example, 20 to 50 connections). When an HTTP request needs to query the database, it borrows an available connection from the pool, executes the query, and immediately returns the connection to the pool for the next request to reuse, keeping database resource usage predictable and latency low."
+  }
+]
