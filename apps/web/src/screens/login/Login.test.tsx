@@ -405,7 +405,7 @@ describe("Login Screen - Sign Up Password Strength Meter", () => {
 
     const nameInput = screen.getByPlaceholderText(/jane doe/i);
     const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
-    const emailInput = emailInputs[1];
+    const emailInput = emailInputs[0];
     const passwordInput = screen.getByPlaceholderText(/create a strong password/i);
     const confirmInput = screen.getByPlaceholderText(/re-enter password/i);
     const submitBtn = screen.getByRole("button", { name: /create free account/i });
@@ -543,7 +543,7 @@ describe("Login Screen - Email OTP Signup & Unverified Sign In", () => {
 
     await act(async () => {
       fireEvent.change(nameInput, { target: { value: "Candidate Name" } });
-      fireEvent.change(emailInputs[1], { target: { value: "candidate@example.com" } });
+      fireEvent.change(emailInputs[0], { target: { value: "candidate@example.com" } });
       fireEvent.change(passwordInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.change(confirmInput, { target: { value: "Str0ng!P@ss2026#" } });
     });
@@ -596,7 +596,7 @@ describe("Login Screen - Email OTP Signup & Unverified Sign In", () => {
 
     await act(async () => {
       fireEvent.change(nameInput, { target: { value: "Candidate Name" } });
-      fireEvent.change(emailInputs[1], { target: { value: "existing@example.com" } });
+      fireEvent.change(emailInputs[0], { target: { value: "existing@example.com" } });
       fireEvent.change(passwordInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.change(confirmInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.click(submitBtn);
@@ -637,7 +637,7 @@ describe("Login Screen - Email OTP Signup & Unverified Sign In", () => {
 
     await act(async () => {
       fireEvent.change(nameInput, { target: { value: "Candidate Name" } });
-      fireEvent.change(emailInputs[1], { target: { value: "existing@example.com" } });
+      fireEvent.change(emailInputs[0], { target: { value: "existing@example.com" } });
       fireEvent.change(passwordInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.change(confirmInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.click(submitBtn);
