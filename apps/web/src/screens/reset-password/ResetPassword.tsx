@@ -6,8 +6,6 @@ import { checkPasswordStrength } from '../../lib/passwordStrength';
 import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
 import {
   Lock,
-  Eye,
-  EyeOff,
   Loader2,
   AlertCircle,
   CheckCircle2,
@@ -17,7 +15,7 @@ import {
 import { AuthHeading, AuthLayout } from '../../components/AuthLayout';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Field } from '../../components/Field';
 
 export const ResetPassword: React.FC = () => {
   const navigate = useNavigate();
@@ -25,8 +23,6 @@ export const ResetPassword: React.FC = () => {
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [sessionChecking, setSessionChecking] = useState(true);
@@ -142,44 +138,6 @@ export const ResetPassword: React.FC = () => {
     }
   };
 
-  const passwordField = (
-    id: string,
-    label: string,
-    value: string,
-    onChange: (v: string) => void,
-    shown: boolean,
-    toggle: () => void,
-  ) => (
-    <div className="flex flex-col gap-2">
-      <label htmlFor={id} className="text-sm font-medium">{label}</label>
-      <div className="relative">
-        <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <Input
-          id={id}
-          type={shown ? 'text' : 'password'}
-          className="pr-11 pl-9"
-          placeholder="••••••••"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          required
-          disabled={loading || !!success}
-          autoComplete="new-password"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="absolute top-1/2 right-0 -translate-y-1/2"
-          onClick={toggle}
-          aria-label={shown ? 'Hide password' : 'Show password'}
-          title={shown ? 'Hide password' : 'Show password'}
-        >
-          {shown ? <EyeOff /> : <Eye />}
-        </Button>
-      </div>
-    </div>
-  );
-
   return (
     <AuthLayout>
       <AuthHeading icon={<KeyRound />} title="Create New Password">
@@ -221,19 +179,34 @@ export const ResetPassword: React.FC = () => {
           )}
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {passwordField('new-password', 'New Password', password, setPassword, showPassword, () => setShowPassword(!showPassword))}
+            <Field
+              id="new-password"
+              label="New Password"
+              icon={<Lock />}
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={loading || !!success}
+              autoComplete="new-password"
+            />
 
             {password.length > 0 && <PasswordStrengthMeter result={strengthResult} />}
 
             <div className="flex flex-col gap-2">
-              {passwordField(
-                'confirm-password',
-                'Confirm New Password',
-                confirmPassword,
-                setConfirmPassword,
-                showConfirmPassword,
-                () => setShowConfirmPassword(!showConfirmPassword),
-              )}
+              <Field
+                id="confirm-password"
+                label="Confirm New Password"
+                icon={<Lock />}
+                type="password"
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                disabled={loading || !!success}
+                autoComplete="new-password"
+              />
               {confirmPassword.length > 0 && !passwordsMatch && (
                 <span className="text-xs text-destructive">Passwords do not match.</span>
               )}
