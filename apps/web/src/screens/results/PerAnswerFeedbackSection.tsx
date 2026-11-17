@@ -98,6 +98,7 @@ export function PerAnswerFeedbackSection({
             >
               <button
                 type="button"
+                data-slot="collapsible-trigger"
                 id={headingId}
                 onClick={() => toggleIndex(index)}
                 aria-expanded={isExpanded}
