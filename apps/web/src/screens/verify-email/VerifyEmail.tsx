@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
-import { useTheme } from '../../context/ThemeContext';
 import { validateEmail } from '../../lib/emailValidation';
 import {
   Mail,
@@ -9,19 +8,20 @@ import {
   AlertCircle,
   Loader2,
   ArrowRight,
-  Sun,
-  Moon,
   ShieldCheck,
   RefreshCw,
   Edit2,
 } from 'lucide-react';
-import { Logo } from '../../components/Logo';
+import { AuthHeading, AuthLayout } from '../../components/AuthLayout';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 export const VerifyEmail: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { verifyOtp, resendOtp, user } = useAuth();
-  const { theme, setTheme } = useTheme();
 
   // Email state from navigation state or search query param
   const queryParams = new URLSearchParams(location.search);
@@ -198,322 +198,151 @@ export const VerifyEmail: React.FC = () => {
   const isCodeComplete = otp.every((d) => d.length === 1);
 
   return (
-    <div className="auth-page-container">
-      {/* Ambient background glow spheres */}
-      <div className="auth-ambient-blobs" aria-hidden="true">
-        <div className="auth-blob auth-blob-1" />
-        <div className="auth-blob auth-blob-2" />
-        <div className="auth-blob auth-blob-3" />
-      </div>
+    <AuthLayout>
+      <AuthHeading icon={<Mail />} title="Verify Your Email">
+        We sent a 6-digit verification code to confirm ownership of your email address.
+      </AuthHeading>
 
-      {/* Top Bar with Brand and Dark / Light Mode Switcher */}
-      <header className="auth-top-nav">
-        <Link to="/" className="auth-logo-badge" aria-label="AI Interviewer Home">
-          <div className="auth-logo-icon-box">
-            <Logo className="size-6 text-foreground" />
-          </div>
-          <span>
-            AI <span className="text-gradient">Interviewer</span>
-          </span>
-        </Link>
-
-        <div className="theme-segmented-control" role="group" aria-label="Theme Selector">
-          <button
-            type="button"
-            className={`theme-segmented-btn ${theme === 'light' ? 'active' : ''}`}
-            onClick={() => setTheme('light')}
-            title="Switch to Light Theme"
-            aria-pressed={theme === 'light'}
-          >
-            <Sun size={15} />
-            <span>Light</span>
-          </button>
-          <button
-            type="button"
-            className={`theme-segmented-btn ${theme === 'dark' ? 'active' : ''}`}
-            onClick={() => setTheme('dark')}
-            title="Switch to Dark Theme"
-            aria-pressed={theme === 'dark'}
-          >
-            <Moon size={15} />
-            <span>Dark</span>
-          </button>
-        </div>
-      </header>
-
-      <div style={{ maxWidth: '460px', width: '100%', margin: '0 auto', zIndex: 1 }}>
-        <div className="card" style={{ padding: '2.5rem 2rem', background: 'var(--surface-color)' }}>
-          {/* Header */}
-          <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
-            <div
-              style={{
-                width: '52px',
-                height: '52px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                color: 'var(--primary-color)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '1rem',
-              }}
-            >
-              <Mail size={26} />
-            </div>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: '0 0 0.5rem 0', color: 'var(--text-main)' }}>
-              Verify Your Email
-            </h2>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
-              We sent a 6-digit verification code to confirm ownership of your email address.
-            </p>
-          </div>
-
-          {/* Email badge / edit toggle */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.5rem',
-              marginBottom: '1.5rem',
-              padding: '0.6rem 0.85rem',
-              backgroundColor: 'var(--bg-elevated, rgba(255, 255, 255, 0.04))',
-              border: '1px solid var(--border-color)',
-              borderRadius: '8px',
-              fontSize: '0.85rem',
-            }}
-          >
-            {isEditingEmail ? (
-              <div style={{ display: 'flex', width: '100%', gap: '0.5rem', alignItems: 'center' }}>
-                <input
-                  type="email"
-                  className="form-input-aesthetic"
-                  style={{ fontSize: '0.85rem', padding: '0.35rem 0.65rem' }}
-                  placeholder="name@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  className="theme-segmented-btn active"
-                  style={{ whiteSpace: 'nowrap', padding: '0.35rem 0.65rem', fontSize: '0.8rem' }}
-                  onClick={() => {
-                    if (validateEmail(email).isValid) {
-                      setIsEditingEmail(false);
-                      setError('');
-                    } else {
-                      setError('Please enter a valid email format.');
-                    }
-                  }}
-                >
-                  Save
-                </button>
-              </div>
-            ) : (
-              <>
-                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{email || 'No email specified'}</span>
-                <button
-                  type="button"
-                  onClick={() => setIsEditingEmail(true)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--primary-color)',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.25rem',
-                    fontSize: '0.78rem',
-                    padding: 0,
-                  }}
-                  title="Change email"
-                >
-                  <Edit2 size={13} />
-                  <span>Change</span>
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Status feedback alerts */}
-          {error && (
-            <div className="alert alert-error" style={{ marginBottom: '1.25rem' }}>
-              <AlertCircle size={18} />
-              <span style={{ fontSize: '0.875rem' }}>{error}</span>
-            </div>
-          )}
-
-          {successMsg && (
-            <div className="alert alert-info" style={{ marginBottom: '1.25rem' }}>
-              <CheckCircle2 size={18} color="var(--primary-color)" />
-              <span style={{ fontSize: '0.875rem' }}>{successMsg}</span>
-            </div>
-          )}
-
-          {/* Verification Form */}
-          <form onSubmit={handleVerify} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div className="form-group" style={{ margin: 0 }}>
-              <label
-                className="form-label"
-                style={{ textAlign: 'center', display: 'block', marginBottom: '0.75rem', fontSize: '0.85rem' }}
-              >
-                Enter 6-digit confirmation code
-              </label>
-
-              {/* 6 OTP Inputs */}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  gap: '0.5rem',
-                  maxWidth: '360px',
-                  margin: '0 auto',
-                  width: '100%',
-                }}
-              >
-                {otp.map((digit, idx) => (
-                  <input
-                    key={idx}
-                    ref={(el) => {
-                      inputRefs.current[idx] = el;
-                    }}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleOtpChange(idx, e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(idx, e)}
-                    onPaste={handlePaste}
-                    disabled={loading || resending}
-                    aria-label={`Digit ${idx + 1}`}
-                    style={{
-                      width: '46px',
-                      height: '52px',
-                      textAlign: 'center',
-                      fontSize: '1.35rem',
-                      fontWeight: 700,
-                      borderRadius: '8px',
-                      border: digit
-                        ? '2px solid var(--primary-color)'
-                        : '1px solid var(--border-color)',
-                      backgroundColor: 'var(--bg-elevated, var(--surface-color))',
-                      color: 'var(--text-main)',
-                      outline: 'none',
-                      transition: 'border-color 0.15s ease',
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Submit Verification Button */}
-            <button
-              type="submit"
-              className="btn-auth-submit"
-              disabled={loading || !isCodeComplete || isEditingEmail}
-            >
-              {loading ? (
-                <>
-                  <Loader2 size={18} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
-                  <span>Verifying code...</span>
-                </>
-              ) : (
-                <>
-                  <span>Verify Email</span>
-                  <ArrowRight size={16} />
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Resend OTP Section */}
-          <div
-            style={{
-              marginTop: '1.5rem',
-              textAlign: 'center',
-              fontSize: '0.875rem',
-              color: 'var(--text-muted)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.65rem',
-              alignItems: 'center',
-            }}
-          >
-            <p
-              style={{
-                margin: 0,
-                lineHeight: 1.5,
-                color: 'var(--text-muted)',
-                fontSize: '0.85rem',
-                maxWidth: '380px',
-              }}
-            >
-              Didn't receive the email? Please check your Spam or Junk folder as well.
-            </p>
-            <button
+      {/* Email badge / edit toggle */}
+      <div className="flex items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 py-2 text-sm">
+        {isEditingEmail ? (
+          <div className="flex w-full items-center gap-2">
+            <Input
+              type="email"
+              aria-label="Email address"
+              placeholder="name@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoFocus
+            />
+            <Button
               type="button"
-              onClick={handleResend}
-              disabled={cooldown > 0 || resending || isEditingEmail}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: cooldown > 0 ? 'var(--text-muted)' : 'var(--primary-color)',
-                fontWeight: 600,
-                cursor: cooldown > 0 ? 'not-allowed' : 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                fontSize: '0.85rem',
-                padding: 0,
+              size="sm"
+              onClick={() => {
+                if (validateEmail(email).isValid) {
+                  setIsEditingEmail(false);
+                  setError('');
+                } else {
+                  setError('Please enter a valid email format.');
+                }
               }}
             >
-              {resending ? (
-                <>
-                  <Loader2 size={14} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
-                  <span>Sending code...</span>
-                </>
-              ) : cooldown > 0 ? (
-                <>
-                  <RefreshCw size={14} style={{ opacity: 0.6 }} />
-                  <span>Resend code in {cooldown}s</span>
-                </>
-              ) : (
-                <>
-                  <RefreshCw size={14} />
-                  <span>Resend verification code</span>
-                </>
-              )}
-            </button>
+              Save
+            </Button>
           </div>
-
-          {/* Back to sign in */}
-          <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.875rem' }}>
-            <Link to="/login" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
-              ← Return to Sign In
-            </Link>
-          </div>
-
-          {/* Privacy & Security note */}
-          <div
-            style={{
-              marginTop: '1.25rem',
-              paddingTop: '0.9rem',
-              borderTop: '1px solid var(--border-color)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              fontSize: '0.78rem',
-              color: 'var(--text-light)',
-              justifyContent: 'center',
-            }}
-          >
-            <ShieldCheck size={15} color="var(--success-color)" />
-            <span>Email verification prevents unauthorized and fake account creation.</span>
-          </div>
-        </div>
+        ) : (
+          <>
+            <span className="font-semibold">{email || 'No email specified'}</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setIsEditingEmail(true)} title="Change email">
+              <Edit2 />
+              <span>Change</span>
+            </Button>
+          </>
+        )}
       </div>
-    </div>
+
+      {/* Status feedback alerts */}
+      {error && (
+        <Alert variant="error">
+          <AlertCircle />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {successMsg && (
+        <Alert variant="success">
+          <CheckCircle2 />
+          <AlertDescription>{successMsg}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Verification Form */}
+      <form onSubmit={handleVerify} className="flex flex-col gap-5">
+        <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
+          <legend className="mb-3 w-full text-center text-sm font-medium">Enter 6-digit confirmation code</legend>
+
+          {/* 6 OTP Inputs */}
+          <div className="mx-auto flex w-full max-w-sm justify-between gap-2">
+            {otp.map((digit, idx) => (
+              <Input
+                key={idx}
+                ref={(el) => {
+                  inputRefs.current[idx] = el;
+                }}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleOtpChange(idx, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(idx, e)}
+                onPaste={handlePaste}
+                disabled={loading || resending}
+                aria-label={`Digit ${idx + 1}`}
+                className={cn('h-12 w-11 px-0 text-center text-xl font-semibold', digit && 'border-primary')}
+              />
+            ))}
+          </div>
+        </fieldset>
+
+        {/* Submit Verification Button */}
+        <Button type="submit" disabled={loading || !isCodeComplete || isEditingEmail}>
+          {loading ? (
+            <>
+              <Loader2 className="animate-spin motion-reduce:animate-none" />
+              <span>Verifying code...</span>
+            </>
+          ) : (
+            <>
+              <span>Verify Email</span>
+              <ArrowRight />
+            </>
+          )}
+        </Button>
+      </form>
+
+      {/* Resend OTP Section */}
+      <div className="flex flex-col items-center gap-2 text-center text-sm text-muted-foreground">
+        <p>Didn't receive the email? Please check your Spam or Junk folder as well.</p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={handleResend}
+          disabled={cooldown > 0 || resending || isEditingEmail}
+          className={cooldown > 0 ? 'text-muted-foreground' : 'text-foreground'}
+        >
+          {resending ? (
+            <>
+              <Loader2 className="animate-spin motion-reduce:animate-none" />
+              <span>Sending code...</span>
+            </>
+          ) : cooldown > 0 ? (
+            <>
+              <RefreshCw />
+              <span>Resend code in {cooldown}s</span>
+            </>
+          ) : (
+            <>
+              <RefreshCw />
+              <span>Resend verification code</span>
+            </>
+          )}
+        </Button>
+      </div>
+
+      {/* Back to sign in */}
+      <div className="text-center">
+        <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+          <Link to="/login">← Return to Sign In</Link>
+        </Button>
+      </div>
+
+      {/* Privacy & Security note */}
+      <div className="flex items-center justify-center gap-2 border-t border-border pt-4 text-center text-xs text-muted-foreground">
+        <ShieldCheck className="size-4 shrink-0 text-success" aria-hidden />
+        <span>Email verification prevents unauthorized and fake account creation.</span>
+      </div>
+    </AuthLayout>
   );
 };

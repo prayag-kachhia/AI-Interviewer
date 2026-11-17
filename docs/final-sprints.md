@@ -75,7 +75,7 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 
 | Person | Counted PRs | Hard | Medium | Easy | Days | Required doc (not counted) |
 |---|---|---|---|---|---|---|
-| Prayag | 15 | 3 | 7 | 5 | 9 | – |
+| Prayag | 17 | 3 | 8 | 6 | 10.5 | – |
 | Vishwa | 8 | 2 | 5 | 1 | 5.5 | – |
 | Kishan | 10 | 1 | 7 | 2 | 5.5 | D-1 (1 day) |
 | Prakriti | 8 | 1 | 4 | 3 | 5 | D-2 (1 day) |
@@ -84,7 +84,7 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 | Rahi | 9 | 1 | 3 | 5 | 5.25 | D-4 (1 day) |
 | Ved | 8 | 1 | 5 | 2 | 5.5 | D-3 (1 day) |
 | Vismay | 9 | 2 | 4 | 3 | 6.25 | – |
-| Raj | 8 | 1 | 4 | 3 | 5.25 | – |
+| Raj | 6 | 1 | 3 | 2 | 3.75 | – |
 
 Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
@@ -92,7 +92,7 @@ Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
 ### Prayag: lead: UI revamp, structure, interview setup
 
-About 9 days · 15 counted PRs (2 already merged) · 3 Hard, 7 Medium, 5 Easy · review partner: Raj
+About 10.5 days · 17 counted PRs (2 already merged) · 3 Hard, 8 Medium, 6 Easy · review partner: Raj
 
 **[P-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/74) · Merge the API flatten (#118)** · **✅ merged in [#118](https://github.com/prayag-kachhia/AI-Interviewer/pull/118)** · Medium · 0.5 days · Sprint 4
 
@@ -204,7 +204,7 @@ One styling system: the old stylesheet and static inline styles are gone.
 - Remove the remaining static inline styles and fix regressions on every screen in light and dark.
 - Include docs/adr/0011-design-system.md in this PR.
 - **Done when:** `git grep "style={{" -- apps/web/src` finds only dynamic values, and every screen is checked in light and dark.
-- **Depends on:** P-8, P-9, P-10, PK-5, RH-4, RJ-5, RJ-12, V-5 (all screen migrations)
+- **Depends on:** P-8, P-9, P-10, P-17, P-18, PK-5, RH-4, V-5 (all screen migrations)
 
 **[P-13](https://github.com/prayag-kachhia/AI-Interviewer/issues/199) · Landing page** · Easy · 0.5 days · Sprint 5
 
@@ -240,6 +240,24 @@ Light and dark become two different looks, not one design in two colour schemes.
 - A ruled hero, a numbered "how it works" list of the three real steps, the three feature cards and a closing band, using only real content.
 - **Done when:** Signed-out visitors see it in both themes and every link goes to /login.
 - **Depends on:** P-13, P-15
+
+**[P-17](https://github.com/prayag-kachhia/AI-Interviewer/issues/273) · Restyle Reset password and Verify email (was RJ-12, reassigned from Raj)** · Easy · 0.5 days · Sprint 5
+
+- Rebuild both screens with the `components/ui` primitives and the theme tokens: no inline styles, no `legacy.css` classes. Keep every behaviour and test. They share `AuthLayout` and a three-way `ThemeSwitcher`.
+- **Done when:** Neither screen uses a class from `legacy.css`, and the existing tests pass.
+- **Depends on:** P-15. Blocks P-12. Build P-17 first; P-18 reuses its layout.
+
+
+**[P-18](https://github.com/prayag-kachhia/AI-Interviewer/issues/100) · Split and restyle the Login screen (was RJ-5, reassigned from Raj)** · Medium · 1 day · Sprint 5
+
+The 649-line Login screen becomes small, readable pieces on the design system.
+
+- Split `Login.tsx` into SignInForm, SignUpForm and `useAuthForm`.
+- Rebuild them with Card, Input, Button and Alert.
+- Keep `Login.test.tsx` passing.
+- **Done when:** No file in screens/login is over about 200 lines, and the tests pass.
+- **Depends on:** P-5, P-6, RJ-3, RJ-4. Blocks P-12.
+
 
 ### Vishwa: voice transport
 
@@ -948,7 +966,7 @@ Candidates see an honest summary of their open-source work, and the interviewer 
 
 ### Raj: identity, end-to-end tests
 
-About 5.25 days · 8 counted PRs (0 already merged) · 1 Hard, 4 Medium, 3 Easy · review partner: Prayag
+About 3.75 days · 6 counted PRs (0 already merged) · 1 Hard, 3 Medium, 2 Easy · review partner: Prayag
 
 **[RJ-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/78) · Show when resume AI analysis fell back** · Easy · 0.5 days · Sprint 4
 
@@ -990,16 +1008,6 @@ Shared computers don't keep people signed in.
 - Add a 'Stay signed in' checkbox. When it's off, store the Supabase session in `sessionStorage`, so it ends when the browser closes.
 - **Done when:** With it off, closing and reopening the browser signs you out.
 
-**[RJ-5](https://github.com/prayag-kachhia/AI-Interviewer/issues/100) · Split and restyle the Login screen** · Medium · 1 day · Sprint 5
-
-The 649-line Login screen becomes small, readable pieces on the design system.
-
-- Split `Login.tsx` into SignInForm, SignUpForm and `useAuthForm`.
-- Rebuild them with Card, Input, Button and Alert.
-- Keep `Login.test.tsx` passing.
-- **Done when:** No file in screens/login is over about 200 lines, and the tests pass.
-- **Depends on:** P-5, P-6, RJ-3, RJ-4
-
 **[RJ-10](https://github.com/prayag-kachhia/AI-Interviewer/issues/201) · Owner dashboard (FR-32)** · Medium · 0.75 days · Sprint 5
 
 The project owner can see how the product is used and where it fails.
@@ -1009,12 +1017,6 @@ The project owner can see how the product is used and where it fails.
 - Add tests for access and the counts.
 - **Done when:** An admin sees the numbers on the live site, and a normal user gets 404.
 - **Depends on:** RH-2, P-5
-
-**[RJ-12](https://github.com/prayag-kachhia/AI-Interviewer/issues/273) · Restyle Reset password and Verify email** · Easy · 0.5 days · Sprint 5
-
-- Rebuild both screens with the `components/ui` primitives and the theme tokens: no inline styles, no `legacy.css` classes. Keep every behaviour and test.
-- **Done when:** Neither screen uses a class from `legacy.css`, and the existing tests pass.
-- **Depends on:** P-15. Blocks P-12.
 
 **[RJ-13](https://github.com/prayag-kachhia/AI-Interviewer/issues/274) · Placement Cell cohort view (FR-33)** · Medium · 0.5 days · Sprint 5
 
