@@ -165,6 +165,21 @@ test('End Interview opens native dialog confirmation and cancels cleanly', async
   expect(api.endSession).not.toHaveBeenCalled();
 });
 
+test('the transcript keeps its newest line in view without scrolling the page', async () => {
+  const scrollIntoView = vi.fn();
+  window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
+  const session = makeSession();
+  vi.mocked(api.getSession).mockResolvedValueOnce({
+    ...session,
+    data: { ...session.data, turns: [makeTurn({ text: 'First question?' })] },
+  });
+  renderRoom('sess-123');
+
+  await screen.findAllByText('First question?');
+  // scrollIntoView scrolls every scrollable ancestor, the page included.
+  expect(scrollIntoView).not.toHaveBeenCalled();
+});
+
 test('confirming closes dialog immediately so error banner is visible when ending fails', async () => {
   vi.mocked(api.getSession).mockResolvedValueOnce(makeSession());
   vi.mocked(api.endSession).mockRejectedValueOnce({

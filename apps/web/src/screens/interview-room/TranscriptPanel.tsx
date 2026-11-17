@@ -45,7 +45,7 @@ export const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
 
       {/* Drawer Content / Chat Bubbles */}
       {showTranscriptPanel && (
-        <div className="flex flex-col gap-3.5 max-h-80 overflow-y-auto pr-1">
+        <div className="flex flex-col gap-3.5 max-h-80 overflow-y-auto scroll-smooth pr-1 motion-reduce:scroll-auto">
           {turns.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border/80 p-8 text-center text-sm text-muted-foreground flex flex-col items-center justify-center gap-2">
               <MessageSquare className="size-6 text-muted-foreground/60" />
