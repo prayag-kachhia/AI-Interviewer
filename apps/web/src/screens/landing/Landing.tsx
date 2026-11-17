@@ -149,7 +149,7 @@ export const Landing: React.FC = () => {
             <Logo className="size-5 text-foreground" />
             AI Interviewer, a student project for IT314 at DA-IICT.
           </span>
-          <Link to={signedIn ? '/dashboard' : '/login'} className="text-foreground">
+          <Link to={signedIn ? '/dashboard' : '/login'} className="text-foreground underline">
             {signedIn ? 'Dashboard' : 'Sign in'}
           </Link>
         </div>

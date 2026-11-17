@@ -237,7 +237,7 @@ export const Profile: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="container mx-auto flex h-[60vh] max-w-5xl flex-col items-center justify-center gap-4 px-6 pt-28" role="status">
+      <div className="mx-auto flex h-[60vh] max-w-5xl flex-col items-center justify-center gap-4 px-6 pt-28" role="status">
         <Loader2 className="size-12 text-primary motion-safe:animate-spin" />
         <p className="text-lg font-medium">Loading your candidate profile...</p>
       </div>
@@ -246,7 +246,7 @@ export const Profile: React.FC = () => {
 
   if (error || !resumeData) {
     return (
-      <div className="container mx-auto max-w-5xl px-6 pt-28 pb-20">
+      <div className="mx-auto max-w-5xl px-6 pt-28 pb-20">
         <div className="mx-auto max-w-xl">
           <Card className="text-center">
             <CardHeader>
@@ -271,7 +271,7 @@ export const Profile: React.FC = () => {
   const email = profile.email || user?.email;
 
   return (
-    <div className="container mx-auto max-w-5xl px-6 pt-28 pb-20">
+    <div className="mx-auto max-w-5xl px-6 pt-28 pb-20">
       <Button variant="outline" className="mb-8" onClick={() => navigate('/dashboard')}>
         <ArrowLeft /> Back to Dashboard
       </Button>
@@ -284,7 +284,7 @@ export const Profile: React.FC = () => {
             </Avatar>
             <div>
               <div className="mb-2 flex flex-wrap items-center gap-3">
-                <h1 className="font-display text-3xl font-bold">{displayName}</h1>
+                <h1 className="font-display text-3xl font-bold tracking-tight">{displayName}</h1>
                 {resumeData.source && (
                   <Badge variant={resumeData.source === 'ai' ? 'default' : 'secondary'}>
                     {resumeData.source === 'ai' ? 'AI' : 'Basic parse'}

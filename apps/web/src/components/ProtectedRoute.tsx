@@ -7,7 +7,7 @@ export const ProtectedRoute: React.FC = () => {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <div className="flex h-screen items-center justify-center">
         Loading...
       </div>
     );

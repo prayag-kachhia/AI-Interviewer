@@ -40,7 +40,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const root = document.documentElement;
     root.classList.toggle('dark', theme !== 'light'); // Tailwind's dark: variant; Graphite is dark too
     root.classList.toggle('graphite', theme === 'graphite');
-    root.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark'); // legacy.css only knows two, until P-12
+    root.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark'); // History's leftover legacy.css only knows two, until RH-10 (#304)
     localStorage.setItem('theme', theme);
   }, [theme]);
 

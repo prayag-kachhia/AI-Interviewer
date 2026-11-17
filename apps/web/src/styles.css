@@ -1,44 +1,54 @@
 /*
- * Tailwind without its CSS reset (preflight) until P-12, so the old screens look the same.
- * Layer order decides who wins, whatever the selector: legacy.css beats Tailwind's theme,
- * and Tailwind utility classes beat legacy.css. P-12 deletes legacy.css and switches to
- * `@import 'tailwindcss'`.
+ * Tailwind with its CSS reset (preflight), plus the theme variables below. Layer order decides
+ * who wins, whatever the selector: a later layer always beats an earlier one.
+ * legacy.css sits between the reset and the utilities. It now holds only the old classes the
+ * History page still uses, so they beat the reset and any Tailwind class beats them.
+ * RH-10 (#304) deletes it.
  */
 @layer theme, base, components, legacy, utilities;
 @import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
 @import './legacy.css' layer(legacy);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
-/* legacy.css has its own .container and .list-item; don't let Tailwind's utilities replace them. */
-@source not inline('container list-item');
+/* History's old .container must not be replaced by Tailwind's. RH-10 (#304) deletes this line. */
+@source not inline('container');
 
 /* ThemeContext puts `.dark` on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/*
- * The slice of preflight the components/ui primitives need (they all carry data-slot), so a
- * Button doesn't keep the browser's grey background and outset border. P-12 replaces this
- * with the full reset.
- */
 @layer base {
-  [data-slot] {
-    border: 0 solid var(--border);
-    background-color: transparent;
-    color: inherit;
-    font: inherit;
+  /* A bare `border` class draws in the theme's border colour, not the text colour. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
   }
-}
 
-/*
- * Unlayered, so it beats legacy.css's `body` rule: the page paints with the theme's own
- * background, ink and body font, not the old --bg-color. P-12 deletes this along with legacy.css.
- */
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-body);
-  background-image: var(--page-pattern);
-  background-size: 64px 64px;
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-body);
+    background-image: var(--page-pattern);
+    background-size: 64px 64px;
+    /* Thinner, crisper text on macOS; other systems ignore these. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /*
+   * Switching themes fades the page instead of jumping. The theme is already on <html> before the
+   * first paint (see the script in index.html), so this never fades on page load.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    body {
+      transition:
+        background-color 0.25s ease-in-out,
+        color 0.25s ease-in-out;
+    }
+  }
 }
 
 /*
@@ -204,9 +214,9 @@ body {
 }
 
 /*
- * `inline` makes utilities use these values directly, so legacy.css's own --radius-* and
- * --shadow-* variables can't leak into Tailwind classes. Colours still switch with the
- * theme because each one points at a variable above.
+ * `inline` makes utilities use these values directly, so History's old --radius-* variables in
+ * legacy.css can't leak into Tailwind classes. Colours still switch with the theme because each
+ * one points at a variable above.
  */
 @theme inline {
   --font-sans: var(--font-body);
