@@ -33,6 +33,21 @@
     font-family: var(--font-body);
     background-image: var(--page-pattern);
     background-size: 64px 64px;
+    /* Thinner, crisper text on macOS; other systems ignore these. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /*
+   * Switching themes fades the page instead of jumping. The theme is already on <html> before the
+   * first paint (see the script in index.html), so this never fades on page load.
+   */
+  @media (prefers-reduced-motion: no-preference) {
+    body {
+      transition:
+        background-color 0.25s ease-in-out,
+        color 0.25s ease-in-out;
+    }
   }
 }
 

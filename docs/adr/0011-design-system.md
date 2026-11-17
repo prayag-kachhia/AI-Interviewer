@@ -22,7 +22,8 @@ By P-12 every screen except History had moved.
 3. **Themes are CSS variables, not per-screen `dark:` classes.**
    - `styles.css` defines each theme's colours, corner radius, border width, shadow and fonts as variables on `:root` (Swiss), `.dark` (Haute) and `.graphite` (Graphite).
    - `@theme inline` maps them to Tailwind names (`bg-card`, `text-muted-foreground`, `rounded-lg`), so a screen built from the shared components follows the theme with no theme-specific code.
-   - `ThemeContext` only switches the class on `<html>`.
+   - `ThemeContext` switches the theme class on `<html>`; until RH-10 it also sets the `data-theme` attribute History's leftover CSS reads (see Interim below).
+   - A small inline script in `index.html` sets the same classes before the first paint, so a saved dark theme never loads light. `themeScript.test.tsx` keeps the two in step.
    - `styles.contrast.test.ts` reads the variables and checks that each theme's text colours meet WCAG AA (NFR-14).
 4. **The reset is on, and cascade layers decide precedence.** The order is `theme, base, components, legacy, utilities`. A later layer always wins, whatever the selector, so a utility class always beats older CSS. The base layer also makes a bare `border` class use the theme's border colour.
 5. **One chart library:** Recharts, through the shadcn Chart component.

@@ -542,7 +542,7 @@ export function ResultsScreen() {
                   {error}
                 </p>
               ) : turns.length === 0 ? (
-                <p className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground">No transcript turns recorded.</p>
+                <p className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground italic">No transcript turns recorded.</p>
               ) : (
                 <ol className="m-0 flex list-none flex-col gap-3 p-0">
                   {turns.map((turn) => (
