@@ -109,7 +109,7 @@ export const InterviewRoom: React.FC = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 flex flex-col gap-5">
+    <div className="max-w-4xl mx-auto px-4 pt-28 pb-10 flex flex-col gap-5">
       {/* Top Header Bar */}
       <div className="flex flex-wrap justify-between items-center gap-4 pb-2 border-b border-border/60">
         <div className="flex flex-col gap-1.5">
@@ -228,6 +228,8 @@ export const InterviewRoom: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-2">
               <InterviewerCard
                 isAiSpeaking={isAiSpeaking}
+                isListening={isListening || isCandidateSpeaking}
+                audioLevel={audioLevel}
                 interviewComplete={interviewComplete}
                 currentAiQuestion={currentAiQuestion}
                 onReplayAiQuestion={handleReplayAiQuestion}
