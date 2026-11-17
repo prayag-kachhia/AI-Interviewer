@@ -65,6 +65,7 @@ model Session {
   keep      Boolean       @default(false)
   startedAt DateTime      @default(now())
   endedAt   DateTime?
+  endReason String?
   createdAt DateTime      @default(now())
   turns     Turn[]
   jobs      Job[]
