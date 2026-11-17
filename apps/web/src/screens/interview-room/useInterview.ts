@@ -550,9 +550,11 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     return () => clearInterval(interval);
   }, [startedAt, status]);
 
-  // Auto-scroll transcript list
+  // Keep the newest line in view inside the transcript box. scrollIntoView would scroll the whole
+  // page as well, dragging the End Interview button under the navbar.
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const list = transcriptEndRef.current?.parentElement;
+    if (list) list.scrollTop = list.scrollHeight;
   }, [turns, liveCandidateSpeech]);
 
   const handleToggleMute = () => {
