@@ -39,7 +39,7 @@ import {
   generateMarkdownFilename,
   generateMarkdownReport,
 } from "./resultsSummary";
-import type { Session, TurnSpeaker } from "@interview/contracts";
+import { formatEndReason, type Session, type TurnSpeaker } from "@interview/contracts";
 import "./ResultsScreen.css";
 
 const chartConfig = {
@@ -345,16 +345,23 @@ export function ResultsScreen() {
           {feedback?.status === "ready" && (
             <div className="space-y-6">
               <div className="flex flex-col gap-1">
-                <h1 className="heading text-2xl text-foreground sm:text-3xl">
-                  Your Feedback
-                </h1>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="heading text-2xl text-foreground sm:text-3xl">
+                    Your Feedback
+                  </h1>
+                  {(session?.endedEarly || session?.endReason) && (
+                    <Badge data-testid="results-ended-early" variant="pending" className="text-xs">
+                      Ended early{session.endReason ? ` (${formatEndReason(session.endReason)})` : ""}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Detailed performance review and competency evaluation
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <Card className="flex flex-col justify-between">
+                <Card>
                   <CardHeader>
                     <CardTitle>Overall Summary</CardTitle>
                     {averageScore && (
@@ -396,7 +403,7 @@ export function ResultsScreen() {
                             config={chartConfig}
                             className="aspect-square max-h-[280px] w-full"
                           >
-                            <RadarChart data={radarData}>
+                            <RadarChart data={radarData} outerRadius="46%">
                               <PolarGrid stroke="var(--border)" className="stroke-border" />
                               <PolarAngleAxis
                                 dataKey="category"
