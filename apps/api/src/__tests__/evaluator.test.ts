@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { TurnSpeaker } from '@interview/contracts';
 import {
@@ -124,7 +124,7 @@ describe('FB4 — evaluator', () => {
   it('given the LLM call times out, then it fails well inside the 15-second budget', async () => {
     const started = Date.now();
     await expect(
-      evaluateTranscript(SAMPLE, { generate: () => new Promise(() => {}), timeoutMs: 50 })
+      evaluateTranscript(SAMPLE, { generate: () => new Promise(() => { }), timeoutMs: 50 })
     ).rejects.toThrow('timed out');
     expect(Date.now() - started).toBeLessThan(1000);
   });
@@ -1246,20 +1246,36 @@ describe('FB4 — evaluator', () => {
       ).rejects.toThrow(/Incomplete per-answer feedback: expected 4 answer\(s\) but received 2/);
     });
 
-    it('gracefully degrades to undefined perAnswer when perAnswer is incomplete and requirePerAnswer is false', async () => {
-      const incompleteReply = JSON.stringify({
-        summary: 'Good start.',
-        scores: RUBRIC.map((r) => scoreFor(r.category)),
-        perAnswer: SAMPLE_PER_ANSWER.slice(0, 2),
-      });
+    it('retains valid perAnswer entries when feedback coverage is incomplete and requirePerAnswer is false', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => { });
 
-      const result = await evaluateTranscript(SAMPLE, {
-        generate: async () => ({ text: incompleteReply }),
-      });
+      try {
+        const incompleteReply = JSON.stringify({
+          summary: 'Good start.',
+          scores: RUBRIC.map((r) => scoreFor(r.category)),
+          perAnswer: SAMPLE_PER_ANSWER.slice(0, 2),
+        });
 
-      expect(result.perAnswer).toBeUndefined();
-      expect(result.summary).toBe('Good start.');
-      expect(result.scores).toHaveLength(RUBRIC.length);
+        const result = await evaluateTranscript(SAMPLE, {
+          generate: async () => ({ text: incompleteReply }),
+        });
+
+        expect(result.perAnswer).toHaveLength(2);
+        expect(result.perAnswer![0].question).toBe(
+          SAMPLE_PER_ANSWER[0].question
+        );
+        expect(result.perAnswer![1].question).toBe(
+          SAMPLE_PER_ANSWER[1].question
+        );
+        expect(result.summary).toBe('Good start.');
+        expect(result.scores).toHaveLength(RUBRIC.length);
+
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('Incomplete per-answer feedback')
+        );
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it('gracefully degrades to undefined perAnswer when perAnswer has schema errors and requirePerAnswer is false', async () => {
@@ -1422,6 +1438,53 @@ describe('FB4 — evaluator', () => {
         expect(result.perAnswer![1].question).toBe('Follow-up: What happens on collision?');
       });
 
+      it('groups consecutive candidate turns into one answer', async () => {
+        const splitInput: EvaluationInput = {
+          ...PAIRING_INPUT,
+          turns: [
+            { speaker: 'AI', text: 'Question 1: What is a hash map?' },
+            { speaker: 'CANDIDATE', text: 'A hash map provides O(1) average' },
+            { speaker: 'CANDIDATE', text: 'lookup.' },
+            { speaker: 'AI', text: 'Follow-up: What happens on collision?' },
+            { speaker: 'CANDIDATE', text: 'Separate chaining or open addressing.' },
+          ],
+        };
+
+        expect(deriveExpectedQuestions(splitInput.turns)).toHaveLength(2);
+
+        const result = await evaluateTranscript(splitInput, {
+          generate: async () => ({
+            text: pairingReply(CORRECT_PER_ANSWER),
+          }),
+        });
+
+        expect(result.perAnswer).toHaveLength(2);
+      });
+
+      it('matches the main question when the interviewer adds consecutive prompts', async () => {
+        const input: EvaluationInput = {
+          ...PAIRING_INPUT,
+          turns: [
+            { speaker: 'AI', text: 'What components did you build in your project?' },
+            { speaker: 'AI', text: 'Take your time and explain your choices.' },
+            { speaker: 'CANDIDATE', text: 'I built the frontend and backend.' },
+          ],
+        };
+
+        const reply = pairingReply([
+          {
+            ...CORRECT_PER_ANSWER[0],
+            question: 'What components did you build in your project?',
+          },
+        ]);
+
+        const result = await evaluateTranscript(input, {
+          generate: async () => ({ text: reply }),
+        });
+
+        expect(result.perAnswer).toHaveLength(1);
+      });
+
       it('rejects a wrong question for an answer when requirePerAnswer is true', async () => {
         const wrong = [
           { ...CORRECT_PER_ANSWER[0], question: 'Completely different question?' },
@@ -1433,6 +1496,34 @@ describe('FB4 — evaluator', () => {
             requirePerAnswer: true,
           })
         ).rejects.toThrow(/entry 1 question does not match/);
+      });
+
+      it('retains valid entries when another entry has a wrong question', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => { });
+
+        try {
+          const partiallyWrong = [
+            { ...CORRECT_PER_ANSWER[0], question: 'Completely unrelated question?' },
+            CORRECT_PER_ANSWER[1],
+          ];
+
+          const result = await evaluateTranscript(PAIRING_INPUT, {
+            generate: async () => ({
+              text: pairingReply(partiallyWrong),
+            }),
+          });
+
+          expect(result.perAnswer).toHaveLength(1);
+          expect(result.perAnswer![0].question).toBe(
+            'Follow-up: What happens on collision?'
+          );
+
+          expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('entry 1 question does not match')
+          );
+        } finally {
+          warn.mockRestore();
+        }
       });
 
       it('rejects reordered questions when requirePerAnswer is true', async () => {
