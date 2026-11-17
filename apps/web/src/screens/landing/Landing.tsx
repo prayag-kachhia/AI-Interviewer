@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, Navigate } from 'react-router';
-import { BrainCircuit, ClipboardList, Compass, Mic } from 'lucide-react';
+import { ClipboardList, Compass, Mic } from 'lucide-react';
+import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '../../context/AuthContext';
@@ -47,7 +48,7 @@ export const Landing: React.FC = () => {
       <section className={`grid lg:grid-cols-12 ${RULE}`}>
         <div className="flex flex-col gap-8 p-6 sm:p-10 lg:col-span-7">
           <div className="label flex items-center gap-2 text-sm font-medium text-brand">
-            <BrainCircuit className="size-5" aria-hidden />
+            <Logo className="size-5" />
             <span>AI Interviewer</span>
           </div>
           <h1 className="heading text-5xl leading-[0.95] text-foreground sm:text-6xl lg:text-7xl">
@@ -94,7 +95,7 @@ export const Landing: React.FC = () => {
       </section>
 
       <section className="flex flex-col items-start gap-6 bg-primary p-8 text-primary-foreground sm:p-12">
-        <h2 className="heading text-3xl sm:text-5xl">Ready for your first interview?</h2>
+        <h2 className="heading text-3xl text-primary-foreground sm:text-5xl">Ready for your first interview?</h2>
         <Button asChild variant="secondary" size="lg">
           <Link to="/login">Sign up or sign in</Link>
         </Button>
