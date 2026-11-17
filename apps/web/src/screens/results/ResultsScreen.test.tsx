@@ -16,13 +16,13 @@ import {
 // The real API client creates a Supabase client on import; these tests replace its calls anyway.
 vi.mock("../../lib/api", () => ({
   getFeedback: vi.fn(),
+  retryFeedback: vi.fn(),
+  getTurns: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  deleteSession: vi.fn(),
   getSession: vi.fn().mockResolvedValue({
     success: true,
     data: { keep: false },
   }),
-  retryFeedback: vi.fn(),
-  getTurns: vi.fn().mockResolvedValue({ success: true, data: [] }),
-  deleteSession: vi.fn(),
   updateSessionKeep: vi.fn(),
 }));
 
@@ -42,9 +42,9 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.mocked(getFeedback).mockReset();
-  vi.mocked(getSession).mockReset().mockResolvedValue({ success: true, data: { keep: false } as any });
   vi.mocked(retryFeedback).mockReset();
   vi.mocked(deleteSession).mockReset();
+  vi.mocked(getSession).mockClear();
   vi.mocked(updateSessionKeep).mockReset();
 });
 
@@ -516,32 +516,6 @@ test("given feedback lacks per-answer feedback, then per-answer section is not r
   renderResults();
   expect(await screen.findByText("Overall good.")).toBeInTheDocument();
   expect(screen.queryByTestId("per-answer-feedback-section")).not.toBeInTheDocument();
-});
-
-test("given session ended early with reason, then ResultsScreen displays the reason next to feedback (K-10, FR-19)", async () => {
-  vi.mocked(getSession).mockResolvedValueOnce({
-    success: true,
-    data: {
-      id: "s1",
-      userId: "u1",
-      role: "software-engineer",
-      status: "ENDED",
-      startedAt: "2026-11-01T10:00:00Z",
-      endedAt: "2026-11-01T10:04:00Z",
-      endedEarly: true,
-      endReason: "technical_problem",
-    },
-  });
-  vi.mocked(getFeedback).mockResolvedValue({
-    sessionId: "s1",
-    status: "ready",
-    summary: "Feedback summary.",
-    scores: [],
-  });
-
-  renderResults();
-  const badge = await screen.findByTestId("results-ended-early");
-  expect(badge).toHaveTextContent("Ended early (Technical problem)");
 });
 
 test("given an unkept interview, when I click Keep interview, then it is protected", async () => {

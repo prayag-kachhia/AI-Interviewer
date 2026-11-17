@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import axios from 'axios';
 import { getSession, postTurn, postNextQuestion, endSession } from '../../lib/api';
-import { EndReason, ROLES } from '@interview/contracts';
+import { ROLES } from '@interview/contracts';
 import type { InterviewMode, InterviewVoiceState, SessionStatus, TurnData } from '../../types';
 import {
   BrowserWebSpeechVoiceAdapter,
@@ -622,7 +622,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     });
   };
 
-  const handleEndInterview = useCallback(async (reason?: EndReason) => {
+  const handleEndInterview = useCallback(async () => {
     if (!sessionId || endingRef.current) return;
     endingRef.current = true;
     clearThinkingTimer();
@@ -631,7 +631,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     try {
       adapterRef.current?.disconnect();
       await saveQueueRef.current;
-      const res = reason ? await endSession(sessionId, reason) : await endSession(sessionId);
+      const res = await endSession(sessionId);
       if (res?.success && res.data) {
         setStatus('ENDED');
         setEndedAt(res.data.endedAt ?? new Date().toISOString());

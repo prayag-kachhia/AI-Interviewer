@@ -4,7 +4,6 @@ export type {
   SessionStatus,
   TurnSpeaker,
   InterviewMode,
-  EndReason,
   ImprovementPlan,
   TopicPlan,
   PlanAction,
@@ -48,6 +47,7 @@ export interface ResumeResponse {
 // ---------------------------------------------------------------------------
 // Slice A — Live Session
 // ---------------------------------------------------------------------------
+
 
 export type InterviewVoiceState =
   | 'IDLE'

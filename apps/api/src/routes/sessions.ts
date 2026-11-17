@@ -10,7 +10,6 @@ import {
   deleteSession,
   updateSessionKeep,
   SessionEndedError,
-  validateEndReason,
 } from '../services/session.service';
 import { mintVoiceToken } from '../services/voice-provider.service';
 import { briefingFor } from '../services/briefing.service';
@@ -89,10 +88,8 @@ router.post('/:id/turns', authenticate, async (req, res) => {
 router.post('/:id/end', authenticate, async (req, res) => {
   const userId = req.user!.id;
   const id = req.params.id as string;
-  const { endReason } = req.body ?? {};
 
-  const validatedReason = validateEndReason(endReason);
-  const session = await endSession(id, userId, validatedReason);
+  const session = await endSession(id, userId);
   res.status(200).json({ success: true, data: session });
 });
 // PATCH /api/sessions/:id/keep
