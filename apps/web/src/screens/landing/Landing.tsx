@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, Navigate } from 'react-router';
+import { Link } from 'react-router';
 import { ROLES } from '@interview/contracts';
 import { Logo } from '@/components/Logo';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
@@ -30,9 +30,10 @@ const RULE = 'border-border border-(length:--border-w)';
 export const Landing: React.FC = () => {
   const { user, loading } = useAuth();
 
-  // Wait for the session check so a signed-in user never sees the landing page flash.
+  // Wait for the session check so the buttons don't switch from "Sign in" to "Open dashboard" on load.
   if (loading) return null;
-  if (user) return <Navigate to="/dashboard" replace />;
+  // Signed-in users see the landing page too (like Notion); the buttons take them to their dashboard.
+  const signedIn = Boolean(user);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -41,15 +42,32 @@ export const Landing: React.FC = () => {
       </p>
 
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-6 py-5">
-        <span className="flex items-center gap-2 font-display text-xl font-bold">
+        <Link to="/" aria-label="AI Interviewer home" className="flex items-center gap-2 font-display text-xl font-bold text-foreground no-underline">
           <Logo className="size-7 text-foreground" />
           <span className="hidden sm:inline">AI Interviewer</span>
-        </span>
+        </Link>
         <div className="flex items-center gap-2">
           <ThemeSwitcher />
-          <Button asChild variant="ghost" size="sm">
-            <Link to="/login">Sign in</Link>
-          </Button>
+          {signedIn ? (
+            <Button asChild size="sm">
+              {/* Shorter on phones: Haute's wide capitals don't fit "Open dashboard" at 360 px. */}
+              <Link to="/dashboard" aria-label="Open dashboard">
+                <span className="sm:hidden">Dashboard</span>
+                <span className="hidden sm:inline">Open dashboard</span>
+              </Link>
+            </Button>
+          ) : (
+            <>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/login">Sign in</Link>
+              </Button>
+              <Button asChild size="sm" className="hidden sm:inline-flex">
+                <Link to="/login" state={{ mode: 'signup' }}>
+                  Sign up
+                </Link>
+              </Button>
+            </>
+          )}
         </div>
       </header>
 
@@ -66,7 +84,13 @@ export const Landing: React.FC = () => {
             </p>
             <div className="flex flex-wrap gap-3">
               <Button asChild size="lg">
-                <Link to="/login">Start practising</Link>
+                {signedIn ? (
+                  <Link to="/dashboard">Open dashboard</Link>
+                ) : (
+                  <Link to="/login" state={{ mode: 'signup' }}>
+                    Start practising
+                  </Link>
+                )}
               </Button>
               <Button asChild size="lg" variant="outline">
                 <a href="#example-report">See an example report</a>
@@ -110,9 +134,11 @@ export const Landing: React.FC = () => {
         <SampleReport />
 
         <section className="flex flex-col items-start gap-6 bg-primary p-8 text-primary-foreground sm:p-12">
-          <h2 className="heading text-3xl text-primary-foreground sm:text-5xl">Ready for your first interview?</h2>
+          <h2 className="heading text-3xl text-primary-foreground sm:text-5xl">
+            {signedIn ? 'Ready for your next interview?' : 'Ready for your first interview?'}
+          </h2>
           <Button asChild variant="secondary" size="lg">
-            <Link to="/login">Sign up or sign in</Link>
+            {signedIn ? <Link to="/new-interview">Start an interview</Link> : <Link to="/login">Sign up or sign in</Link>}
           </Button>
         </section>
       </main>
@@ -123,8 +149,8 @@ export const Landing: React.FC = () => {
             <Logo className="size-5 text-foreground" />
             AI Interviewer, a student project for IT314 at DA-IICT.
           </span>
-          <Link to="/login" className="text-foreground">
-            Sign in
+          <Link to={signedIn ? '/dashboard' : '/login'} className="text-foreground">
+            {signedIn ? 'Dashboard' : 'Sign in'}
           </Link>
         </div>
       </footer>

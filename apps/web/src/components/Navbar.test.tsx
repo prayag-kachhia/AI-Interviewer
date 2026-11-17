@@ -46,8 +46,8 @@ test('renders nothing for a signed-out visitor', () => {
   expect(container).toBeEmptyDOMElement();
 });
 
-test('renders nothing on the reset-password and verify-email screens', () => {
-  for (const path of ['/reset-password', '/verify-email']) {
+test('renders nothing on the landing page, reset-password and verify-email screens', () => {
+  for (const path of ['/', '/reset-password', '/verify-email']) {
     const { container, unmount } = renderAt(path);
     expect(container).toBeEmptyDOMElement();
     unmount();

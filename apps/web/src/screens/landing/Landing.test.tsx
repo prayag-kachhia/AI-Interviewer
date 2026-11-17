@@ -21,23 +21,37 @@ const renderLanding = () =>
     </MemoryRouter>,
   );
 
-test('signed-out visitor sees the hero, and every link goes to /login except the in-page example link', () => {
+const hrefs = () => screen.getAllByRole('link').map((a) => a.getAttribute('href'));
+
+test('signed-out visitor sees the landing page with sign-in and sign-up, and nothing that needs an account', () => {
   auth = { user: null, loading: false };
   renderLanding();
   expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/practice interviews out loud/i);
-  const links = screen.getAllByRole('link');
-  expect(links.length).toBeGreaterThanOrEqual(3);
-  for (const link of links) {
-    const href = link.getAttribute('href');
-    expect(href === '/login' || href === '#example-report', `unexpected link ${href}`).toBe(true);
+  expect(screen.getByRole('link', { name: 'Sign up' })).toHaveAttribute('href', '/login');
+  expect(screen.getAllByRole('link', { name: 'Sign in' })[0]).toHaveAttribute('href', '/login');
+  expect(screen.getByRole('link', { name: 'Start practising' })).toHaveAttribute('href', '/login');
+  expect(screen.queryByRole('link', { name: 'Open dashboard' })).not.toBeInTheDocument();
+  for (const href of hrefs()) {
+    expect(['/', '/login', '#example-report'], `unexpected link ${href}`).toContain(href);
   }
-  expect(screen.getByRole('link', { name: 'See an example report' })).toHaveAttribute('href', '#example-report');
 });
 
-test('signed-in user is redirected to the dashboard', () => {
+test('signed-in user also sees the landing page, with the dashboard instead of sign-in', () => {
   auth = { user: { id: 'u1' }, loading: false };
   renderLanding();
-  expect(screen.getByText('Dashboard page')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/practice interviews out loud/i);
+  expect(screen.queryByText('Dashboard page')).not.toBeInTheDocument();
+  for (const link of screen.getAllByRole('link', { name: 'Open dashboard' })) {
+    expect(link).toHaveAttribute('href', '/dashboard');
+  }
+  expect(screen.getByRole('link', { name: 'Start an interview' })).toHaveAttribute('href', '/new-interview');
+  expect(screen.queryByRole('link', { name: /sign in|sign up/i })).not.toBeInTheDocument();
+});
+
+test('the logo goes to the landing page', () => {
+  auth = { user: null, loading: false };
+  renderLanding();
+  expect(screen.getByRole('link', { name: 'AI Interviewer home' })).toHaveAttribute('href', '/');
 });
 
 test('renders nothing while auth is loading', () => {
