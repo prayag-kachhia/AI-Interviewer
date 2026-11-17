@@ -59,11 +59,11 @@ export const SampleReport: React.FC = () => (
         <div className="grid gap-4 border-t-(length:--border-w) border-border pt-5 sm:grid-cols-2">
           <div className="flex flex-col items-start gap-2">
             <Badge variant="success">Strength</Badge>
-            <p className="text-sm">Named the database as the first limit instead of guessing.</p>
+            <p className="text-sm text-muted-foreground">Named the database as the first limit instead of guessing.</p>
           </div>
           <div className="flex flex-col items-start gap-2">
             <Badge variant="pending">To improve</Badge>
-            <p className="text-sm">Say how many requests per second the design handles today.</p>
+            <p className="text-sm text-muted-foreground">Say how many requests per second the design handles today.</p>
           </div>
         </div>
       </Card>

@@ -140,7 +140,7 @@ export const GuidePage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="container mx-auto max-w-4xl px-4 pt-28 pb-16 flex flex-col items-center justify-center gap-4" role="status">
+      <div className="mx-auto max-w-4xl px-4 pt-28 pb-16 flex flex-col items-center justify-center gap-4" role="status">
         <Loader2 className="size-8 motion-safe:animate-spin text-primary" />
         <p className="text-muted-foreground text-sm font-medium">Loading improvement guide…</p>
       </div>
@@ -149,7 +149,7 @@ export const GuidePage: React.FC = () => {
 
   if (error) {
     return (
-      <div className="container mx-auto max-w-3xl px-4 pt-28 pb-12">
+      <div className="mx-auto max-w-3xl px-4 pt-28 pb-12">
         <Alert variant="error">
           <AlertCircle className="size-5" />
           <AlertTitle>Error</AlertTitle>
@@ -166,7 +166,7 @@ export const GuidePage: React.FC = () => {
 
   if (notFound || !plan) {
     return (
-      <div className="container mx-auto max-w-3xl px-4 pt-28 pb-12">
+      <div className="mx-auto max-w-3xl px-4 pt-28 pb-12">
         <Card className="text-center p-8">
           <CardHeader className="flex flex-col items-center gap-2">
             <div className="rounded-full bg-secondary p-3 text-muted-foreground mb-2">
@@ -224,7 +224,7 @@ export const GuidePage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto max-w-5xl px-4 pt-28 pb-8 flex flex-col gap-8">
+    <div className="mx-auto max-w-5xl px-4 pt-28 pb-8 flex flex-col gap-8">
       {/* Page Header */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2 text-primary font-medium text-sm">

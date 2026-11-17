@@ -12,7 +12,7 @@ export const Roles: React.FC = () => (
         Questions come from your resume, the role and focus you pick, and any job description you paste. Each follow-up
         builds on what you just said, the way a real interviewer would.
       </p>
-      <ul className="mt-auto flex flex-col gap-3 border-t-(length:--border-w) border-border pt-5">
+      <ul className="mt-auto flex list-disc flex-col gap-3 border-t-(length:--border-w) border-border pt-5">
         <li>Speak your answers, or switch to typing at any time.</li>
         <li>End the interview early whenever you need to.</li>
         <li>Keep a history of your interviews and see your scores over time.</li>
