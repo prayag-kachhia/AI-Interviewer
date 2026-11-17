@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import { checkPasswordStrength } from '../../lib/passwordStrength';
 import { validateEmail } from '../../lib/emailValidation';
+import { getStaySignedIn, setStaySignedIn as setStorageStaySignedIn } from '../../lib/authStorage';
 
 export type Mode = 'signin' | 'signup';
 
@@ -23,9 +24,16 @@ function oauthError(search: string, hash: string): string {
 export function useAuthForm() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signIn, signUp, signInWithGoogle, resetPasswordForEmail, user } = useAuth();
+  const { signIn, signUp, signInWithGoogle, resetPasswordForEmail, user, staySignedIn: authStaySignedIn, setStaySignedIn: authSetStaySignedIn } = useAuth();
 
   const [mode, setMode] = useState<Mode>(() => location.state?.mode || 'signin');
+  const [staySignedIn, setStaySignedIn] = useState<boolean>(() => authStaySignedIn ?? getStaySignedIn());
+
+  const handleStaySignedInChange = (checked: boolean) => {
+    setStaySignedIn(checked);
+    authSetStaySignedIn?.(checked);
+    setStorageStaySignedIn(checked);
+  };
   const [forgot, setForgot] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [name, setName] = useState('');
@@ -92,7 +100,7 @@ export function useAuthForm() {
     setSuccessMsg('');
     setGoogleLoading(true);
     try {
-      const res = await signInWithGoogle();
+      const res = await signInWithGoogle(staySignedIn);
       if (!res.success) {
         setError(res.message || 'Failed to start Google sign-in');
         setGoogleLoading(false);
@@ -115,7 +123,7 @@ export function useAuthForm() {
   };
 
   const logIn = async (normalizedEmail: string) => {
-    const res = await signIn(normalizedEmail, password);
+    const res = await signIn(normalizedEmail, password, staySignedIn);
     if (res.success) return navigate(homeAfterSignIn());
     if (res.needsVerification) setUnverifiedEmail(normalizedEmail);
     setError(res.message || 'Invalid credentials');
@@ -144,6 +152,7 @@ export function useAuthForm() {
     strengthResult, passwordsMatch, isSignUpValid,
     error, successMsg, loading, googleLoading, forgotLoading,
     submit, sendResetLink, continueWithGoogle,
+    staySignedIn, handleStaySignedInChange,
   };
 }
 

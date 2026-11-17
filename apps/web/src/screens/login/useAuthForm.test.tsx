@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { useAuthForm } from './useAuthForm';
 
-const auth = { signIn: vi.fn(), signUp: vi.fn(), signInWithGoogle: vi.fn(), resetPasswordForEmail: vi.fn(), user: null };
+const auth = { signIn: vi.fn(), signUp: vi.fn(), signInWithGoogle: vi.fn(), resetPasswordForEmail: vi.fn(), user: null, staySignedIn: false, setStaySignedIn: vi.fn() };
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
 
 const wrapper = ({ children }: { children: React.ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
@@ -12,6 +12,8 @@ const STRONG = 'Str0ng!P@ss2026#';
 beforeEach(() => {
   auth.signIn.mockReset();
   auth.signUp.mockReset();
+  auth.signInWithGoogle.mockReset();
+  auth.setStaySignedIn.mockReset();
 });
 
 /** Fills the sign-up form, then submits it. */
@@ -59,4 +61,53 @@ it('signs up with a strong, matching password', async () => {
   expect(form.isSignUpValid).toBe(true);
   expect(auth.signUp).toHaveBeenCalledWith('Jane Doe', 'jane@example.com', STRONG);
   expect(form.successMsg).toBe('Check your inbox.');
+});
+
+it('defaults staySignedIn to false and toggles via handleStaySignedInChange', () => {
+  const { result } = renderHook(() => useAuthForm(), { wrapper });
+  expect(result.current.staySignedIn).toBe(false);
+
+  act(() => {
+    result.current.handleStaySignedInChange(true);
+  });
+  expect(result.current.staySignedIn).toBe(true);
+  expect(auth.setStaySignedIn).toHaveBeenCalledWith(true);
+
+  act(() => {
+    result.current.handleStaySignedInChange(false);
+  });
+  expect(result.current.staySignedIn).toBe(false);
+  expect(auth.setStaySignedIn).toHaveBeenCalledWith(false);
+});
+
+it('passes staySignedIn to signIn during logIn', async () => {
+  auth.signIn.mockResolvedValue({ success: true });
+  const { result } = renderHook(() => useAuthForm(), { wrapper });
+
+  act(() => {
+    result.current.setEmail('candidate@example.com');
+    result.current.setPassword('Password123!');
+    result.current.handleStaySignedInChange(true);
+  });
+
+  await act(async () => {
+    await result.current.submit({ preventDefault() {} } as React.FormEvent);
+  });
+
+  expect(auth.signIn).toHaveBeenCalledWith('candidate@example.com', 'Password123!', true);
+});
+
+it('passes staySignedIn to signInWithGoogle during continueWithGoogle', async () => {
+  auth.signInWithGoogle.mockResolvedValue({ success: true });
+  const { result } = renderHook(() => useAuthForm(), { wrapper });
+
+  act(() => {
+    result.current.handleStaySignedInChange(true);
+  });
+
+  await act(async () => {
+    await result.current.continueWithGoogle();
+  });
+
+  expect(auth.signInWithGoogle).toHaveBeenCalledWith(true);
 });
