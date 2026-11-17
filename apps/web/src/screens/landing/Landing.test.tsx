@@ -38,3 +38,14 @@ test('renders nothing while auth is loading', () => {
   const { container } = renderLanding();
   expect(container).toBeEmptyDOMElement();
 });
+
+test('shows the three steps of the flow in order', () => {
+  auth = { user: null, loading: false };
+  renderLanding();
+  const steps = screen.getAllByRole('listitem').map((li) => li.textContent);
+  expect(steps).toEqual([
+    '01Upload your resume and choose a role',
+    '02Answer the interviewer out loud',
+    '03Read your feedback and follow the plan',
+  ]);
+});
