@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../db';
-import { EARLY_END_THRESHOLD_MINUTES, computeOverallScore } from '../services/session.service';
+import { EARLY_END_THRESHOLD_MINUTES, computeOverallScore, extractCategoryScores } from '../services/session.service';
 
 vi.mock('@supabase/supabase-js', () => {
   const getUserMock = vi.fn();
@@ -394,22 +394,29 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(newEndedSession.createdAt).toBeDefined();
       expect(newEndedSession.feedbackStatus).toBe('ready');
       expect(newEndedSession.overallScore).toBe(4);
+      expect(newEndedSession.categoryScores).toEqual([
+        { category: 'API Design & Architecture', score: 4 },
+        { category: 'Database Modeling & Performance', score: 5 },
+        { category: 'System Reliability & Scalability', score: 3 },
+      ]);
       expect(newEndedSession.endedEarly).toBe(true);
 
-      // Session 2: Ended, failed feedback -> overallScore = null
+      // Session 2: Ended, failed feedback -> overallScore = null, categoryScores = null
       expect(oldEndedSession.id).toBe('sess-old');
       expect(oldEndedSession.role).toBe('software-engineer');
       expect(oldEndedSession.status).toBe('ENDED');
       expect(oldEndedSession.feedbackStatus).toBe('failed');
       expect(oldEndedSession.overallScore).toBeNull();
+      expect(oldEndedSession.categoryScores).toBeNull();
       expect(oldEndedSession.endedEarly).toBe(false);
 
-      // Session 3: Live session -> endedEarly = false, feedbackStatus = null, overallScore = null
+      // Session 3: Live session -> endedEarly = false, feedbackStatus = null, overallScore = null, categoryScores = null
       expect(liveSession.id).toBe('sess-live');
       expect(liveSession.role).toBe('data-analyst');
       expect(liveSession.status).toBe('LIVE');
       expect(liveSession.feedbackStatus).toBeNull();
       expect(liveSession.overallScore).toBeNull();
+      expect(liveSession.categoryScores).toBeNull();
       expect(liveSession.endedEarly).toBe(false);
     });
 
@@ -617,6 +624,87 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
         { category: 'B', score: 2 },
       ];
       expect(computeOverallScore(mixedWithValid)).toBe(3);
+    });
+
+    it('extractCategoryScores: returns null for null, empty, non-array or invalid inputs', () => {
+      expect(extractCategoryScores(null)).toBeNull();
+      expect(extractCategoryScores(undefined)).toBeNull();
+      expect(extractCategoryScores([])).toBeNull();
+      expect(extractCategoryScores('invalid')).toBeNull();
+      expect(extractCategoryScores(123)).toBeNull();
+      expect(extractCategoryScores([{}])).toBeNull();
+    });
+
+    it('extractCategoryScores: extracts minimal category and score, stripping private fields', () => {
+      const fullScores = [
+        {
+          category: 'Problem Solving & Algorithms',
+          score: 5,
+          comment: 'Outstanding data structure choice and time complexity analysis.',
+          strengths: ['Clear breakdown', 'Optimal BFS traversal'],
+          improvements: ['Could mention memory bounds'],
+          quote: 'I will use a queue to track visited nodes',
+        },
+        {
+          category: 'Software Design & Architecture',
+          score: 4,
+          comment: 'Solid modular design with clean separation of concerns.',
+          strengths: ['Decoupled service boundary'],
+          improvements: [],
+          quote: 'Let us decouple the worker queue',
+        },
+      ];
+
+      expect(extractCategoryScores(fullScores)).toEqual([
+        { category: 'Problem Solving & Algorithms', score: 5 },
+        { category: 'Software Design & Architecture', score: 4 },
+      ]);
+    });
+
+    it('extractCategoryScores: handles wrapped scores object with perAnswer', () => {
+      const wrapped = {
+        scores: [
+          { category: 'Problem Solving', score: 4 },
+          { category: 'Technical Communication', score: 5 },
+        ],
+        perAnswer: [],
+      };
+      expect(extractCategoryScores(wrapped)).toEqual([
+        { category: 'Problem Solving', score: 4 },
+        { category: 'Technical Communication', score: 5 },
+      ]);
+    });
+
+    it('extractCategoryScores: ignores invalid entries, empty categories, out of range, and non-finite scores', () => {
+      const mixed = [
+        { category: '', score: 4 },
+        { category: '   ', score: 3 },
+        { category: 'Valid Cat', score: 4 },
+        { category: 'Zero Score', score: 0 },
+        { category: 'High Score', score: 6 },
+        { category: 'NaN Score', score: NaN },
+        { category: 'Infinity Score', score: Infinity },
+        { category: 'String Score', score: '5' as any },
+        { noCategory: true, score: 4 },
+        null,
+        'random string',
+        { category: 'Another Valid', score: 3.5 },
+      ];
+
+      expect(extractCategoryScores(mixed)).toEqual([
+        { category: 'Valid Cat', score: 4 },
+        { category: 'Another Valid', score: 3.5 },
+      ]);
+    });
+
+    it('extractCategoryScores: averages duplicate categories within the same feedback and rounds to 1 decimal', () => {
+      const duplicates = [
+        { category: 'Architecture', score: 4 },
+        { category: 'Architecture', score: 5 },
+      ];
+      expect(extractCategoryScores(duplicates)).toEqual([
+        { category: 'Architecture', score: 4.5 },
+      ]);
     });
   });
 

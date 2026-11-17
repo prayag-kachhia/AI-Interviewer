@@ -1,15 +1,32 @@
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router';
-import { UserCircle2, BrainCircuit, Moon, Sun } from 'lucide-react';
+import { Moon, Sun, SquareTerminal } from 'lucide-react';
+import { Logo } from './Logo';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
+import { THEMES, useTheme } from '../context/ThemeContext';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+const LINKS = [
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/new-interview', label: 'New interview' },
+  { to: '/history', label: 'History' },
+  { to: '/guide', label: 'Guide' },
+  { to: '/profile', label: 'Profile' },
+];
+
+const initials = (nameOrEmail: string) =>
+  nameOrEmail.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
 
 export const Navbar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const themeIndex = THEMES.findIndex((t) => t.id === theme);
+  const themeLabel = THEMES[themeIndex]?.label ?? '';
+  const nextLabel = THEMES[(themeIndex + 1) % THEMES.length].label;
 
   const handleLogout = async () => {
     try {
@@ -25,8 +42,6 @@ export const Navbar: React.FC = () => {
     }
   };
 
-  const isActive = (path: string) => location.pathname === path;
-
   if (
     !user ||
     location.pathname === '/reset-password' ||
@@ -36,33 +51,50 @@ export const Navbar: React.FC = () => {
   }
 
   return (
-    <nav className="navbar">
-      <div className="container navbar-content">
-        <Link to="/" className="navbar-brand">
-          <BrainCircuit size={28} color="var(--primary-color)" />
-          AI Interviewer
+    // Fixed and 70px tall: pages clear it with pt-28.
+    <header className="fixed inset-x-0 top-0 z-50 flex h-[70px] items-center border-b border-border bg-background/90 backdrop-blur">
+      <nav aria-label="Main" className="mx-auto flex w-full max-w-[1200px] items-center justify-between gap-4 px-6">
+        <Link to="/" className="flex shrink-0 items-center gap-2 font-display text-xl font-bold text-foreground no-underline">
+          <Logo className="size-7 text-foreground" />
+          <span className="hidden sm:inline">AI Interviewer</span>
         </Link>
-        <div className="navbar-links">
-          <Link to="/dashboard" className={`navbar-link ${isActive('/dashboard') ? 'active' : ''}`}>Dashboard</Link>
-          <Link to="/history" className={`navbar-link ${isActive('/history') ? 'active' : ''}`}>History</Link>
-          <Link to="/guide" className={`navbar-link ${isActive('/guide') ? 'active' : ''}`}>Guide</Link>
-          <Link to="/profile" className={`navbar-link ${isActive('/profile') ? 'active' : ''}`}>Profile</Link>
-          
-          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
-            {theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
-          </Button>
-          
-          <div className="navbar-user-section">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-main)', fontWeight: 500 }}>
-              <UserCircle2 size={20} color="var(--text-muted)" />
-              {user.email}
-            </div>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              Sign out
-            </Button>
-          </div>
+
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+          {LINKS.map(({ to, label }) => {
+            const active = location.pathname === to;
+            return (
+              <Button
+                key={to}
+                asChild
+                variant="ghost"
+                size="sm"
+                className={cn('shrink-0', active ? 'bg-secondary text-foreground' : 'text-muted-foreground')}
+              >
+                <Link to={to} aria-current={active ? 'page' : undefined}>{label}</Link>
+              </Button>
+            );
+          })}
         </div>
-      </div>
-    </nav>
+
+        <div className="flex shrink-0 items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={`Theme: ${themeLabel}. Switch to ${nextLabel}`}
+            title={`Theme: ${themeLabel}`}
+          >
+            {theme === 'light' ? <Sun className="size-5" /> : theme === 'dark' ? <Moon className="size-5" /> : <SquareTerminal className="size-5" />}
+          </Button>
+          <Avatar>
+            <AvatarFallback>{initials(user.name || user.email)}</AvatarFallback>
+          </Avatar>
+          <span className="hidden max-w-[16ch] truncate text-sm font-medium text-foreground xl:inline">{user.email}</span>
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            Sign out
+          </Button>
+        </div>
+      </nav>
+    </header>
   );
 };

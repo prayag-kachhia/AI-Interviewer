@@ -6,7 +6,6 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { checkPasswordStrength } from '../../lib/passwordStrength';
 import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
 import {
-  BrainCircuit,
   Lock,
   Eye,
   EyeOff,
@@ -18,6 +17,7 @@ import {
   Moon,
   KeyRound,
 } from 'lucide-react';
+import { Logo } from '../../components/Logo';
 
 export const ResetPassword: React.FC = () => {
   const navigate = useNavigate();
@@ -156,7 +156,7 @@ export const ResetPassword: React.FC = () => {
       <header className="auth-top-nav">
         <Link to="/" className="auth-logo-badge" aria-label="AI Interviewer Home">
           <div className="auth-logo-icon-box">
-            <BrainCircuit size={22} color="var(--primary-color)" />
+            <Logo className="size-6 text-foreground" />
           </div>
           <span>
             AI <span className="text-gradient">Interviewer</span>
