@@ -5,6 +5,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { checkPasswordStrength } from '../../lib/passwordStrength';
 import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
 import { validateEmail } from '../../lib/emailValidation';
+import { getStaySignedIn, setStaySignedIn as setStorageStaySignedIn } from '../../lib/authStorage';
 import {
   BrainCircuit,
   AlertCircle,
@@ -50,11 +51,20 @@ const GoogleIcon: React.FC = () => (
 export const Login: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signIn, signUp, signInWithGoogle, resetPasswordForEmail, user } = useAuth();
+  const { signIn, signUp, signInWithGoogle, resetPasswordForEmail, user, staySignedIn: authStaySignedIn, setStaySignedIn: authSetStaySignedIn } = useAuth();
   const { theme, setTheme } = useTheme();
 
   // Mode: 'signin' | 'signup'
   const [mode, setMode] = useState<'signin' | 'signup'>(() => location.state?.mode || 'signin');
+
+  // "Stay signed in" persistence mode (FR-05)
+  const [staySignedIn, setStaySignedIn] = useState<boolean>(() => authStaySignedIn ?? getStaySignedIn());
+
+  const handleStaySignedInChange = (checked: boolean) => {
+    setStaySignedIn(checked);
+    authSetStaySignedIn?.(checked);
+    setStorageStaySignedIn(checked);
+  };
 
   // Forgot password mode toggle
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -162,7 +172,7 @@ export const Login: React.FC = () => {
     setGoogleLoading(true);
 
     try {
-      const res = await signInWithGoogle();
+      const res = await signInWithGoogle(staySignedIn);
       if (!res.success) {
         setError(res.message || 'Failed to start Google sign-in');
         setGoogleLoading(false);
@@ -224,7 +234,7 @@ export const Login: React.FC = () => {
         }
       } else {
         // Sign In
-        const res = await signIn(emailVal.normalizedEmail, password);
+        const res = await signIn(emailVal.normalizedEmail, password, staySignedIn);
         if (res.success) {
           const selectedRole = localStorage.getItem('selectedRole');
           if (selectedRole) {
@@ -534,6 +544,38 @@ export const Login: React.FC = () => {
                         {showSignInPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                       </button>
                     </div>
+                  </div>
+
+                  <div className="stay-signed-in-group" style={{ display: 'flex', alignItems: 'center', marginTop: '-0.2rem', marginBottom: '0.2rem' }}>
+                    <label
+                      htmlFor="stay-signed-in"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.55rem',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        color: 'var(--text-muted)',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        id="stay-signed-in"
+                        name="staySignedIn"
+                        checked={staySignedIn}
+                        onChange={(e) => handleStaySignedInChange(e.target.checked)}
+                        tabIndex={isFlipped ? -1 : 0}
+                        aria-label="Stay signed in"
+                        style={{
+                          width: '1rem',
+                          height: '1rem',
+                          accentColor: 'var(--primary-color)',
+                          cursor: 'pointer',
+                        }}
+                      />
+                      <span>Stay signed in</span>
+                    </label>
                   </div>
 
                   <button
