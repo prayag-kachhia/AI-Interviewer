@@ -1,8 +1,9 @@
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router';
-import { BrainCircuit, Moon, Sun } from 'lucide-react';
+import { Moon, Sun, SquareTerminal } from 'lucide-react';
+import { Logo } from './Logo';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
+import { THEMES, useTheme } from '../context/ThemeContext';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,9 @@ export const Navbar: React.FC = () => {
   const location = useLocation();
   const { user, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const themeIndex = THEMES.findIndex((t) => t.id === theme);
+  const themeLabel = THEMES[themeIndex]?.label ?? '';
+  const nextLabel = THEMES[(themeIndex + 1) % THEMES.length].label;
 
   const handleLogout = async () => {
     try {
@@ -49,9 +53,9 @@ export const Navbar: React.FC = () => {
   return (
     // Fixed and 70px tall: pages clear it with pt-28.
     <header className="fixed inset-x-0 top-0 z-50 flex h-[70px] items-center border-b border-border bg-background/90 backdrop-blur">
-      <nav aria-label="Main" className="mx-auto flex w-full max-w-[1100px] items-center justify-between gap-4 px-6">
-        <Link to="/" className="flex shrink-0 items-center gap-2 font-display text-xl font-bold text-foreground">
-          <BrainCircuit className="size-7 text-primary" />
+      <nav aria-label="Main" className="mx-auto flex w-full max-w-[1200px] items-center justify-between gap-4 px-6">
+        <Link to="/" className="flex shrink-0 items-center gap-2 font-display text-xl font-bold text-foreground no-underline">
+          <Logo className="size-7 text-foreground" />
           <span className="hidden sm:inline">AI Interviewer</span>
         </Link>
 
@@ -73,8 +77,14 @@ export const Navbar: React.FC = () => {
         </div>
 
         <div className="flex shrink-0 items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
-            {theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={`Theme: ${themeLabel}. Switch to ${nextLabel}`}
+            title={`Theme: ${themeLabel}`}
+          >
+            {theme === 'light' ? <Sun className="size-5" /> : theme === 'dark' ? <Moon className="size-5" /> : <SquareTerminal className="size-5" />}
           </Button>
           <Avatar>
             <AvatarFallback>{initials(user.name || user.email)}</AvatarFallback>

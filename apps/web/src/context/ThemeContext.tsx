@@ -1,6 +1,15 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-export type Theme = 'light' | 'dark';
+export type Theme = 'light' | 'dark' | 'graphite';
+
+/** In the order the navbar button cycles through them. */
+export const THEMES: { id: Theme; label: string }[] = [
+  { id: 'light', label: 'Swiss' },
+  { id: 'dark', label: 'Haute' },
+  { id: 'graphite', label: 'Graphite' },
+];
+
+const isTheme = (value: string | null): value is Theme => THEMES.some((t) => t.id === value);
 
 export interface ThemeContextType {
   theme: Theme;
@@ -17,7 +26,7 @@ const ThemeContext = createContext<ThemeContextType>({
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<Theme>(() => {
     const saved = localStorage.getItem('theme');
-    if (saved === 'light' || saved === 'dark') {
+    if (isTheme(saved)) {
       return saved;
     }
     // Respect system preference if available, default to dark for rich aesthetics
@@ -28,8 +37,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark'); // Tailwind's dark: variant
-    document.documentElement.setAttribute('data-theme', theme); // legacy.css, until P-12
+    const root = document.documentElement;
+    root.classList.toggle('dark', theme !== 'light'); // Tailwind's dark: variant; Graphite is dark too
+    root.classList.toggle('graphite', theme === 'graphite');
+    root.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark'); // legacy.css only knows two, until P-12
     localStorage.setItem('theme', theme);
   }, [theme]);
 
@@ -38,7 +49,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const toggleTheme = () => {
-    setThemeState(prev => (prev === 'light' ? 'dark' : 'light'));
+    setThemeState((prev) => THEMES[(THEMES.findIndex((t) => t.id === prev) + 1) % THEMES.length].id);
   };
 
   return (

@@ -46,6 +46,7 @@ const PAIRS: [string, string, number][] = [
 describe.each([
   ['light (Swiss broadsheet)', ':root'],
   ['dark (Haute)', '.dark'],
+  ['graphite', '.graphite'],
 ])('%s theme contrast', (_name, selector) => {
   const t = tokens(selector);
 

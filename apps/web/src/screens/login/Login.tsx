@@ -6,7 +6,6 @@ import { checkPasswordStrength } from '../../lib/passwordStrength';
 import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
 import { validateEmail } from '../../lib/emailValidation';
 import {
-  BrainCircuit,
   AlertCircle,
   CheckCircle2,
   UserPlus,
@@ -25,6 +24,7 @@ import {
   FileText,
   Target
 } from 'lucide-react';
+import { Logo } from '../../components/Logo';
 
 const GoogleIcon: React.FC = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}>
@@ -261,7 +261,7 @@ export const Login: React.FC = () => {
       <header className="auth-top-nav">
         <Link to="/" className="auth-logo-badge" aria-label="AI Interviewer Home">
           <div className="auth-logo-icon-box">
-            <BrainCircuit size={22} color="var(--primary-color)" />
+            <Logo className="size-6 text-foreground" />
           </div>
           <span>
             AI <span className="text-gradient">Interviewer</span>

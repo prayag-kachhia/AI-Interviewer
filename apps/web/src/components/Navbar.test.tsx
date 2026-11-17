@@ -12,7 +12,10 @@ vi.mock('react-router', async (importOriginal) => ({
 
 let auth: { user: { id: string; email: string; name?: string } | null; signOut: () => Promise<void> };
 vi.mock('../context/AuthContext', () => ({ useAuth: () => auth }));
-vi.mock('../context/ThemeContext', () => ({ useTheme: () => ({ theme: 'light', toggleTheme: vi.fn() }) }));
+vi.mock('../context/ThemeContext', async (importActual) => ({
+  ...(await importActual<typeof import('../context/ThemeContext')>()),
+  useTheme: () => ({ theme: 'light', toggleTheme: vi.fn() }),
+}));
 
 const renderAt = (path: string) =>
   render(
