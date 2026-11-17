@@ -6,6 +6,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  isAdmin?: boolean;
 }
 
 export interface AuthContextType {
@@ -117,6 +118,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               sessionUser.user_metadata?.full_name ||
               sessionUser.user_metadata?.name ||
               fallbackUser.name,
+            isAdmin: Boolean(profile.data.isAdmin),
           };
           lastSyncedUserRef.current = updatedUser;
           if (mountedRef.current && inFlightSyncRef.current === userId) {

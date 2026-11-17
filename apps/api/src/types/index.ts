@@ -6,6 +6,7 @@ export interface AuthUser {
   email: string;
   name: string;
   role?: string;
+  isEmailConfirmed?: boolean;
 }
 
 // Extend Request type to include user

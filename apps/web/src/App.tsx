@@ -11,6 +11,7 @@ import { InterviewRoom } from './screens/interview-room/InterviewRoom';
 import { ResultsScreen } from './screens/results/ResultsScreen';
 import { HistoryPage } from './screens/history/HistoryPage';
 import { GuidePage } from './screens/guide/GuidePage';
+import { AdminDashboard } from './screens/admin/AdminDashboard';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -30,6 +31,7 @@ function App() {
             {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/guide" element={<GuidePage />} />
               <Route path="/profile" element={<Profile />} />

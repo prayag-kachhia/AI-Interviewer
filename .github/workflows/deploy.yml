@@ -67,7 +67,7 @@ jobs:
         run: |
           gcloud run deploy "$SERVICE" --source . --project "$PROJECT_ID" --region "$REGION" \
             --no-cpu-throttling --min 1 --max 2 --memory 512Mi --allow-unauthenticated \
-            --set-env-vars "WEB_ORIGIN=https://$PROJECT_ID.web.app,SUPABASE_URL=${{ vars.SUPABASE_URL }},GEMINI_EVAL_MODEL=gemini-3.8-flash,GEMINI_RESUME_MODEL=gemini-3.8-flash,GEMINI_LIVE_MODEL=models/gemini-3.8-live" \
+            --set-env-vars "^|^WEB_ORIGIN=https://$PROJECT_ID.web.app|SUPABASE_URL=${{ vars.SUPABASE_URL }}|ADMIN_EMAILS=${{ vars.ADMIN_EMAILS }}|GEMINI_EVAL_MODEL=gemini-3.8-flash|GEMINI_RESUME_MODEL=gemini-3.8-flash|GEMINI_LIVE_MODEL=models/gemini-3.8-live" \
             --set-secrets "DATABASE_URL=database-url:latest,GEMINI_API_KEY=gemini-api-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest" \
             --quiet
           echo "API_URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')" >> "$GITHUB_ENV"

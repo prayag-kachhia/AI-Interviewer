@@ -41,6 +41,11 @@ export const Navbar: React.FC = () => {
   // Below lg the links don't fit in a row (a half-screen window is ~960px), so they go in a menu.
   const [menuOpen, setMenuOpen] = useState(false);
 
+  const navLinks = [
+    ...LINKS,
+    ...(user?.isAdmin ? [{ to: '/admin', label: 'Admin' }] : []),
+  ];
+
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
   useEffect(() => {
@@ -82,7 +87,7 @@ export const Navbar: React.FC = () => {
         </Link>
 
         <div className="hidden items-center gap-1 lg:flex">
-          {LINKS.map(({ to, label }) => (
+          {navLinks.map(({ to, label }) => (
             <NavLink key={to} to={to} label={label} active={location.pathname === to} />
           ))}
         </div>
@@ -125,7 +130,7 @@ export const Navbar: React.FC = () => {
           aria-label="Menu"
           className="absolute inset-x-0 top-full flex flex-col gap-1 border-b border-border bg-background p-3 lg:hidden"
         >
-          {LINKS.map(({ to, label }) => (
+          {navLinks.map(({ to, label }) => (
             <NavLink key={to} to={to} label={label} active={location.pathname === to} className="justify-start" />
           ))}
         </div>

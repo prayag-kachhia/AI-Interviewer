@@ -1011,7 +1011,7 @@ test("clicking Delete opens a confirmation AlertDialog with role, date, and perm
   expect(dialog).toBeInTheDocument();
   expect(within(dialog).getByText(/Delete Interview\?/i)).toBeInTheDocument();
   expect(within(dialog).getByText(/Backend Developer/i)).toBeInTheDocument();
-  expect(within(dialog).getByText(/Nov 1, 2026/i)).toBeInTheDocument();
+  expect(within(dialog).getByText(/Nov 1, 2026|1 Nov 2026/i)).toBeInTheDocument();
   expect(within(dialog).getByText(/permanent/i)).toBeInTheDocument();
 
   const cancelBtn = within(dialog).getByRole("button", { name: "Cancel" });

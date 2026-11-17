@@ -101,6 +101,7 @@ export const authenticate = async (
       supabaseUserId: localUser.supabaseUserId,
       email: localUser.email,
       name: localUser.name,
+      isEmailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
     };
 
     next();
