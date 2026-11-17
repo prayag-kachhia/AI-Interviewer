@@ -3,13 +3,51 @@ import { useNavigate } from 'react-router';
 import { exportMyData, getLatestResume } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import type { ResumeData } from '../../types';
-import { 
-  Mail, Phone, Briefcase, GraduationCap, 
+import {
+  Mail, Phone, Briefcase, GraduationCap,
   FolderGit2, Code2, Award, Languages, Loader2, ArrowLeft,
-  Trash2, ShieldAlert, AlertTriangle, AlertCircle, X, Download
+  Trash2, ShieldAlert, AlertTriangle, AlertCircle, Download, FileText,
+  type LucideIcon,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+
+const Section: React.FC<{ icon: LucideIcon; title: string; children: React.ReactNode }> = ({ icon: Icon, title, children }) => (
+  <section>
+    <h3 className="mb-3 flex items-center gap-2 border-b border-border pb-2 text-base font-semibold">
+      <Icon className="size-5 text-primary" /> {title}
+    </h3>
+    {children}
+  </section>
+);
+
+const Tags: React.FC<{ items?: string[]; empty: string }> = ({ items, empty }) =>
+  items && items.length > 0 ? (
+    <div className="flex flex-wrap gap-2">
+      {items.map((item, idx) => <Badge key={idx} variant="secondary">{item}</Badge>)}
+    </div>
+  ) : (
+    <p className="text-sm text-muted-foreground italic">{empty}</p>
+  );
+
+const Entries: React.FC<{ items?: string[]; empty: string }> = ({ items, empty }) =>
+  items && items.length > 0 ? (
+    <ul className="divide-y divide-border">
+      {items.map((item, idx) => <li key={idx} className="py-2 text-sm first:pt-0 last:pb-0">{item}</li>)}
+    </ul>
+  ) : (
+    <p className="text-sm text-muted-foreground italic">{empty}</p>
+  );
 
 export const Profile: React.FC = () => {
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
@@ -106,291 +144,169 @@ export const Profile: React.FC = () => {
     }
   };
 
-  // Reusable Account Danger Zone Component
-  const renderDangerZone = () => (
-    <div 
-      className="card" 
-      style={{ 
-        marginTop: '2.5rem', 
-        borderColor: 'rgba(239, 68, 68, 0.3)', 
-        background: 'var(--surface-color)',
-        padding: '2rem'
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', color: 'var(--error-color)' }}>
-        <ShieldAlert size={24} />
-        <h3 style={{ fontSize: '1.25rem', margin: 0, color: 'var(--text-main)' }}>Account Management & Data Privacy</h3>
-      </div>
-      
-      <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
-        <strong>Data Retention Guarantee:</strong> Logging out never deletes your resumes or candidate profile. Your data remains completely safe in the database.
-        However, if you wish to permanently remove yourself and all uploaded data, you may delete your account below.
-      </p>
+  const dangerZone = (
+    <Card className="mt-10 border-destructive/30">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-3 text-xl">
+          <ShieldAlert className="size-6 text-destructive" /> Account Management & Data Privacy
+        </CardTitle>
+        <CardDescription>
+          <strong>Data Retention Guarantee:</strong> Logging out never deletes your resumes or candidate profile. Your data remains completely safe in the database.
+          However, if you wish to permanently remove yourself and all uploaded data, you may delete your account below.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border p-5">
+          <div>
+            <div className="font-semibold">Download Your Personal Data</div>
+            <div className="text-sm text-muted-foreground">
+              Get a JSON copy of your profile, resumes, interview sessions, turns and feedback.
+            </div>
+          </div>
+          <Button type="button" variant="outline" onClick={handleExportData} loading={exporting}>
+            {exporting ? 'Preparing...' : <><Download /> Download my data</>}
+          </Button>
+        </div>
 
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '1.25rem',
-        borderRadius: 'var(--radius-md)',
-        background: 'var(--surface-color)',
-        border: '1px solid var(--border-color)',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        marginBottom: '1rem'
-      }}>
-        <div>
-          <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.25rem' }}>
-            Download Your Personal Data
-          </div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Get a JSON copy of your profile, resumes, interview sessions, turns and feedback.
-          </div>
-        </div>
-        <button
-          type="button"
-          className="btn btn-outline"
-          onClick={handleExportData}
-          disabled={exporting}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-        >
-          {exporting ? (
-            <>
-              <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-              Preparing...
-            </>
-          ) : (
-            <>
-              <Download size={16} /> Download my data
-            </>
-          )}
-        </button>
-      </div>
+        {exportError && (
+          <Alert variant="error">
+            <AlertTriangle />
+            <AlertDescription>{exportError}</AlertDescription>
+          </Alert>
+        )}
 
-      {exportError && (
-        <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
-          <AlertTriangle size={18} />
-          <span>{exportError}</span>
-        </div>
-      )}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '1.25rem',
-        borderRadius: 'var(--radius-md)',
-        background: 'var(--error-bg)',
-        border: '1px solid rgba(239, 68, 68, 0.2)',
-        flexWrap: 'wrap',
-        gap: '1rem'
-      }}>
-        <div>
-          <div style={{ fontWeight: 600, color: 'var(--error-text)', marginBottom: '0.25rem' }}>
-            Delete Account and All Associated Data
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-destructive/30 bg-destructive/10 p-5">
+          <div>
+            <div className="font-semibold">Delete Account and All Associated Data</div>
+            <div className="text-sm text-muted-foreground">
+              Permanently removes your user account ({user?.email}) and all uploaded resumes.
+            </div>
           </div>
-          <div style={{ fontSize: '0.85rem', color: 'var(--error-text)', opacity: 0.9 }}>
-            Permanently removes your user account ({user?.email}) and all uploaded resumes.
-          </div>
+          <Button type="button" variant="destructive" onClick={() => setShowDeleteModal(true)}>
+            <Trash2 /> Delete Account
+          </Button>
         </div>
-        <button
-          type="button"
-          className="btn"
-          style={{
-            backgroundColor: 'var(--error-color)',
-            color: '#fff',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            padding: '0.6rem 1.25rem'
-          }}
-          onClick={() => setShowDeleteModal(true)}
-        >
-          <Trash2 size={16} /> Delete Account
-        </button>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 
-  // Confirmation Modal
-  const renderModal = () => {
-    if (!showDeleteModal) return null;
-    return (
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.65)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: '1rem'
-      }}>
-        <div className="card" style={{ maxWidth: '480px', width: '100%', padding: '2rem', boxShadow: 'var(--shadow-float)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--error-color)' }}>
-              <AlertTriangle size={28} />
-              <h3 style={{ margin: 0, fontSize: '1.35rem', color: 'var(--text-main)' }}>Confirm Account Deletion</h3>
-            </div>
-            <button 
-              type="button" 
-              className="btn-icon" 
-              onClick={() => !deleting && setShowDeleteModal(false)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-            >
-              <X size={20} />
-            </button>
-          </div>
+  const deleteDialog = (
+    <AlertDialog open={showDeleteModal} onOpenChange={(open) => !deleting && setShowDeleteModal(open)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-3">
+            <AlertTriangle className="size-6 text-destructive" /> Confirm Account Deletion
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to delete your account? This action is <strong className="text-destructive">irreversible</strong>.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '1.25rem' }}>
-            Are you sure you want to delete your account? This action is <strong style={{ color: 'var(--error-color)' }}>irreversible</strong>.
-          </p>
-
-          <div style={{
-            background: 'var(--bg-color)',
-            padding: '1rem',
-            borderRadius: 'var(--radius-sm)',
-            border: '1px solid var(--border-color)',
-            marginBottom: '1.5rem',
-            fontSize: '0.875rem'
-          }}>
-            <p style={{ fontWeight: 600, marginBottom: '0.5rem' }}>The following will be permanently erased:</p>
-            <ul style={{ paddingLeft: '1.25rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              <li>User account ({user?.email})</li>
-              <li>All uploaded PDF resumes</li>
-              <li>AI-generated candidate profile and skills history</li>
-            </ul>
-          </div>
-
-          {deleteError && (
-            <div className="alert alert-error" style={{ marginBottom: '1rem' }}>
-              <AlertTriangle size={18} />
-              <span>{deleteError}</span>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => setShowDeleteModal(false)}
-              disabled={deleting}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn"
-              style={{
-                backgroundColor: 'var(--error-color)',
-                color: '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}
-              onClick={handleDeleteAccount}
-              disabled={deleting}
-            >
-              {deleting ? (
-                <>
-                  <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
-                  Deleting...
-                </>
-              ) : (
-                <>
-                  <Trash2 size={16} /> Yes, Delete Everything
-                </>
-              )}
-            </button>
-          </div>
+        <div className="rounded-md border border-border bg-background p-4 text-sm">
+          <p className="mb-2 font-semibold">The following will be permanently erased:</p>
+          <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+            <li>User account ({user?.email})</li>
+            <li>All uploaded PDF resumes</li>
+            <li>AI-generated candidate profile and skills history</li>
+          </ul>
         </div>
-      </div>
-    );
-  };
+
+        {deleteError && (
+          <Alert variant="error">
+            <AlertTriangle />
+            <AlertDescription>{deleteError}</AlertDescription>
+          </Alert>
+        )}
+
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            loading={deleting}
+            onClick={(e) => {
+              // Keep the dialog open so a failed delete can show its error.
+              e.preventDefault();
+              handleDeleteAccount();
+            }}
+          >
+            {deleting ? 'Deleting...' : <><Trash2 /> Yes, Delete Everything</>}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 
   if (loading) {
     return (
-      <div className="container page-wrapper" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '1rem', height: '60vh' }}>
-        <Loader2 size={48} color="var(--primary-color)" style={{ animation: 'spin 1s linear infinite' }} />
-        <p style={{ fontSize: '1.125rem', fontWeight: 500 }}>Loading your candidate profile...</p>
-        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+      <div className="container mx-auto flex h-[60vh] max-w-5xl flex-col items-center justify-center gap-4 px-6 pt-28" role="status">
+        <Loader2 className="size-12 text-primary motion-safe:animate-spin" />
+        <p className="text-lg font-medium">Loading your candidate profile...</p>
       </div>
     );
   }
 
   if (error || !resumeData) {
     return (
-      <div className="container page-wrapper">
-        <div className="card" style={{ maxWidth: '600px', margin: '0 auto', textAlign: 'center' }}>
-          <h2 style={{ marginBottom: '1rem' }}>No Profile Found</h2>
-          <p style={{ marginBottom: '2rem' }}>{error === "You haven't uploaded a resume yet." ? error : 'We could not find a candidate profile for your account.'}</p>
-          <button className="btn btn-primary" onClick={() => navigate('/dashboard')}>
-            Go to Dashboard to Upload
-          </button>
+      <div className="container mx-auto max-w-5xl px-6 pt-28 pb-20">
+        <div className="mx-auto max-w-xl">
+          <Card className="text-center">
+            <CardHeader>
+              <CardTitle className="text-2xl">No Profile Found</CardTitle>
+              <CardDescription>
+                {error === "You haven't uploaded a resume yet." ? error : 'We could not find a candidate profile for your account.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={() => navigate('/dashboard')}>Go to Dashboard to Upload</Button>
+            </CardContent>
+          </Card>
+          {dangerZone}
         </div>
-
-        <div style={{ maxWidth: '600px', margin: '0 auto' }}>
-          {renderDangerZone()}
-        </div>
-        {renderModal()}
+        {deleteDialog}
       </div>
     );
   }
 
   const { profile, fileName, createdAt } = resumeData;
+  const displayName = profile.name || user?.name || 'Candidate Profile';
+  const email = profile.email || user?.email;
 
   return (
-    <div className="container page-wrapper">
-      <button 
-        className="btn btn-outline" 
-        style={{ marginBottom: '2rem', padding: '0.5rem 1rem' }}
-        onClick={() => navigate('/dashboard')}
-      >
-        <ArrowLeft size={18} /> Back to Dashboard
-      </button>
+    <div className="container mx-auto max-w-5xl px-6 pt-28 pb-20">
+      <Button variant="outline" className="mb-8" onClick={() => navigate('/dashboard')}>
+        <ArrowLeft /> Back to Dashboard
+      </Button>
 
-      <div className="card" style={{ padding: '3rem' }}>
-        {/* Header section */}
-        <div className="profile-header">
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
-              <h1 className="profile-name text-gradient" style={{ margin: 0 }}>
-                {profile.name || user?.name || 'Candidate Profile'}
-              </h1>
-              {resumeData.source && (
-                <Badge variant={resumeData.source === 'ai' ? 'default' : 'secondary'}>
-                  {resumeData.source === 'ai' ? 'AI' : 'Basic parse'}
-                </Badge>
-              )}
-            </div>
-            <div className="profile-contact">
-              {(profile.email || user?.email) && (
-                <div className="contact-item">
-                  <Mail size={16} /> {profile.email || user?.email}
-                </div>
-              )}
-              {profile.phone && (
-                <div className="contact-item">
-                  <Phone size={16} /> {profile.phone}
-                </div>
-              )}
+      <Card className="p-8 md:p-12">
+        <div className="flex flex-wrap items-start justify-between gap-6 border-b border-border pb-8">
+          <div className="flex items-center gap-4">
+            <Avatar size="lg" className="size-16">
+              <AvatarFallback className="text-xl">{initials(displayName)}</AvatarFallback>
+            </Avatar>
+            <div>
+              <div className="mb-2 flex flex-wrap items-center gap-3">
+                <h1 className="font-display text-3xl font-bold">{displayName}</h1>
+                {resumeData.source && (
+                  <Badge variant={resumeData.source === 'ai' ? 'default' : 'secondary'}>
+                    {resumeData.source === 'ai' ? 'AI' : 'Basic parse'}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+                {email && <div className="flex items-center gap-2"><Mail className="size-4" /> {email}</div>}
+                {profile.phone && <div className="flex items-center gap-2"><Phone className="size-4" /> {profile.phone}</div>}
+              </div>
             </div>
           </div>
-          <div className="profile-metadata">
-            <div style={{ fontWeight: 500, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Source Resume</div>
-            <div style={{ color: 'var(--text-main)' }}>{fileName}</div>
-            <div style={{ marginTop: '0.25rem' }}>Analyzed: {new Date(createdAt).toLocaleDateString()}</div>
-            {resumeData.source && (
-              <div style={{ marginTop: '0.25rem' }}>Analysis: {resumeData.source === 'ai' ? 'AI' : 'Basic parser'}</div>
-            )}
+          <div className="space-y-1 text-sm text-muted-foreground md:text-right">
+            <div className="font-medium">Source Resume</div>
+            <div className="text-foreground">{fileName}</div>
+            <div>Analyzed: {new Date(createdAt).toLocaleDateString()}</div>
+            {resumeData.source && <div>Analysis: {resumeData.source === 'ai' ? 'AI' : 'Basic parser'}</div>}
           </div>
         </div>
 
         {resumeData.source === 'heuristic' && (
-          <Alert variant="warning" className="my-6">
+          <Alert variant="warning">
             <AlertCircle />
             <AlertTitle>AI analysis unavailable</AlertTitle>
             <AlertDescription>
@@ -399,120 +315,45 @@ export const Profile: React.FC = () => {
           </Alert>
         )}
 
-        {/* Summary section */}
-        <div style={{ marginBottom: '3rem' }}>
-          <h3 style={{ fontSize: '1.25rem', color: 'var(--text-main)', marginBottom: '1rem' }}>Professional Summary</h3>
+        <Section icon={FileText} title="Professional Summary">
           {profile.summary ? (
-            <p style={{ fontSize: '1.0625rem', color: 'var(--text-main)', lineHeight: 1.7 }}>{profile.summary}</p>
+            <p className="leading-relaxed">{profile.summary}</p>
           ) : (
-            <p className="empty-state">No professional summary extracted.</p>
+            <p className="text-sm text-muted-foreground italic">No professional summary extracted.</p>
           )}
-        </div>
+        </Section>
 
-        {/* Main Grid */}
-        <div className="profile-grid">
-          {/* Left Column */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <div className="profile-section">
-              <h3><Code2 size={20} /> Skills</h3>
-              {profile.skills && profile.skills.length > 0 ? (
-                <div className="tag-list">
-                  {profile.skills.map((skill, idx) => (
-                    <span key={idx} className="tag">{skill}</span>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty-state">No skills listed</p>
-              )}
-            </div>
-
-            <div className="profile-section">
-              <h3><Briefcase size={20} /> Experience</h3>
-              {profile.experience && profile.experience.length > 0 ? (
-                <div>
-                  {profile.experience.map((exp, idx) => (
-                    <div key={idx} className="list-item">
-                      <div className="list-item-title">{exp}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty-state">No experience listed</p>
-              )}
-            </div>
-
-            <div className="profile-section">
-              <h3><Languages size={20} /> Languages</h3>
-              {profile.languages && profile.languages.length > 0 ? (
-                <div className="tag-list">
-                  {profile.languages.map((lang, idx) => (
-                    <span key={idx} className="tag">{lang}</span>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty-state">No languages listed</p>
-              )}
-            </div>
+        <div className="grid gap-8 md:grid-cols-2">
+          <div className="flex flex-col gap-8">
+            <Section icon={Code2} title="Skills"><Tags items={profile.skills} empty="No skills listed" /></Section>
+            <Section icon={Briefcase} title="Experience"><Entries items={profile.experience} empty="No experience listed" /></Section>
+            <Section icon={Languages} title="Languages"><Tags items={profile.languages} empty="No languages listed" /></Section>
           </div>
-
-          {/* Right Column */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <div className="profile-section">
-              <h3><GraduationCap size={20} /> Education</h3>
-              {profile.education && profile.education.length > 0 ? (
-                <div>
-                  {profile.education.map((edu, idx) => (
-                    <div key={idx} className="list-item">
-                      <div className="list-item-title">{edu}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty-state">No education listed</p>
-              )}
-            </div>
-
-            <div className="profile-section">
-              <h3><FolderGit2 size={20} /> Projects</h3>
-              {profile.projects && profile.projects.length > 0 ? (
-                <div>
-                  {profile.projects.map((proj, idx) => (
-                    <div key={idx} className="list-item">
-                      <div className="list-item-title">{proj}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty-state">No projects listed</p>
-              )}
-            </div>
-
+          <div className="flex flex-col gap-8">
+            <Section icon={GraduationCap} title="Education"><Entries items={profile.education} empty="No education listed" /></Section>
+            <Section icon={FolderGit2} title="Projects"><Entries items={profile.projects} empty="No projects listed" /></Section>
             {(profile.certifications?.length > 0 || profile.achievements?.length > 0) && (
-              <div className="profile-section">
-                <h3><Award size={20} /> Certifications & Achievements</h3>
-                <div>
+              <Section icon={Award} title="Certifications & Achievements">
+                <ul className="divide-y divide-border">
                   {profile.certifications?.map((cert, idx) => (
-                    <div key={`cert-${idx}`} className="list-item">
-                      <div className="list-item-title">{cert}</div>
-                      <div className="list-item-desc">Certification</div>
-                    </div>
+                    <li key={`cert-${idx}`} className="py-2 text-sm first:pt-0 last:pb-0">
+                      {cert}<div className="text-xs text-muted-foreground">Certification</div>
+                    </li>
                   ))}
                   {profile.achievements?.map((ach, idx) => (
-                    <div key={`ach-${idx}`} className="list-item">
-                      <div className="list-item-title">{ach}</div>
-                      <div className="list-item-desc">Achievement</div>
-                    </div>
+                    <li key={`ach-${idx}`} className="py-2 text-sm first:pt-0 last:pb-0">
+                      {ach}<div className="text-xs text-muted-foreground">Achievement</div>
+                    </li>
                   ))}
-                </div>
-              </div>
+                </ul>
+              </Section>
             )}
           </div>
         </div>
-      </div>
+      </Card>
 
-      {/* Account Management & Data Privacy Danger Zone */}
-      {renderDangerZone()}
-      {renderModal()}
+      {dangerZone}
+      {deleteDialog}
     </div>
   );
 };
