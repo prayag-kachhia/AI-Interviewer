@@ -569,7 +569,10 @@ export const HistoryPage: React.FC = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                     <XAxis
                       dataKey="sessionId"
-                      tickFormatter={(id) => chartData.find((d) => d.sessionId === id)?.displayDate ?? id}
+                      tickFormatter={(id: string | number) => {
+                        const sessionId = String(id);
+                        return chartData.find((d) => d.sessionId === sessionId)?.displayDate ?? sessionId;
+                      }}
                       stroke="var(--border)"
                       tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
                       tickLine={{ stroke: "var(--border)" }}
