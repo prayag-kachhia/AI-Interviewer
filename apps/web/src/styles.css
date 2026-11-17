@@ -98,6 +98,9 @@ body {
   --heading-tracking: -0.03em;
   --heading-size-adjust: none;
   --page-pattern: none;
+  /* The interviewer orb's two colours (decorative, so no contrast rule): two Swiss oranges. */
+  --orb-1: #ff3b00;
+  --orb-2: #ff8c5a;
 }
 
 .dark {
@@ -142,6 +145,8 @@ body {
   --heading-tracking: -0.01em;
   /* Cormorant's letters are small for their size; this evens its x-height out with the other fonts. */
   --heading-size-adjust: 0.46;
+  --orb-1: #c5a059;
+  --orb-2: #f3e7c4;
 }
 
 /*
@@ -194,6 +199,8 @@ body {
   --page-pattern:
     linear-gradient(to right, #131316 1px, transparent 1px),
     linear-gradient(to bottom, #131316 1px, transparent 1px);
+  --orb-1: #34d399;
+  --orb-2: #a1a1aa;
 }
 
 /*
