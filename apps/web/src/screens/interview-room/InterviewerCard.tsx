@@ -33,7 +33,7 @@ export const InterviewerCard: React.FC<InterviewerCardProps> = ({
           : 'border-border'
       )}
     >
-      <VoiceOrb state={isAiSpeaking ? 'speaking' : isListening ? 'listening' : 'idle'} level={audioLevel} />
+      <VoiceOrb className="size-32" state={isAiSpeaking ? 'speaking' : isListening ? 'listening' : 'idle'} level={audioLevel} />
 
       {/* Status Badge */}
       <Badge variant={isAiSpeaking ? 'live' : interviewComplete ? 'ended' : 'outline'}>
