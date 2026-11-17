@@ -361,7 +361,7 @@ export function ResultsScreen() {
               </div>
 
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <Card className="flex flex-col justify-between">
+                <Card>
                   <CardHeader>
                     <CardTitle>Overall Summary</CardTitle>
                     {averageScore && (
@@ -403,7 +403,7 @@ export function ResultsScreen() {
                             config={chartConfig}
                             className="aspect-square max-h-[280px] w-full"
                           >
-                            <RadarChart data={radarData}>
+                            <RadarChart data={radarData} outerRadius="46%">
                               <PolarGrid stroke="var(--border)" className="stroke-border" />
                               <PolarAngleAxis
                                 dataKey="category"

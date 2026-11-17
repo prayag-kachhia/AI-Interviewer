@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import axios from 'axios';
 import { getSession, postTurn, postNextQuestion, endSession } from '../../lib/api';
 import { EndReason, ROLES } from '@interview/contracts';
-import type { InterviewMode, InterviewVoiceState, SessionStatus, TurnData, TurnSpeaker } from '../../types';
+import type { InterviewMode, InterviewVoiceState, SessionStatus, TurnData } from '../../types';
 import {
   BrowserWebSpeechVoiceAdapter,
   type VoiceSessionAdapter,
@@ -12,6 +12,10 @@ import {
 import { GeminiLiveVoiceAdapter } from '../../lib/geminiLiveAdapter';
 
 function getErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'response' in err) {
+    const serverMsg = (err as { response?: { data?: { message?: unknown } } }).response?.data?.message;
+    if (typeof serverMsg === 'string' && serverMsg.trim()) return serverMsg;
+  }
   if (axios.isAxiosError<{ message?: unknown }>(err)) {
     const serverMsg = err.response?.data?.message;
     if (typeof serverMsg === 'string' && serverMsg.trim()) return serverMsg;
@@ -80,13 +84,14 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   const statusRef = useRef<SessionStatus>('LIVE');
   const isMutedRef = useRef(false);
   const voiceStateRef = useRef<InterviewVoiceState>('IDLE');
-  const liveSpeakerRef = useRef<TurnSpeaker | null>(null);
-  const initialQuestionTriggeredRef = useRef(false);
   const hasAiSpokenRef = useRef(false);
   const hasPromptedThinkingRef = useRef(false);
   const candidateSpokeSinceAiRef = useRef(false);
   const thinkingSilenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveQueueRef = useRef<Promise<TurnData | null>>(Promise.resolve(null));
+  const pendingSavesRef = useRef(0);
   const endingRef = useRef(false);
+  const initialQuestionTriggeredRef = useRef(false);
   const hasAutoEndedRef = useRef(false);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
@@ -157,35 +162,49 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   }, [role]);
 
   const persistTurnToServer = useCallback(
-    async (speaker: 'AI' | 'CANDIDATE', text: string): Promise<TurnData | null> => {
-      if (!sessionId || !startedAtRef.current || statusRef.current !== 'LIVE') {
-        return null;
-      }
+    (speaker: 'AI' | 'CANDIDATE', text: string): Promise<TurnData | null> => {
       const trimmed = text.trim();
-      if (!trimmed) return null;
-
-      setSavingTurn(true);
-      setError('');
-      try {
-        const res = await postTurn(sessionId, speaker, trimmed);
-        if (res?.success && res.data) {
-          const savedTurn = res.data;
-          setTurns((prev) => {
-            const next = [...prev, savedTurn];
-            turnsRef.current = next;
-            return next;
-          });
-          return savedTurn;
-        } else {
-          setError(res?.message || 'Could not save transcript turn.');
-          return null;
-        }
-      } catch (err: unknown) {
-        setError(getErrorMessage(err, 'Failed to record interview turn.'));
-        return null;
-      } finally {
-        setSavingTurn(false);
+      if (!sessionId || !startedAtRef.current || statusRef.current !== 'LIVE' || !trimmed) {
+        return Promise.resolve(null);
       }
+
+      pendingSavesRef.current += 1;
+      setSavingTurn(true);
+
+      const runSave = async (): Promise<TurnData | null> => {
+        try {
+          if (statusRef.current !== 'LIVE') {
+            return null;
+          }
+          setError('');
+          const res = await postTurn(sessionId, speaker, trimmed);
+          if (res?.success && res.data) {
+            const savedTurn = res.data;
+            setTurns((prev) => {
+              const next = [...prev, savedTurn];
+              turnsRef.current = next;
+              return next;
+            });
+            return savedTurn;
+          } else {
+            setError(res?.message || 'Could not save transcript turn.');
+            return null;
+          }
+        } catch (err: unknown) {
+          setError(getErrorMessage(err, 'Failed to record interview turn.'));
+          return null;
+        } finally {
+          pendingSavesRef.current = Math.max(0, pendingSavesRef.current - 1);
+          if (pendingSavesRef.current === 0) {
+            setSavingTurn(false);
+          }
+        }
+      };
+
+      // Serialize postTurn requests so turnIndex stays ordered without parallel writes.
+      const nextSave = saveQueueRef.current.then(runSave);
+      saveQueueRef.current = nextSave;
+      return nextSave;
     },
     [sessionId]
   );
@@ -234,33 +253,23 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     async (event: VoiceTranscriptEvent) => {
       if (statusRef.current !== 'LIVE') return;
 
-      // Gemini Live emits incremental text chunks; accumulate captions cleanly while VI-2 is separate.
-      if (adapterRef.current?.isExternalProvider && !event.isFinal) {
+      if (!event.isFinal) {
         if (event.speaker === 'AI') {
           markAiQuestionActive();
-          if (liveSpeakerRef.current !== 'AI') {
-            liveSpeakerRef.current = 'AI';
-            setLiveCandidateSpeech('');
-            setCurrentAiQuestion(event.text);
-          } else {
-            setCurrentAiQuestion((prev) => `${prev}${event.text}`);
-          }
+          setLiveCandidateSpeech('');
+          setCurrentAiQuestion(event.text);
           return;
         }
 
         if (event.speaker === 'CANDIDATE') {
           markCandidateSpoke();
-          if (liveSpeakerRef.current !== 'CANDIDATE') {
-            liveSpeakerRef.current = 'CANDIDATE';
-            setLiveCandidateSpeech(event.text);
-          } else {
-            setLiveCandidateSpeech((prev) => `${prev}${event.text}`);
-          }
+          setLiveCandidateSpeech(event.text);
           return;
         }
+        return;
       }
 
-      if (event.speaker === 'AI' && event.isFinal) {
+      if (event.speaker === 'AI') {
         markAiQuestionActive();
         setCurrentAiQuestion(event.text);
         await persistTurnToServer('AI', event.text);
@@ -269,19 +278,17 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
 
       if (event.speaker === 'CANDIDATE') {
         markCandidateSpoke();
-        if (!event.isFinal) {
-          setLiveCandidateSpeech(event.text);
-          return;
-        }
-
         setLiveCandidateSpeech('');
         const savedCandidateTurn = await persistTurnToServer('CANDIDATE', event.text);
-        if (!savedCandidateTurn || statusRef.current !== 'LIVE') return;
+        if (!savedCandidateTurn || statusRef.current !== 'LIVE' || endingRef.current) return;
 
-        const rem = startedAtRef.current
-          ? Math.max(0, timeLimitMin * 60 - computeElapsedSeconds(startedAtRef.current))
-          : undefined;
-        await requestNextQuestion(rem);
+        // Gemini Live asks follow-ups directly over WebSocket; only fallback mode needs /next-question.
+        if (!adapterRef.current?.isExternalProvider) {
+          const rem = startedAtRef.current
+            ? Math.max(0, timeLimitMin * 60 - computeElapsedSeconds(startedAtRef.current))
+            : undefined;
+          await requestNextQuestion(rem);
+        }
       }
     },
     [markAiQuestionActive, markCandidateSpoke, persistTurnToServer, requestNextQuestion]
@@ -345,7 +352,6 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       // Swap activeAdapter before disconnecting Live so its cleanup IDLE state does not overwrite fallback.
       activeAdapter = fallbackAdapter;
       adapterRef.current = fallbackAdapter;
-      liveSpeakerRef.current = null;
       setLiveCandidateSpeech('');
       setAudioLevel(0);
       failedAdapter?.disconnect();
@@ -391,6 +397,8 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
         if (!fallbackAdapter.isSpeechRecognitionSupported) {
           setShowAccessibilityFallback(true);
         }
+
+        await saveQueueRef.current;
 
         const lastTurn = turnsRef.current[turnsRef.current.length - 1];
         if (lastTurn?.speaker === 'AI') {
@@ -550,9 +558,11 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     return () => clearInterval(interval);
   }, [startedAt, status]);
 
-  // Auto-scroll transcript list
+  // Keep the newest line in view inside the transcript box. scrollIntoView would scroll the whole
+  // page as well, dragging the End Interview button under the navbar.
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const list = transcriptEndRef.current?.parentElement;
+    if (list) list.scrollTop = list.scrollHeight;
   }, [turns, liveCandidateSpeech]);
 
   const handleToggleMute = () => {
@@ -620,6 +630,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
     setError('');
     try {
       adapterRef.current?.disconnect();
+      await saveQueueRef.current;
       const res = reason ? await endSession(sessionId, reason) : await endSession(sessionId);
       if (res?.success && res.data) {
         setStatus('ENDED');
@@ -629,8 +640,8 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       } else {
         setError(res?.message || 'Failed to end the interview session.');
       }
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to end the interview session.');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to end the interview session.'));
     } finally {
       endingRef.current = false;
       setEnding(false);
