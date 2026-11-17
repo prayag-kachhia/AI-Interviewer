@@ -30,13 +30,24 @@
 }
 
 /*
+ * Unlayered, so it beats legacy.css's `body` rule: the page paints with the theme's own
+ * background, ink and body font, not the old --bg-color. P-12 deletes this along with legacy.css.
+ */
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
+
+/*
  * Two themes, each with its own character, not just its own colours. Every value a screen needs
  * to look different between them is a variable here; the components/ui primitives read them, so
  * a screen built on the primitives follows the theme without any `dark:` classes.
  *
  * Light is the Stitch "Swiss broadsheet": bone paper, ink, square corners, thick ink borders, a
  * hard offset shadow, uppercase black headings and monospace labels. Dark is the Stitch
- * "Chronometer Deck": warm charcoal and gold, rounded corners, hairline borders, no shadow.
+ * "Haute" theme: obsidian and bronze, a serif display face, Cinzel capitals for labels, square
+ * corners, hairline borders and a faint bronze glow.
  * Screens use these as classes (bg-background, text-muted-foreground, border-border, ...),
  * never as raw hex values.
  */
@@ -75,52 +86,59 @@
   --r-pill: 0px;
   --border-w: 2px;
   --shadow-card: 4px 4px 0 0 var(--foreground);
+  --font-heading: 'Space Grotesk', 'Inter', ui-sans-serif, sans-serif;
+  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-label: 'JetBrains Mono', ui-monospace, monospace;
   --label-transform: uppercase;
   --label-tracking: 0.06em;
   --heading-weight: 800;
   --heading-transform: uppercase;
   --heading-tracking: -0.03em;
+  --heading-size-adjust: none;
 }
 
 .dark {
-  --background: #131315;
-  --foreground: #e5e1e4;
-  --card: #1c1b1e;
-  --card-foreground: #e5e1e4;
-  --popover: #1c1b1e;
-  --popover-foreground: #e5e1e4;
-  /* Gold is light, so text on it is dark. */
-  --primary: #f2ca50;
-  --primary-foreground: #2b2200;
-  --ring: #f2ca50;
-  --secondary: #2a2a2c;
-  --secondary-foreground: #e5e1e4;
-  --muted: #2a2a2c;
-  --muted-foreground: #a39e93;
-  --accent: #2a2a2c;
-  --accent-foreground: #e5e1e4;
+  --background: #0c0c0e;
+  --foreground: #f7f6f2;
+  --card: #131317;
+  --card-foreground: #f7f6f2;
+  --popover: #18181e;
+  --popover-foreground: #f7f6f2;
+  /* Bronze is light, so text on it is near-black. */
+  --primary: #c5a059;
+  --primary-foreground: #0c0c0e;
+  --ring: #c5a059;
+  --secondary: #18181e;
+  --secondary-foreground: #e6e5e0;
+  --muted: #18181e;
+  --muted-foreground: #a2a19b;
+  --accent: #18181e;
+  --accent-foreground: #e6e5e0;
   --destructive: #f43f5e;
   --success: #34d399;
   --warning: #fb923c;
-  --border: #36322b;
-  --input: #6e695f;
-  --brand: #f2ca50;
-  --brand-foreground: #2b2200;
+  --border: #2a2a32;
+  --input: #7a766c;
+  --brand: #c5a059;
+  --brand-foreground: #0c0c0e;
 
-  --r-sm: 4px;
-  --r-md: 6px;
-  --r-lg: 8px;
-  --r-xl: 12px;
-  --r-pill: 9999px;
+  --r-sm: 0px;
+  --r-md: 0px;
+  --r-lg: 2px;
+  --r-xl: 2px;
+  --r-pill: 2px;
   --border-w: 1px;
-  --shadow-card: none;
-  --font-label: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --label-transform: none;
-  --label-tracking: 0;
-  --heading-weight: 600;
+  --shadow-card: 0 0 45px -10px rgb(197 160 89 / 0.1);
+  --font-heading: 'Cormorant Garamond', Georgia, serif;
+  --font-body: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-label: 'Cinzel', Georgia, serif;
+  --label-transform: uppercase;
+  --label-tracking: 0.08em;
+  --heading-weight: 500;
   --heading-transform: none;
   --heading-tracking: -0.01em;
+  /* Cormorant's letters are small for their size; this evens its x-height out with the other fonts. */
+  --heading-size-adjust: 0.46;
 }
 
 /*
@@ -129,9 +147,9 @@
  * theme because each one points at a variable above.
  */
 @theme inline {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body);
   /* Headings. */
-  --font-display: 'Space Grotesk', 'Inter', ui-sans-serif, sans-serif;
+  --font-display: var(--font-heading);
   /* Timers and scores only, where fixed-width digits stop the numbers jittering. */
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
@@ -168,6 +186,7 @@
 /* A heading: its family, weight, case and tracking all come from the theme. */
 @utility heading {
   font-family: var(--font-display);
+  font-size-adjust: var(--heading-size-adjust);
   font-weight: var(--heading-weight);
   text-transform: var(--heading-transform);
   letter-spacing: var(--heading-tracking);
