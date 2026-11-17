@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router';
+import { BrowserRouter as Router, Routes, Route } from 'react-router';
+import { Landing } from './screens/landing/Landing';
 import { Navbar } from './components/Navbar';
 import { Login } from './screens/login/Login';
 import { ResetPassword } from './screens/reset-password/ResetPassword';
@@ -21,7 +22,7 @@ function App() {
         <Router>
           <Navbar />
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
