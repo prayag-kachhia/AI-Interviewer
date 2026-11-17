@@ -84,7 +84,7 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 | Rahi | 9 | 1 | 3 | 5 | 5.25 | D-4 (1 day) |
 | Ved | 8 | 1 | 5 | 2 | 5.5 | D-3 (1 day) |
 | Vismay | 9 | 2 | 4 | 3 | 6.25 | – |
-| Raj | 6 | 1 | 3 | 2 | 3.75 | – |
+| Raj | 9 | 1 | 6 | 2 | 5.75 | – |
 
 Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
@@ -966,7 +966,7 @@ Candidates see an honest summary of their open-source work, and the interviewer 
 
 ### Raj: identity, end-to-end tests
 
-About 3.75 days · 6 counted PRs (0 already merged) · 1 Hard, 3 Medium, 2 Easy · review partner: Prayag
+About 5.75 days · 9 counted PRs (0 already merged) · 1 Hard, 6 Medium, 2 Easy · review partner: Prayag
 
 **[RJ-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/78) · Show when resume AI analysis fell back** · Easy · 0.5 days · Sprint 4
 
@@ -1026,6 +1026,47 @@ The Placement Cell sees how a cohort is doing without seeing any individual (OI-
 - Shown as a second section on the admin screen.
 - **Done when:** An admin sees cohort numbers, no response contains a name, email or transcript, and a normal user gets 404.
 - **Depends on:** RJ-10
+
+**[RJ-14](https://github.com/prayag-kachhia/AI-Interviewer/issues/292) · Resume match: contract, table and keyword scorer (FR-34)** · Medium · 0.5 days · Sprint 5
+
+A candidate can check how well their saved resume fits a job description. This part lays the foundation.
+
+- In `packages/contracts`:
+  - `ResumeMatch`: an overall score 0–100, four categories with weights, matched and missing keywords, strengths, gaps and suggestions, and `source: 'ai' | 'keywords'`.
+  - `CreateResumeMatchInput` and `JOB_DESCRIPTION_MAX = 4000`.
+  - A helper that computes the overall score as the weighted mean of the categories, never taken from the AI. Weights: skills 40, experience 30, keywords 20, education 10.
+- A `resume_matches` table: resume and user foreign keys with cascade, the job description, score, source and result JSON. The migration is created against a local Postgres only.
+- A keyword scorer with no AI (`resume-match.keywords.ts`), reusing `COMMON_SKILLS` from `heuristic.service.ts`.
+- Add FR-34 (Could) to `docs/requirements.md`, with a traceability row.
+- **Done when:** The contract and migration are in, and the keyword scorer and score helper have unit tests.
+- **Depends on:** nothing. Blocks RJ-15 and RJ-16.
+
+**[RJ-15](https://github.com/prayag-kachhia/AI-Interviewer/issues/293) · Resume match: Gemini grading and API (FR-34)** · Medium · 0.75 days · Sprint 5
+
+- `resume-match.service.ts`, modelled on `evaluator.service.ts`:
+  - injectable `generate`, a 12 s timeout, a structured schema, and Zod validation;
+  - the `GEMINI_RESUME_MODEL` model, so no new env var;
+  - resume and job description delimited as data;
+  - any failure falls back to the keyword scorer.
+- Routes:
+  - `POST /api/resume/:id/matches`, `GET /api/resume/:id/matches` and `DELETE /api/resume/:id/matches/:matchId`;
+  - 404 for another user's resume or result (FR-27);
+  - the newest 20 results kept per user.
+- Matches added to `GET /api/me/export`.
+- **Done when:** Tests cover the fallback paths, 401/404/400, create, list, delete, the cap and the export.
+- **Depends on:** RJ-14
+
+**[RJ-16](https://github.com/prayag-kachhia/AI-Interviewer/issues/294) · Resume match: the screen (FR-34)** · Medium · 0.75 days · Sprint 5
+
+- `screens/resume-match/` at `/resume-match`. It holds:
+  - the saved resume (or an empty state linking to the Dashboard);
+  - a job-description box with a counter;
+  - the score with category bars, matched and missing keyword badges, strengths, gaps and suggestions;
+  - an "AI estimate" or "Keyword match, no AI" note;
+  - earlier results that can be viewed and deleted.
+- Reached from a Dashboard card, not the navbar (it is full at 1024 px). Built on the `components/ui` primitives only.
+- **Done when:** Component tests pass and the screen looks right in all three themes at desktop and phone width.
+- **Depends on:** RJ-14, RJ-15
 
 ## 5a. Required documents (not counted)
 
