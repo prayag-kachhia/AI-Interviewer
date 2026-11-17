@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { validateEmail } from '../../lib/emailValidation';
 import {
-  BrainCircuit,
   Mail,
   CheckCircle2,
   AlertCircle,
@@ -16,6 +15,7 @@ import {
   RefreshCw,
   Edit2,
 } from 'lucide-react';
+import { Logo } from '../../components/Logo';
 
 export const VerifyEmail: React.FC = () => {
   const navigate = useNavigate();
@@ -210,7 +210,7 @@ export const VerifyEmail: React.FC = () => {
       <header className="auth-top-nav">
         <Link to="/" className="auth-logo-badge" aria-label="AI Interviewer Home">
           <div className="auth-logo-icon-box">
-            <BrainCircuit size={22} color="var(--primary-color)" />
+            <Logo className="size-6 text-foreground" />
           </div>
           <span>
             AI <span className="text-gradient">Interviewer</span>

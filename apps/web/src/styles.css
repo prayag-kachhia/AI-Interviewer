@@ -37,6 +37,8 @@ body {
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-body);
+  background-image: var(--page-pattern);
+  background-size: 64px 64px;
 }
 
 /*
@@ -95,6 +97,7 @@ body {
   --heading-transform: uppercase;
   --heading-tracking: -0.03em;
   --heading-size-adjust: none;
+  --page-pattern: none;
 }
 
 .dark {
@@ -139,6 +142,58 @@ body {
   --heading-tracking: -0.01em;
   /* Cormorant's letters are small for their size; this evens its x-height out with the other fonts. */
   --heading-size-adjust: 0.46;
+}
+
+/*
+ * Graphite: a third, technical look. Zinc and white with one emerald accent, a soft rounded
+ * grid, Inter headings and monospace labels in sentence case, and a faint ruled page. It is also
+ * a dark theme, so ThemeContext puts both `.dark` and `.graphite` on <html>; this block overrides
+ * the dark one above it.
+ */
+.graphite {
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  --card: #121215;
+  --card-foreground: #f4f4f5;
+  --popover: #18181b;
+  --popover-foreground: #f4f4f5;
+  /* White buttons with black text, the way a terminal prompt would. */
+  --primary: #fafafa;
+  --primary-foreground: #09090b;
+  --ring: #34d399;
+  --secondary: #18181b;
+  --secondary-foreground: #e4e4e7;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #f87171;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --border: #27272a;
+  --input: #71717a;
+  --brand: #34d399;
+  --brand-foreground: #052e1b;
+
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 10px;
+  --r-pill: 9999px;
+  --border-w: 1px;
+  --shadow-card: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 12px 24px -16px rgb(0 0 0 / 0.8);
+  --font-heading: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-label: 'JetBrains Mono', ui-monospace, monospace;
+  --label-transform: none;
+  --label-tracking: 0;
+  --heading-weight: 600;
+  --heading-transform: none;
+  --heading-tracking: -0.035em;
+  --heading-size-adjust: none;
+  --page-pattern:
+    linear-gradient(to right, #131316 1px, transparent 1px),
+    linear-gradient(to bottom, #131316 1px, transparent 1px);
 }
 
 /*
