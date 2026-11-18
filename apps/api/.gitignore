@@ -6,3 +6,5 @@ node_modules
 dist
 dev.db
 *.db
+.bench-cache.json
+*.bench-cache.json

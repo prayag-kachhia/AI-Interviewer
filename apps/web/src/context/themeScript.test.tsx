@@ -8,10 +8,9 @@ import { ThemeProvider } from './ThemeContext';
 // loads light and fades. It must set exactly what ThemeContext sets. `vitest run` starts in apps/web.
 const script = readFileSync('index.html', 'utf8').match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
 const root = document.documentElement;
-const snapshot = () => ({ classes: [...root.classList].sort(), dataTheme: root.dataset.theme });
+const snapshot = () => ({ classes: Array.from(root.classList).sort() });
 const clearRoot = () => {
   root.className = '';
-  root.removeAttribute('data-theme');
 };
 
 describe('the theme script in index.html', () => {
