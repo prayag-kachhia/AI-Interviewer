@@ -11,8 +11,12 @@ import {
   CONCISE_ANSWERS_PRINCIPLE,
 } from './rubrics';
 
-// Leaves room inside the 15-second feedback budget for polling and the database.
-export const EVALUATION_TIMEOUT_MS = 12_000;
+// How long Gemini gets to grade one transcript. The SDK also sends this to Google as the server
+// deadline (X-Server-Timeout), so a shorter value makes Google answer 504 DEADLINE_EXCEEDED.
+// Per-answer feedback makes the output grow with every answer: a full 15-minute interview
+// (10-20 answers) takes longer than 12 s, which failed every job on 18 Nov. This runs in the
+// background worker, so nobody waits on the request; the Results page polls for the outcome.
+export const EVALUATION_TIMEOUT_MS = 60_000;
 // A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
 // Google swaps the model behind the alias.
 const DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -231,36 +235,53 @@ async function generateWithGemini(
   };
 }
 
+
 /**
- * Normalizes whitespace for question comparison: collapses runs of
- * whitespace to a single space and trims leading/trailing whitespace.
+ * Normalizes text for question comparison by removing case and punctuation
+ * differences and collapsing whitespace.
  */
 export function normalizeWhitespace(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
+  return s
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
- * Derives the expected interviewer question for each non-empty candidate
- * answer by walking the transcript in chronological order.  For each
- * non-empty CANDIDATE turn, the expected question is the text of the most
- * recent preceding non-empty AI turn.
- *
- * Returns `null` for a candidate answer that has no preceding AI turn.
+ * Derives one expected interviewer question per candidate answer.
+ * Consecutive non-empty candidate turns are grouped as one answer, since
+ * speech transcription can split a single spoken answer across turns.
  */
+
 export function deriveExpectedQuestions(
   turns: TranscriptTurn[]
 ): (string | null)[] {
   const result: (string | null)[] = [];
-  let lastAiText: string | null = null;
+  let pendingAiTexts: string[] = [];
+  let previousWasCandidate = false;
+
   for (const turn of turns) {
     if (turn.speaker === 'AI' && turn.text.trim()) {
-      lastAiText = turn.text;
+      pendingAiTexts.push(turn.text.trim());
+      previousWasCandidate = false;
     } else if (turn.speaker === 'CANDIDATE' && turn.text.trim()) {
-      result.push(lastAiText);
+      if (!previousWasCandidate) {
+        result.push(
+          pendingAiTexts.length > 0
+            ? pendingAiTexts.join(' ')
+            : null
+        );
+        pendingAiTexts = [];
+      }
+      previousWasCandidate = true;
     }
   }
+
   return result;
 }
+
+
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -330,67 +351,86 @@ export async function evaluateTranscript(
     throw new Error('The evaluator did not return per-answer feedback');
   }
 
+
   if (evaluation.perAnswer) {
-    try {
-      if (evaluation.perAnswer.length < candidateTurns.length) {
+    const expectedQuestions = deriveExpectedQuestions(input.turns);
+    const validPerAnswer: PerAnswerFeedback[] = [];
+    const issues: string[] = [];
+
+    if (options.requirePerAnswer) {
+      if (evaluation.perAnswer.length < expectedQuestions.length) {
         throw new Error(
-          `Incomplete per-answer feedback: expected ${candidateTurns.length} answer(s) but received ${evaluation.perAnswer.length}`
+          `Incomplete per-answer feedback: expected ${expectedQuestions.length} answer(s) but received ${evaluation.perAnswer.length}`
         );
       }
-      if (evaluation.perAnswer.length > candidateTurns.length) {
+      if (evaluation.perAnswer.length > expectedQuestions.length) {
         throw new Error(
-          `Too many per-answer feedback entries: expected ${candidateTurns.length} answer(s) but received ${evaluation.perAnswer.length}`
+          `Too many per-answer feedback entries: expected ${expectedQuestions.length} answer(s) but received ${evaluation.perAnswer.length}`
         );
       }
-      for (let i = 0; i < evaluation.perAnswer.length; i++) {
-        const item = evaluation.perAnswer[i];
-        if (!item.question || !item.question.trim()) {
-          throw new Error(`Per-answer feedback entry ${i + 1} is missing the associated question`);
-        }
-        if (!item.summary || !item.summary.trim()) {
-          throw new Error(`Per-answer feedback entry ${i + 1} is missing the answer summary`);
-        }
-        if (
-          !Array.isArray(item.strengths) ||
-          item.strengths.length === 0 ||
-          item.strengths.some((s) => typeof s !== 'string' || !s.trim())
-        ) {
-          throw new Error(`Per-answer feedback entry ${i + 1} must contain at least one non-empty strength`);
-        }
-        if (
-          !Array.isArray(item.improvements) ||
-          item.improvements.length === 0 ||
-          item.improvements.some((s) => typeof s !== 'string' || !s.trim())
-        ) {
-          throw new Error(`Per-answer feedback entry ${i + 1} must contain at least one non-empty improvement`);
+    }
+
+    for (let i = 0; i < evaluation.perAnswer.length; i++) {
+      const item = evaluation.perAnswer[i];
+      const expected = expectedQuestions[i];
+      let issue: string | undefined;
+
+      if (expected === undefined) {
+        issue = `Per-answer feedback entry ${i + 1} has no corresponding candidate answer`;
+      } else if (expected === null) {
+        issue = `Per-answer feedback entry ${i + 1} has no preceding interviewer question`;
+      } else if (!item.question?.trim()) {
+        issue = `Per-answer feedback entry ${i + 1} is missing the associated question`;
+      } else if (!item.summary?.trim()) {
+        issue = `Per-answer feedback entry ${i + 1} is missing the answer summary`;
+      } else if (
+        !Array.isArray(item.strengths) ||
+        item.strengths.length === 0 ||
+        item.strengths.some((s) => typeof s !== 'string' || !s.trim())
+      ) {
+        issue = `Per-answer feedback entry ${i + 1} must contain at least one non-empty strength`;
+      } else if (
+        !Array.isArray(item.improvements) ||
+        item.improvements.length === 0 ||
+        item.improvements.some((s) => typeof s !== 'string' || !s.trim())
+      ) {
+        issue = `Per-answer feedback entry ${i + 1} must contain at least one non-empty improvement`;
+      } else {
+        const normalizedReturned = normalizeWhitespace(item.question);
+        const normalizedExpected = normalizeWhitespace(expected);
+
+        if (!normalizedReturned || !normalizedExpected.includes(normalizedReturned)) {
+          issue = `Per-answer feedback entry ${i + 1} question does not match the transcript`;
         }
       }
 
-      // Validate question-answer pairing: each perAnswer[i].question must match
-      // the most recent preceding AI turn for the i-th non-empty candidate answer.
-      const expectedQuestions = deriveExpectedQuestions(input.turns);
-      for (let i = 0; i < evaluation.perAnswer.length; i++) {
-        const expected = expectedQuestions[i];
-        if (expected === null) {
-          throw new Error(
-            `Per-answer feedback entry ${i + 1} has no preceding interviewer question in the transcript`
-          );
+      if (issue) {
+        if (options.requirePerAnswer) {
+          throw new Error(issue);
         }
-        const returned = evaluation.perAnswer[i].question;
-        if (normalizeWhitespace(returned) !== normalizeWhitespace(expected)) {
-          throw new Error(
-            `Per-answer feedback entry ${i + 1} question does not match the transcript. ` +
-            `Expected: "${expected.slice(0, 80)}..." but received: "${returned.slice(0, 80)}..."`
-          );
-        }
+
+        issues.push(issue);
+        continue;
       }
-    } catch (perAnswerError) {
-      if (options.requirePerAnswer) {
-        throw perAnswerError;
-      }
-      evaluation.perAnswer = undefined;
+
+      validPerAnswer.push(item);
     }
+
+    if (evaluation.perAnswer.length < expectedQuestions.length) {
+      issues.push(
+        `Incomplete per-answer feedback: expected ${expectedQuestions.length} answer(s) but received ${evaluation.perAnswer.length}`
+      );
+    }
+
+    if (issues.length > 0) {
+      for (const issue of issues) {
+        console.warn(`[Evaluator] ${issue}`);
+      }
+    }
+
+    evaluation.perAnswer = validPerAnswer;
   }
+
 
   return {
     ...evaluation,

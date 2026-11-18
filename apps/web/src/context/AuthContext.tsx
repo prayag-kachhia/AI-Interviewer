@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { deleteUserAccount, getMe } from '../lib/api';
+import { getStaySignedIn, setStaySignedIn, clearAuthStorage } from '../lib/authStorage';
 
 export interface AuthUser {
   id: string;
@@ -12,9 +13,12 @@ export interface AuthUser {
 export interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
+  staySignedIn: boolean;
+  setStaySignedIn: (persist: boolean) => void;
   signIn: (
     email: string,
-    password: string
+    password: string,
+    staySignedIn?: boolean
   ) => Promise<{ success: boolean; message?: string; needsVerification?: boolean; email?: string }>;
   signUp: (
     name: string,
@@ -27,7 +31,7 @@ export interface AuthContextType {
     needsVerification?: boolean;
     email?: string;
   }>;
-  signInWithGoogle: () => Promise<{ success: boolean; message?: string }>;
+  signInWithGoogle: (staySignedIn?: boolean) => Promise<{ success: boolean; message?: string }>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<{ success: boolean; message?: string }>;
   resetPasswordForEmail: (
@@ -48,6 +52,8 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
+  staySignedIn: false,
+  setStaySignedIn: () => { },
   signIn: async () => ({ success: false }),
   signUp: async () => ({ success: false }),
   signInWithGoogle: async () => ({ success: false }),
@@ -73,6 +79,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [staySignedIn, setStaySignedInState] = useState<boolean>(() => getStaySignedIn());
+
+  const handleSetStaySignedIn = (persist: boolean) => {
+    setStaySignedIn(persist);
+    setStaySignedInState(persist);
+  };
 
   const mountedRef = useRef(true);
   const syncedUserIdRef = useRef<string | null>(null);
@@ -221,7 +233,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (event === 'SIGNED_OUT') {
         resetSyncState();
+        clearAuthStorage();
         localStorage.removeItem('selectedRole');
+        sessionStorage.removeItem('selectedRole');
       }
     });
 
@@ -237,8 +251,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
    * The first authenticated API call (/auth/me) also ensures the matching
    * application user row exists and is linked by supabaseUserId.
    */
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, staySignedInParam?: boolean) => {
     try {
+      if (typeof staySignedInParam === 'boolean') {
+        handleSetStaySignedIn(staySignedInParam);
+      }
+
       if (!isSupabaseConfigured) {
         return {
           success: false,
@@ -405,8 +423,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
    * Initiate Google OAuth sign-in flow via Supabase.
    * Redirects user to Google OAuth consent screen, then back to /dashboard.
    */
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (staySignedInParam?: boolean) => {
     try {
+      if (typeof staySignedInParam === 'boolean') {
+        handleSetStaySignedIn(staySignedInParam);
+      }
+
       if (!isSupabaseConfigured) {
         return {
           success: false,
@@ -442,7 +464,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (err) {
       console.error('Sign out failed:', err);
     } finally {
+      clearAuthStorage();
       localStorage.removeItem('selectedRole');
+      sessionStorage.removeItem('selectedRole');
       if (mountedRef.current) {
         setUser(null);
       }
@@ -454,7 +478,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const res = await deleteUserAccount();
       resetSyncState();
       await supabase.auth.signOut();
+      clearAuthStorage();
       localStorage.removeItem('selectedRole');
+      sessionStorage.removeItem('selectedRole');
       if (mountedRef.current) {
         setUser(null);
       }
@@ -668,6 +694,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         user,
         loading,
+        staySignedIn,
+        setStaySignedIn: handleSetStaySignedIn,
         signIn,
         signUp,
         signInWithGoogle,

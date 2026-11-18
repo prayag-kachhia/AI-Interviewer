@@ -32,7 +32,8 @@ describe('ThemeProvider', () => {
   it('puts the right classes on <html> for each theme', () => {
     localStorage.setItem('theme', 'graphite');
     render(<ThemeProvider><Probe /></ThemeProvider>);
-    // Graphite is a dark theme that overrides Haute, and legacy.css only knows light and dark.
+    // Graphite is a dark theme that overrides Haute. History's leftover legacy.css only knows light
+    // and dark, so its dark rules must still match in Graphite (until RH-10, #304).
     expect(root).toHaveClass('dark', 'graphite');
     expect(root.dataset.theme).toBe('dark');
 

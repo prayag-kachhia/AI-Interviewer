@@ -72,6 +72,7 @@ export const Navbar: React.FC = () => {
 
   if (
     !user ||
+    location.pathname === '/' || // the landing page has its own header
     location.pathname === '/reset-password' ||
     location.pathname === '/verify-email'
   ) {

@@ -35,7 +35,7 @@ export const RoomPreview: React.FC = () => (
 
     <div className="flex items-center gap-5">
       <div className="shrink-0">
-        <VoiceOrb state="speaking" />
+        <VoiceOrb className="size-24 sm:size-28" state="speaking" />
       </div>
       <div className="flex flex-col gap-1">
         <span className="label text-xs text-brand">Software Engineer, system design</span>

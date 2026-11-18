@@ -216,7 +216,7 @@ export function ResultsScreen() {
   };
 
   return (
-        <div className="container page-wrapper mx-auto max-w-5xl space-y-6 px-4 py-8">
+        <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
           {(!feedback || feedback.status === "pending") && (
             <Alert role="status" className="border-border bg-card">
               <AlertTitle className="text-base font-semibold">Preparing Feedback</AlertTitle>
@@ -542,7 +542,7 @@ export function ResultsScreen() {
                   {error}
                 </p>
               ) : turns.length === 0 ? (
-                <p className="empty-state text-sm text-muted-foreground">No transcript turns recorded.</p>
+                <p className="rounded-md border border-dashed py-8 text-center text-sm text-muted-foreground italic">No transcript turns recorded.</p>
               ) : (
                 <ol className="m-0 flex list-none flex-col gap-3 p-0">
                   {turns.map((turn) => (

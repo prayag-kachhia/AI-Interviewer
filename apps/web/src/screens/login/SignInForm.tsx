@@ -53,6 +53,20 @@ export const SignInForm: React.FC<{ form: AuthForm }> = ({ form }) => {
             </Button>
           }
         />
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="stay-signed-in"
+            name="staySignedIn"
+            checked={form.staySignedIn}
+            onChange={(e) => form.handleStaySignedInChange(e.target.checked)}
+            aria-label="Stay signed in"
+            className="h-4 w-4 cursor-pointer rounded border-border accent-primary text-primary focus:ring-primary"
+          />
+          <label htmlFor="stay-signed-in" className="cursor-pointer text-sm text-muted-foreground select-none">
+            Stay signed in
+          </label>
+        </div>
         <Button type="submit" disabled={form.loading || form.googleLoading}>
           {form.loading ? (
             <>
