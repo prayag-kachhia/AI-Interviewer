@@ -111,10 +111,12 @@ export class PlaybackQueue {
   private sampleRate: number;
   private nextPlayTime = 0;
   private activeSources: AudioBufferSourceNode[] = [];
+  private onDrained?: () => void;
 
-  constructor(ctx: AudioContext, sampleRate = 24000) {
+  constructor(ctx: AudioContext, sampleRate = 24000, onDrained?: () => void) {
     this.ctx = ctx;
     this.sampleRate = sampleRate;
+    this.onDrained = onDrained;
   }
 
   /**
@@ -153,6 +155,9 @@ export class PlaybackQueue {
       if (idx !== -1) {
         this.activeSources.splice(idx, 1);
       }
+      if (this.activeSources.length === 0) {
+        this.onDrained?.();
+      }
     };
   }
 
@@ -163,6 +168,7 @@ export class PlaybackQueue {
   stop(): void {
     for (const source of this.activeSources) {
       try {
+        source.onended = null;
         source.stop();
         source.disconnect();
       } catch {

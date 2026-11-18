@@ -49,6 +49,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
   private isMuted = false;
   private isDeliberateClose = false;
   private isSessionClosed = false;
+  private turnCompletePendingPlayback = false;
   private accumulator: TranscriptAccumulator | null = null;
   private resumptionHandle: string | null = null;
   private reconnectAttempts = 0;
@@ -106,7 +107,17 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
 
       const audioOutCtx = new AudioContext({ sampleRate: 24000 });
       this.audioOutCtx = audioOutCtx;
-      this.playbackQueue = new PlaybackQueue(audioOutCtx, 24000);
+      const playbackQueue = new PlaybackQueue(audioOutCtx, 24000, () => {
+        if (
+          this.playbackQueue === playbackQueue &&
+          this.turnCompletePendingPlayback &&
+          !this.isDeliberateClose
+        ) {
+          this.turnCompletePendingPlayback = false;
+          this.callbacks?.onStateChange('LISTENING');
+        }
+      });
+      this.playbackQueue = playbackQueue;
       if (audioOutCtx.state === 'suspended') {
         await audioOutCtx.resume();
         if (this.abandoned()) return;
@@ -184,6 +195,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
 
     // FR-14: the candidate spoke over the interviewer, so cut its audio off and flush the partial AI turn.
     if (serverContent.interrupted) {
+      this.turnCompletePendingPlayback = false;
       this.playbackQueue?.stop();
       this.accumulator?.flushTurn();
       if (serverContent.inputTranscription?.text) {
@@ -194,6 +206,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
 
     if (serverContent.inputTranscription?.text) {
+      this.turnCompletePendingPlayback = false;
       this.accumulator?.handleChunk('CANDIDATE', serverContent.inputTranscription.text);
       this.callbacks?.onStateChange('LISTENING');
     }
@@ -203,6 +216,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
 
     if (serverContent.modelTurn?.parts) {
+      this.turnCompletePendingPlayback = false;
       this.callbacks?.onStateChange('AI_SPEAKING');
       for (const part of serverContent.modelTurn.parts) {
         if (part.inlineData?.data) {
@@ -213,7 +227,12 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
 
     if (serverContent.turnComplete) {
       this.accumulator?.flushTurn();
-      this.callbacks?.onStateChange('LISTENING');
+      if ((this.playbackQueue?.pendingCount ?? 0) > 0) {
+        this.turnCompletePendingPlayback = true;
+      } else {
+        this.turnCompletePendingPlayback = false;
+        this.callbacks?.onStateChange('LISTENING');
+      }
     }
   }
 
@@ -357,6 +376,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    this.turnCompletePendingPlayback = false;
     this.playbackQueue?.stop();
     this.playbackQueue = null;
     if (this.workletNode) {

@@ -680,6 +680,82 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
       expect(live.sendText).toHaveBeenCalledTimes(1);
       expect(mockState.browserInstances[0].sendText).not.toHaveBeenCalled();
     });
+
+    it('waits until AI playback drains before starting the 9 s timer and cancels if candidate speaks within 9 s (Issue #296)', async () => {
+      vi.mocked(api.postTurn).mockResolvedValue({
+        success: true,
+        data: makeTurn({ id: 'turn-saved', speaker: 'AI', text: 'Long system design question?' }),
+      });
+
+      renderRoom();
+      await waitFor(() => expect(mockState.liveInstances).toHaveLength(1));
+
+      vi.useFakeTimers();
+      const live = mockState.liveInstances[0];
+
+      // Initial setupComplete -> sends opening prompt (call #1).
+      act(() => {
+        live.callbacks.onStateChange('LISTENING');
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+
+      // AI starts speaking and flushes final transcript on turnComplete while audio is still queued (stays AI_SPEAKING).
+      await act(async () => {
+        live.callbacks.onStateChange('AI_SPEAKING');
+        live.callbacks.onTranscript({
+          speaker: 'AI',
+          text: 'Long system design question?',
+          isFinal: true,
+        });
+      });
+
+      // Even if 12 s pass while audio is still draining, no thinking cue may fire.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12000);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+
+      // Playback drains -> adapter transitions to LISTENING, starting the 9 s timer.
+      act(() => {
+        live.callbacks.onStateChange('LISTENING');
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8999);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(2);
+      expect(live.sendText).toHaveBeenLastCalledWith(
+        '[the candidate is thinking; offer brief encouragement]'
+      );
+
+      // Next turn: candidate answers, AI asks Q2, playback drains, and candidate speaks within 9 s -> no cue.
+      await act(async () => {
+        live.callbacks.onTranscript({ speaker: 'CANDIDATE', text: 'I would shard by tenant ID.', isFinal: true });
+        live.callbacks.onStateChange('AI_SPEAKING');
+        live.callbacks.onTranscript({ speaker: 'AI', text: 'How would you handle hot shards?', isFinal: true });
+      });
+
+      // Drain audio -> LISTENING starts a fresh 9 s countdown.
+      act(() => {
+        live.callbacks.onStateChange('LISTENING');
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+
+      // Candidate starts answering within 9 s -> resets the timer so no cue fires at the 9 s mark.
+      act(() => {
+        live.callbacks.onTranscript({ speaker: 'CANDIDATE', text: 'For hot shards...', isFinal: false });
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+      });
+      expect(live.sendText).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('Typed interview mode (PK-4, #156)', () => {
