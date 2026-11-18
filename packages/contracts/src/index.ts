@@ -289,4 +289,35 @@ export const UpdateRoadmapProgressInput = z.object({
 });
 export type UpdateRoadmapProgressInput = z.infer<typeof UpdateRoadmapProgressInput>;
 
+// ---------------------------------------------------------------------------
+// Owner Dashboard & Admin Platform Statistics (FR-32, Issue #201)
+// ---------------------------------------------------------------------------
+
+export const AdminDailyInterview = z.object({
+  date: z.string(), // YYYY-MM-DD
+  count: z.number().int().min(0),
+});
+export type AdminDailyInterview = z.infer<typeof AdminDailyInterview>;
+
+export const AdminFeedbackCounts = z.object({
+  ready: z.number().int().min(0),
+  failed: z.number().int().min(0),
+});
+export type AdminFeedbackCounts = z.infer<typeof AdminFeedbackCounts>;
+
+export const AdminRoleAverageScore = z.object({
+  role: z.string(),
+  roleLabel: z.string(),
+  averageScore: z.number().nullable(),
+  sessionCount: z.number().int().min(0),
+});
+export type AdminRoleAverageScore = z.infer<typeof AdminRoleAverageScore>;
+
+export const AdminStats = z.object({
+  totalUsers: z.number().int().min(0),
+  interviewsPast14Days: z.array(AdminDailyInterview),
+  feedbackCounts: AdminFeedbackCounts,
+  averageScoresByRole: z.array(AdminRoleAverageScore),
+});
+export type AdminStats = z.infer<typeof AdminStats>;
 
