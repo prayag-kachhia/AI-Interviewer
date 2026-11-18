@@ -470,17 +470,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
   };
-
   const deleteAccount = async () => {
     try {
       const res = await deleteUserAccount();
+
       resetSyncState();
-      await supabase.auth.signOut();
-      clearAuthStorage();
-      localStorage.removeItem('selectedRole');
-      sessionStorage.removeItem('selectedRole');
-      if (mountedRef.current) {
-        setUser(null);
+
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error('Sign out after account deletion failed:', err);
+      } finally {
+        clearAuthStorage();
+        localStorage.removeItem('selectedRole');
+        sessionStorage.removeItem('selectedRole');
+
+        if (mountedRef.current) {
+          setUser(null);
+        }
       }
 
       return {
@@ -491,7 +498,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       return {
         success: false,
         message:
-          err.response?.data?.message || 'Failed to delete account',
+          err.response?.data?.message || err.message || 'Failed to delete account',
       };
     }
   };
