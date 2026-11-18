@@ -72,7 +72,7 @@ export const deleteUserAccount = async (): Promise<{
   success: boolean;
   message: string;
 }> => {
-  await api.delete<void>('/me');
+  await api.delete<void>('/auth/account');
 
   return {
     success: true,
