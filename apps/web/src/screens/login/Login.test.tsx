@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { axe } from "vitest-axe";
 import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act, fireEvent } from "@testing-library/react";
@@ -1092,5 +1093,63 @@ describe("Login Screen - Stay Signed In (FR-05 / Issue #198)", () => {
     expect(screen.getByTestId("user-email")).toHaveTextContent(
       "delete-fail@example.com"
     );
+  });
+
+  it("has no accessibility violations in Sign In view", async () => {
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("has no accessibility violations in Sign Up view", async () => {
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const signUpTab = screen.getByRole("tab", { name: /sign up/i });
+    await act(async () => {
+      fireEvent.click(signUpTab);
+    });
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("has no accessibility violations in Forgot Password view", async () => {
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const forgotBtn = screen.getByRole("button", { name: /forgot password\?/i });
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

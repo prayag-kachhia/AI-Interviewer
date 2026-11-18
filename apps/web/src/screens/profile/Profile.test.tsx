@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import { axe } from 'vitest-axe';
 import { test, expect, vi, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
@@ -301,4 +302,67 @@ test('given data export fails, shows the error message', async () => {
   fireEvent.click(screen.getByRole('button', { name: /download my data/i }));
 
   expect(await screen.findByText('Export broke')).toBeInTheDocument();
+});
+
+test('has no accessibility violations in populated profile state', async () => {
+  vi.mocked(api.getLatestResume).mockResolvedValueOnce({
+    success: true,
+    data: {
+      resumeId: 'res-ai',
+      fileName: 'candidate_cv.pdf',
+      createdAt: '2026-03-01T12:00:00Z',
+      source: 'ai',
+      profile: {
+        name: 'John Candidate',
+        email: 'john@example.com',
+        phone: '+1 555 123 4567',
+        summary: 'Experienced software engineer.',
+        skills: ['TypeScript', 'React', 'Node.js'],
+        education: ['B.S. in Computer Science'],
+        experience: ['Software Engineer at Tech Corp'],
+        projects: ['AI Interviewer'],
+        certifications: ['AWS Certified Solutions Architect'],
+        achievements: ["Dean's List"],
+        languages: ['English', 'Spanish'],
+      },
+    },
+  });
+
+  const { container } = render(
+    <MemoryRouter>
+      <Profile />
+    </MemoryRouter>
+  );
+
+  await screen.findByText('John Candidate');
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test('has no accessibility violations in empty profile state', async () => {
+  vi.mocked(api.getLatestResume).mockRejectedValueOnce({ response: { status: 404 } });
+
+  const { container } = render(
+    <MemoryRouter>
+      <Profile />
+    </MemoryRouter>
+  );
+
+  await screen.findByText('No Profile Found');
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test('has no accessibility violations when delete dialog is open', async () => {
+  vi.mocked(api.getLatestResume).mockRejectedValueOnce({ response: { status: 404 } });
+
+  const { container } = render(
+    <MemoryRouter>
+      <Profile />
+    </MemoryRouter>
+  );
+
+  await screen.findByText('No Profile Found');
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+  await screen.findByRole('alertdialog');
+
+  expect(await axe(container)).toHaveNoViolations();
 });

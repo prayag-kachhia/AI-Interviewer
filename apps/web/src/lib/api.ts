@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { CreateSessionInput, EndReason, Feedback, ImprovementPlan, VoiceToken } from '@interview/contracts';
+import { AdminStats, CreateSessionInput, EndReason, Feedback, ImprovementPlan, VoiceToken } from '@interview/contracts';
 import type { z } from 'zod';
 import { supabase } from './supabase';
 import type {
@@ -85,6 +85,12 @@ export const exportMyData = async (): Promise<Blob> => {
   const { data } = await api.get<Blob>('/me/export', {
     responseType: 'blob',
   });
+  return data;
+};
+
+// Owner Dashboard platform statistics (FR-32, Issue #201).
+export const getAdminStats = async (): Promise<{ success: boolean; data: AdminStats }> => {
+  const { data } = await api.get<{ success: boolean; data: AdminStats }>('/admin/stats');
   return data;
 };
 

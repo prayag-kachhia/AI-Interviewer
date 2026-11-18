@@ -1,35 +1,38 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&family=Plus+Jakarta+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" />
-    <title>Interview Practice</title>
-    <script>
-      // Put the saved theme on <html> before the first paint, so a dark page never loads light and
-      // then fades. ThemeContext applies the same classes once React starts; keep the two in step.
-      (function () {
-        try {
-          var theme = localStorage.getItem('theme');
-          if (theme !== 'light' && theme !== 'dark' && theme !== 'graphite') {
-            var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
-            theme = prefersLight ? 'light' : 'dark';
-          }
-          var root = document.documentElement;
-          root.classList.toggle('dark', theme !== 'light');
-          root.classList.toggle('graphite', theme === 'graphite');
-          root.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
-        } catch (e) {
-          // Storage blocked: ThemeContext still picks a theme after React starts.
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&family=Plus+Jakarta+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" />
+  <title>Interview Practice</title>
+  <script>
+    // Put the saved theme on <html> before the first paint, so a dark page never loads light and
+    // then fades. ThemeContext applies the same classes once React starts; keep the two in step.
+    (function () {
+      try {
+        var theme = localStorage.getItem('theme');
+        if (theme !== 'light' && theme !== 'dark' && theme !== 'graphite') {
+          var prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+          theme = prefersLight ? 'light' : 'dark';
         }
-      })();
-    </script>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+        var root = document.documentElement;
+        root.classList.toggle('dark', theme !== 'light');
+        root.classList.toggle('graphite', theme === 'graphite');
+      } catch (e) {
+        // Storage blocked: ThemeContext still picks a theme after React starts.
+      }
+    })();
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
 </html>

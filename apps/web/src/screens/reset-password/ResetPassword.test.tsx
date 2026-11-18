@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { axe } from "vitest-axe";
 import { render, screen, act, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { ResetPassword } from "./ResetPassword";
@@ -210,5 +211,57 @@ describe("ResetPassword Screen", () => {
     expect(
       await screen.findByText(/new password should be different from old password\./i)
     ).toBeInTheDocument();
+  });
+
+  it("has no accessibility violations when session is valid", async () => {
+    const mockSession = {
+      user: { id: "user-123", email: "candidate@example.com" },
+      access_token: "recovery-token",
+    };
+    mockGetSession.mockResolvedValue({ data: { session: mockSession }, error: null });
+    mockOnAuthStateChange.mockReturnValue({
+      data: { subscription: { unsubscribe: vi.fn() } },
+    });
+
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/reset-password"]}>
+            <ResetPassword />
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    await screen.findByRole("button", { name: /update password/i });
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("has no accessibility violations when link is expired", async () => {
+    mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
+    mockOnAuthStateChange.mockReturnValue({
+      data: { subscription: { unsubscribe: vi.fn() } },
+    });
+
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/reset-password"]}>
+            <ResetPassword />
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText(/this password reset link is invalid or has expired/i)
+        ).toBeInTheDocument();
+      },
+      { timeout: 2500 }
+    );
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

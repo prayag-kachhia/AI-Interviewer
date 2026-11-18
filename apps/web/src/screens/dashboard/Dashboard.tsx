@@ -233,6 +233,16 @@ export const Dashboard: React.FC = () => {
             </Alert>
           )}
 
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            accept="application/pdf"
+            className="hidden"
+            disabled={loading}
+            aria-label="Upload PDF resume"
+          />
+
           <div
             role="button"
             tabIndex={loading ? -1 : 0}
@@ -254,15 +264,6 @@ export const Dashboard: React.FC = () => {
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="application/pdf"
-              className="hidden"
-              disabled={loading}
-            />
-
             {file ? (
               <>
                 <FileText className="mb-2 size-10 text-primary" />

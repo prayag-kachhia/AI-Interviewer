@@ -437,7 +437,7 @@ describe('Supabase Authentication & Account Management', () => {
       });
     });
 
-    it('rejects requests with 401 when user identifiers are missing', async () => {
+    it('uses the authenticated Supabase ID when the local user link is missing', async () => {
       (prisma.user.findUnique as any).mockResolvedValueOnce({
         id: 'local-user-a',
         supabaseUserId: null,
@@ -449,13 +449,12 @@ describe('Supabase Authentication & Account Management', () => {
         .delete('/api/auth/account')
         .set('Authorization', 'Bearer valid-token');
 
-      expect(response.status).toBe(401);
-      expect(response.body).toEqual({
-        success: false,
-        message: 'Unauthorized',
+      expect(response.status).toBe(204);
+      expect(tx.user.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'local-user-a' },
       });
-      expect(prisma.$transaction).not.toHaveBeenCalled();
-      expect(__deleteUserMock).not.toHaveBeenCalled();
+      expect(__deleteUserMock).toHaveBeenCalledWith('supabase-user-a');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     });
   });
 });

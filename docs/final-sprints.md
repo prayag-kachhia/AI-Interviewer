@@ -81,7 +81,7 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 | Prakriti | 8 | 1 | 4 | 3 | 5 | D-2 (1 day) |
 | Shaurya | 8 | 2 | 4 | 2 | 5.5 | – |
 | Praneel | 8 | 1 | 5 | 2 | 5.75 | – |
-| Rahi | 9 | 1 | 3 | 5 | 5.25 | D-4 (1 day) |
+| Rahi | 10 | 1 | 4 | 5 | 6 | D-4 (1 day) |
 | Ved | 8 | 1 | 5 | 2 | 5.5 | D-3 (1 day) |
 | Vismay | 9 | 2 | 4 | 3 | 6.25 | – |
 | Raj | 9 | 1 | 6 | 2 | 5.75 | – |
@@ -200,11 +200,11 @@ The interview feels alive: an orb that breathes with the voice, and smooth trans
 
 One styling system: the old stylesheet and static inline styles are gone.
 
-- After every screen is migrated, delete the legacy classes from `index.css` and switch to `@import "tailwindcss"` (preflight on).
-- Remove the remaining static inline styles and fix regressions on every screen in light and dark.
+- Delete `legacy.css` except the few classes History still uses, and switch to Tailwind's full reset (preflight on). RH-10 deletes what's left.
+- Remove the remaining static inline styles and fix regressions on every screen in all three themes.
 - Include docs/adr/0011-design-system.md in this PR.
-- **Done when:** `git grep "style={{" -- apps/web/src` finds only dynamic values, and every screen is checked in light and dark.
-- **Depends on:** P-8, P-9, P-10, P-17, P-18, PK-5, RH-4, V-5 (all screen migrations)
+- **Done when:** outside `screens/history/`, `git grep "style={{" -- apps/web/src` finds only dynamic values and no screen uses a class from `legacy.css`, and every screen is checked in all three themes.
+- **Depends on:** P-8, P-9, P-10, P-17, P-18, PK-5, RH-4, V-5 (all screen migrations). Not RH-10: History keeps its old classes until RH-10 restyles it.
 
 **[P-13](https://github.com/prayag-kachhia/AI-Interviewer/issues/199) · Landing page** · Easy · 0.5 days · Sprint 5
 
@@ -697,7 +697,7 @@ Candidates see what was good and what to improve in each answer, not only overal
 
 ### Rahi: history and analytics
 
-About 5.25 days · 9 counted PRs (2 already merged) · 1 Hard, 3 Medium, 5 Easy · review partner: Ved
+About 6 days · 10 counted PRs (2 already merged) · 1 Hard, 4 Medium, 5 Easy · review partner: Ved
 
 Also owns the required document [D-4](https://github.com/prayag-kachhia/AI-Interviewer/issues/204) (not counted, see §5a).
 
@@ -786,6 +786,17 @@ Delete straight from the History list.
 - Add a Delete button with an AlertDialog confirmation on each History row, reusing VM-2's API call.
 - **Done when:** Deleting from History removes the row.
 - **Depends on:** RH-3, VM-2
+
+**[RH-10](https://github.com/prayag-kachhia/AI-Interviewer/issues/304) · Restyle the History page** · Medium · 0.75 days · Sprint 5
+
+History looks like the rest of the app. It's the last screen still on the old styles.
+
+- Rebuild `HistoryPage.tsx` with the `components/ui` primitives and the theme tokens: no old classes, no static inline styles, no hard-coded colours.
+- Keep every behaviour: the list, Try again, delete, the performance graph, the category trends, the empty and error states.
+- If the diff gets big, first move the graph and the trends into their own files, unchanged, in a small PR.
+- Once P-12 has merged, `legacy.css` holds only History's old classes: delete the file and its import in `styles.css`.
+- **Done when:** The page looks right in Swiss, Haute and Graphite and at phone width, uses no class from `legacy.css`, and the existing tests pass.
+- **Depends on:** RH-3, RH-5, RH-6, RH-9 (all merged)
 
 ### Ved: improvement guide, user docs
 

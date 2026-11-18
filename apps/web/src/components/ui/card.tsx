@@ -25,9 +25,9 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+function CardTitle({ className, as: Component = "h2", ...props }: React.ComponentProps<"div"> & { as?: React.ElementType }) {
   return (
-    <div
+    <Component
       data-slot="card-title"
       className={cn("heading text-xl leading-tight", className)}
       {...props}
