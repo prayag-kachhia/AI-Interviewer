@@ -38,8 +38,14 @@ export const Navbar: React.FC = () => {
   const themeIndex = THEMES.findIndex((t) => t.id === theme);
   const themeLabel = THEMES[themeIndex]?.label ?? '';
   const nextLabel = THEMES[(themeIndex + 1) % THEMES.length].label;
-  // Below lg the links don't fit in a row (a half-screen window is ~960px), so they go in a menu.
+  // Below lg (or below xl when admin navigation adds an extra link) the links don't fit in a row, so they go in a menu.
   const [menuOpen, setMenuOpen] = useState(false);
+  const isDesktopAdmin = Boolean(user?.isAdmin);
+
+  const navLinks = [
+    ...LINKS,
+    ...(user?.isAdmin ? [{ to: '/admin', label: 'Admin' }] : []),
+  ];
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
 
@@ -82,8 +88,8 @@ export const Navbar: React.FC = () => {
           <span className="hidden sm:inline">AI Interviewer</span>
         </Link>
 
-        <div className="hidden items-center gap-1 lg:flex">
-          {LINKS.map(({ to, label }) => (
+        <div className={cn('items-center gap-1', isDesktopAdmin ? 'hidden xl:flex' : 'hidden lg:flex')}>
+          {navLinks.map(({ to, label }) => (
             <NavLink key={to} to={to} label={label} active={location.pathname === to} />
           ))}
         </div>
@@ -108,7 +114,7 @@ export const Navbar: React.FC = () => {
           <Button
             variant="outline"
             size="icon"
-            className="lg:hidden"
+            className={isDesktopAdmin ? 'xl:hidden' : 'lg:hidden'}
             onClick={() => setMenuOpen((open) => !open)}
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
@@ -124,9 +130,12 @@ export const Navbar: React.FC = () => {
           id="mobile-menu"
           role="navigation"
           aria-label="Menu"
-          className="absolute inset-x-0 top-full flex flex-col gap-1 border-b border-border bg-background p-3 lg:hidden"
+          className={cn(
+            'absolute inset-x-0 top-full flex flex-col gap-1 border-b border-border bg-background p-3',
+            isDesktopAdmin ? 'xl:hidden' : 'lg:hidden'
+          )}
         >
-          {LINKS.map(({ to, label }) => (
+          {navLinks.map(({ to, label }) => (
             <NavLink key={to} to={to} label={label} active={location.pathname === to} className="justify-start" />
           ))}
         </div>
