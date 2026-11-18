@@ -173,6 +173,222 @@ Token counts are averaged over the 8 successful LLM runs (excludes `excellent` w
 
 ---
 
+## S-7 — Score Consistency (NFR-19)
+
+> **Status: Complete. Implementation and 87 unit tests passing. Full live benchmark validated: 26/26 evaluatable fixtures (130 successful evaluations) completed with all category spreads ≤ 1.0 pt (100% PASS). 1 fixture (empty-answers) skipped due to having no candidate answers.**
+
+### Methodology
+
+S-7 verifies that the evaluator assigns **consistent scores** to the same transcript across multiple independent calls — ruling out randomness or instability in the LLM output as a source of unfair results.
+
+For each evaluatable fixture:
+
+1. `bench --runs 5` calls `evaluateTranscript` five times independently (the same transcript, the same rubric, the same temperature).
+2. For each rubric **category**, it computes:
+
+$$\text{spread} = \max(\text{scores}) - \min(\text{scores})$$
+
+3. A fixture **PASS**es when every category's spread is ≤ 1.0 point.
+4. A fixture **FAIL**s (spread failure) when any category's spread > 1.0 point.
+5. A fixture is **INCONCLUSIVE** when the data is insufficient or corrupt — see below.
+6. A fixture is **SKIPPED** when it has no candidate answers and cannot meaningfully be evaluated.
+
+The spread threshold of **≤ 1.0 point** (on the 1–5 scale) means scores may differ by at most one full point across all five runs. A wider spread indicates instability.
+
+### Five-run requirement
+
+Each evaluatable fixture **must** produce exactly five successful Gemini responses. Any deviation causes INCONCLUSIVE:
+
+- Fewer than five successful runs (e.g. 4/5 due to API errors)
+- More runs than requested (data integrity violation)
+- Any run that ended with an error (the error is recorded; the run is not counted)
+
+### Fixture classification
+
+| Status | Condition |
+|---|---|
+| **PASS** | All 5 runs succeeded; every category spread ≤ 1.0 |
+| **FAIL** | All 5 runs succeeded; at least one category spread > 1.0 |
+| **INCONCLUSIVE** | Missing/empty expected rubric, duplicate/empty category names in expected rubric, run count ≠ 5, any errored run, invalid scores (NaN, non-finite, out of [1, 5]), duplicate/missing/unexpected categories in any run |
+| **SKIPPED** | Fixture has no candidate answers (`empty-answers`); excluded from denominator |
+
+The final consistency verdict is **PASS** only when:
+- `inconclusive = 0`
+- `failed (spread > 1.0) = 0`
+- `passed = totalEvaluated` (all evaluatable fixtures passed)
+- `totalEvaluated > 0`
+
+### Fixture inventory for consistency benchmark
+
+| Count | Category |
+|---:|---|
+| 26 | Evaluatable (have candidate answers + expected rubric) |
+| 1 | Skipped (`empty-answers` — no candidate answers) |
+| **27** | **Total discovered** |
+
+Running with `--runs 5`:
+
+```
+Expected Gemini API calls = 26 evaluatable × 5 runs = 130
+Inter-call delay          = 13 000 ms (free tier: 5 req/min)
+Estimated wall time       ≈ 29 minutes
+```
+
+### How to run
+
+```bash
+# From the repo root — requires GEMINI_API_KEY in apps/api/.env
+bun --cwd apps/api scripts/bench.ts --runs 5
+```
+
+The command runs all 27 fixtures. `empty-answers` is automatically SKIPPED. All 26 evaluatable fixtures are scored across 5 runs, and the consistency verdict is printed at the end.
+
+### Retry and error handling
+
+| Error type | Behaviour |
+|---|---|
+| HTTP 503 (service unavailable) | Retried up to 3 times with 13 s backoff; if all retries fail, the run is recorded as an error and the fixture becomes INCONCLUSIVE |
+| HTTP 429 (rate limit) with server `retryDelay` ≤ 60 s | Waits the requested delay, then retries |
+| HTTP 429 with server `retryDelay` > 60 s | Throws `ExcessiveRetryDelayError` immediately — benchmark aborts with a clear quota/rate-limit message rather than sleeping for hours |
+| Timeout (> 30 s per call) | Run recorded as error; fixture becomes INCONCLUSIVE |
+| Any unhandled exception | Same as timeout — recorded, never silently counted as a successful run |
+
+`MAX_RETRY_WAIT_MS = 60 000` (60 seconds) is the hard ceiling on any server-requested retry delay.
+
+### Category normalization
+
+Both expected and run category names are trimmed of surrounding whitespace before comparison. An empty or whitespace-only category name in either the expected rubric or a run result causes INCONCLUSIVE — it is not silently merged or ignored.
+
+### Live benchmark execution & results — 2026-11-17
+
+The 5-run benchmark was executed using `bun --cwd apps/api scripts/bench.ts --runs 5` with `gemini-3.8-flash` at temperature 0.2 across all 27 fixtures.
+
+- `empty-answers` was automatically **SKIPPED** as it contains no candidate answers.
+- All **26 evaluatable fixtures** completed exactly 5 successful runs (130 successful Gemini evaluations total).
+- Every completed fixture satisfied the requirement of category spread ≤ 1.0 point.
+
+#### Empirical category-wise spread results (all 26 evaluatable fixtures)
+
+| Fixture | Category | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Min | Max | Spread | Status |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `average` | Problem Solving & Algorithms | 4 | 3 | 4 | 4 | 3 | 3.0 | 4.0 | **1.0** | ✅ PASS |
+| | Software Design & Architecture | 4 | 4 | 4 | 4 | 4 | 4.0 | 4.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 4 | 4 | 4 | 4 | 4 | 4.0 | 4.0 | **0.0** | ✅ PASS |
+| `backend-advanced` | API Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Database Modeling & Performance | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | System Reliability & Scalability | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `backend-basic` | API Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Database Modeling & Performance | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | System Reliability & Scalability | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `backend-developer-average` | API Design & Architecture | 4 | 4 | 4 | 4 | 4 | 4.0 | 4.0 | **0.0** | ✅ PASS |
+| | Database Modeling & Performance | 3 | 3 | 3 | 3 | 2 | 2.0 | 3.0 | **1.0** | ✅ PASS |
+| | System Reliability & Scalability | 2 | 3 | 2 | 2 | 2 | 2.0 | 3.0 | **1.0** | ✅ PASS |
+| `backend-developer-good` | API Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Database Modeling & Performance | 3 | 4 | 4 | 4 | 4 | 3.0 | 4.0 | **1.0** | ✅ PASS |
+| | System Reliability & Scalability | 4 | 5 | 5 | 4 | 4 | 4.0 | 5.0 | **1.0** | ✅ PASS |
+| `backend-intermediate` | API Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Database Modeling & Performance | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | System Reliability & Scalability | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `concise-correct` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `da-advanced` | SQL & Analytical Reasoning | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Data Interpretation & Business Insights | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Statistical Understanding & Data Quality | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `da-basic` | SQL & Analytical Reasoning | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Data Interpretation & Business Insights | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Statistical Understanding & Data Quality | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `da-intermediate` | SQL & Analytical Reasoning | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Data Interpretation & Business Insights | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Statistical Understanding & Data Quality | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `data-analyst-strong` | SQL & Analytical Reasoning | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Data Interpretation & Business Insights | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Statistical Understanding & Data Quality | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `data-analyst-weak` | SQL & Analytical Reasoning | 1 | 1 | 1 | 1 | 1 | 1.0 | 1.0 | **0.0** | ✅ PASS |
+| | Data Interpretation & Business Insights | 1 | 2 | 1 | 2 | 2 | 1.0 | 2.0 | **1.0** | ✅ PASS |
+| | Statistical Understanding & Data Quality | 1 | 1 | 1 | 1 | 1 | 1.0 | 1.0 | **0.0** | ✅ PASS |
+| `difficulty-advanced` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `difficulty-basic` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `excellent` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `filler-heavy-correct` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 3 | 3 | 3 | 3 | 2 | 2.0 | 3.0 | **1.0** | ✅ PASS |
+| `filler-heavy-data-analyst` | SQL & Analytical Reasoning | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Data Interpretation & Business Insights | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Statistical Understanding & Data Quality | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `good` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `long-vague` | Problem Solving & Algorithms | 2 | 1 | 2 | 1 | 2 | 1.0 | 2.0 | **1.0** | ✅ PASS |
+| | Software Design & Architecture | 2 | 2 | 2 | 2 | 2 | 2.0 | 2.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 2 | 2 | 2 | 2 | 2 | 2.0 | 2.0 | **0.0** | ✅ PASS |
+| `off-topic` | Problem Solving & Algorithms | 1 | 1 | 1 | 1 | 1 | 1.0 | 1.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 1 | 1 | 1 | 1 | 1 | 1.0 | 1.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 1 | 1 | 1 | 1 | 1 | 1.0 | 1.0 | **0.0** | ✅ PASS |
+| `se-advanced` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `se-basic` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `se-intermediate` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `tech-stack-java` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `tech-stack-python` | Problem Solving & Algorithms | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 5 | 5 | 5 | 5 | 5 | 5.0 | 5.0 | **0.0** | ✅ PASS |
+| `weak` | Problem Solving & Algorithms | 2 | 2 | 2 | 2 | 2 | 2.0 | 2.0 | **0.0** | ✅ PASS |
+| | Software Design & Architecture | 2 | 2 | 2 | 2 | 2 | 2.0 | 2.0 | **0.0** | ✅ PASS |
+| | Technical Communication | 3 | 3 | 3 | 3 | 3 | 3.0 | 3.0 | **0.0** | ✅ PASS |
+
+#### Benchmark execution summary
+
+- **Gemini model**: `gemini-3.8-flash`
+- **Configured temperature**: `0.2`
+- **Evaluatable fixtures**: 26 (plus 1 skipped: `empty-answers`)
+- **Total successful evaluations**: 130 runs (5 runs × 26 fixtures)
+- **Consistency summary breakdown**:
+  - **Evaluated**: 26 fixtures
+  - **Passed (spread ≤ 1.0 pt across all categories)**: 26 fixtures (100%)
+  - **Failed (spread > 1.0 pt)**: 0 fixtures
+  - **Inconclusive**: 0 fixtures
+  - **Skipped**: 1 fixture (`empty-answers`)
+  - **Consistency verdict**: ✅ **PASS**
+- **Category spread distribution**:
+  - Spread = 0.0 points: 72 / 78 categories (92.3%)
+  - Spread = 1.0 point: 6 / 78 categories (7.7%)
+  - Spread > 1.0 point: 0 / 78 categories (0.0%)
+- **Accuracy**: 27/27 fixtures scored within their expected score ranges across all runs.
+
+#### Latency observation & performance limitation (Independent NFR)
+
+- **p50 latency**: 17,672 ms
+- **p95 latency**: 25,741 ms (target: < 15,000 ms)
+- **Explanation**: The overall benchmark command exited with code 1 solely due to this pre-existing latency check (`p95 exceeds 15000 ms target`), **not** an S-7 score consistency failure. Detailed multi-category feedback generation requires ~1,053 output tokens per evaluation from `gemini-3.8-flash`, resulting in 15–25s inference latency. In production, feedback evaluation runs asynchronously in background worker jobs (`apps/api/src/worker.ts`), so evaluation latency does not block interactive candidate interview room audio turns.
+
+#### Cost & token usage metrics (`gemini-3.8-flash`)
+
+- **Avg prompt tokens**: 2,142
+- **Avg output tokens**: 1,053
+- **Cost / interview**: ₹0.4667 (US$0.005556)
+- **Monthly projection (100 interviews/month)**: ₹46.67 (US$0.5556)
+- **Pricing basis**: input $0.75 / 1M tokens, output $3.75 / 1M tokens, USD→INR 84
+
+#### Live-site verification
+
+Live-site verification: **PENDING** — Post-merge smoke verification of end-to-end background evaluation on the deployed live site (`ai-interviewer-it314.web.app`) is pending staging/production deployment.
+
+---
+
 ## Broken-prompt regression demo
 
 Running with `--broken-prompt` replaces the rubric instruction in the prompt with  

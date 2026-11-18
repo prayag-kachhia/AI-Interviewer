@@ -1,0 +1,228 @@
+{
+  "average": {
+    "name": "average",
+    "role": "Software Engineer",
+    "hasCandidateAnswers": true,
+    "pass": true,
+    "failReasons": [],
+    "expected": {
+      "role": "software-engineer",
+      "scores": [
+        {
+          "category": "Problem Solving & Algorithms",
+          "min": 2,
+          "max": 4,
+          "reason": "Knows common patterns but misses optimisations and does not fully analyse complexity."
+        },
+        {
+          "category": "Software Design & Architecture",
+          "min": 2,
+          "max": 4,
+          "reason": "Applies basic design concepts correctly but lacks depth in scalability or trade-off reasoning."
+        },
+        {
+          "category": "Technical Communication",
+          "min": 2,
+          "max": 4,
+          "reason": "Explanations are adequate but sometimes imprecise or lacking structure."
+        }
+      ]
+    },
+    "runs": [
+      {
+        "wallMs": 14631,
+        "promptTokens": 1888,
+        "outputTokens": 1127,
+        "scores": [
+          {
+            "category": "Problem Solving & Algorithms",
+            "score": 4
+          },
+          {
+            "category": "Software Design & Architecture",
+            "score": 4
+          },
+          {
+            "category": "Technical Communication",
+            "score": 4
+          }
+        ],
+        "fingerprint": "4995079793469676d0d9578400c3984f90198f5e38a5137ef4a22420aa92f5e6"
+      },
+      {
+        "wallMs": 19561,
+        "promptTokens": 1888,
+        "outputTokens": 1133,
+        "scores": [
+          {
+            "category": "Problem Solving & Algorithms",
+            "score": 3
+          },
+          {
+            "category": "Software Design & Architecture",
+            "score": 4
+          },
+          {
+            "category": "Technical Communication",
+            "score": 4
+          }
+        ],
+        "fingerprint": "4995079793469676d0d9578400c3984f90198f5e38a5137ef4a22420aa92f5e6"
+      },
+      {
+        "wallMs": 14222,
+        "promptTokens": 1888,
+        "outputTokens": 1192,
+        "scores": [
+          {
+            "category": "Problem Solving & Algorithms",
+            "score": 4
+          },
+          {
+            "category": "Software Design & Architecture",
+            "score": 4
+          },
+          {
+            "category": "Technical Communication",
+            "score": 4
+          }
+        ],
+        "fingerprint": "4995079793469676d0d9578400c3984f90198f5e38a5137ef4a22420aa92f5e6"
+      },
+      {
+        "wallMs": 14976,
+        "promptTokens": 1888,
+        "outputTokens": 1152,
+        "scores": [
+          {
+            "category": "Problem Solving & Algorithms",
+            "score": 4
+          },
+          {
+            "category": "Software Design & Architecture",
+            "score": 4
+          },
+          {
+            "category": "Technical Communication",
+            "score": 4
+          }
+        ],
+        "fingerprint": "4995079793469676d0d9578400c3984f90198f5e38a5137ef4a22420aa92f5e6"
+      },
+      {
+        "wallMs": 15954,
+        "promptTokens": 1888,
+        "outputTokens": 1113,
+        "scores": [
+          {
+            "category": "Problem Solving & Algorithms",
+            "score": 3
+          },
+          {
+            "category": "Software Design & Architecture",
+            "score": 4
+          },
+          {
+            "category": "Technical Communication",
+            "score": 4
+          }
+        ],
+        "fingerprint": "4995079793469676d0d9578400c3984f90198f5e38a5137ef4a22420aa92f5e6"
+      }
+    ],
+    "fingerprint": "4995079793469676d0d9578400c3984f90198f5e38a5137ef4a22420aa92f5e6"
+  },
+  "backend-developer-average": {
+    "name": "backend-developer-average",
+    "role": "Backend Developer",
+    "runs": [
+      {
+        "wallMs": 19711,
+        "promptTokens": 1873,
+        "outputTokens": 1126,
+        "scores": [
+          {
+            "category": "API Design & Architecture",
+            "score": 4
+          },
+          {
+            "category": "Database Modeling & Performance",
+            "score": 3
+          },
+          {
+            "category": "System Reliability & Scalability",
+            "score": 2
+          }
+        ],
+        "fingerprint": "b09889332a429ea6f04df3457674edfda262e2c250a905081d31d8699ab936ee"
+      },
+      {
+        "wallMs": 17167,
+        "promptTokens": 1873,
+        "outputTokens": 1195,
+        "scores": [
+          {
+            "category": "API Design & Architecture",
+            "score": 4
+          },
+          {
+            "category": "Database Modeling & Performance",
+            "score": 3
+          },
+          {
+            "category": "System Reliability & Scalability",
+            "score": 3
+          }
+        ],
+        "fingerprint": "b09889332a429ea6f04df3457674edfda262e2c250a905081d31d8699ab936ee"
+      },
+      {
+        "wallMs": 19563,
+        "promptTokens": 1873,
+        "outputTokens": 1184,
+        "scores": [
+          {
+            "category": "API Design & Architecture",
+            "score": 4
+          },
+          {
+            "category": "Database Modeling & Performance",
+            "score": 3
+          },
+          {
+            "category": "System Reliability & Scalability",
+            "score": 2
+          }
+        ],
+        "fingerprint": "b09889332a429ea6f04df3457674edfda262e2c250a905081d31d8699ab936ee"
+      }
+    ],
+    "expected": {
+      "role": "backend-developer",
+      "scores": [
+        {
+          "category": "API Design & Architecture",
+          "min": 2,
+          "max": 4,
+          "reason": "Understands basic API conventions but misses nuances around versioning, error contracts, or security."
+        },
+        {
+          "category": "Database Modeling & Performance",
+          "min": 2,
+          "max": 3,
+          "reason": "Applies simple schema patterns correctly but lacks depth in indexing or performance tuning."
+        },
+        {
+          "category": "System Reliability & Scalability",
+          "min": 2,
+          "max": 4,
+          "reason": "Aware of reliability concepts at a high level but struggles to design concrete solutions under load."
+        }
+      ]
+    },
+    "pass": false,
+    "failReasons": [],
+    "hasCandidateAnswers": true,
+    "fingerprint": "b09889332a429ea6f04df3457674edfda262e2c250a905081d31d8699ab936ee"
+  }
+}

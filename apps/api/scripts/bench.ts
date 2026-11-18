@@ -10,7 +10,8 @@
  * NOT run in CI (it costs money). Run before merging any prompt or rubric change.
  */
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -634,6 +635,7 @@ export interface RunResult {
   outputTokens: number;
   scores: { category: string; score: number }[];
   error?: string;
+  fingerprint?: string;
 }
 
 export interface FixtureValidationResult {
@@ -700,7 +702,7 @@ export function validateFixtureAgainstExpected(
   return { pass, failReasons };
 }
 
-interface FixtureResult {
+export interface FixtureResult {
   name: string;
   role: string;
   runs: RunResult[];
@@ -708,6 +710,358 @@ interface FixtureResult {
   /** undefined when there is no expected file (e.g. empty-answers). */
   pass: boolean | undefined;
   failReasons: string[];
+  hasCandidateAnswers?: boolean;
+  fingerprint?: string;
+}
+
+export type SpreadFixtureStatus = 'PASS' | 'FAIL' | 'INCONCLUSIVE' | 'SKIPPED';
+
+export interface CategorySpread {
+  category: string;
+  min: number;
+  max: number;
+  spread: number;
+  scores: number[];
+  pass: boolean;
+}
+
+export interface FixtureSpreadResult {
+  fixtureName: string;
+  role: string;
+  status: SpreadFixtureStatus;
+  /** true strictly when status === 'PASS' */
+  pass: boolean;
+  requestedRuns: number;
+  successfulRuns: number;
+  categories: CategorySpread[];
+  maxSpread?: number;
+  inconclusiveReason?: string;
+  failureReason?: string;
+  skipReason?: string;
+}
+
+export interface ScoreSpreadEvaluationResult {
+  /** Overall benchmark passes only when all evaluated fixtures PASS (0 exceeded, 0 inconclusive) */
+  pass: boolean;
+  maxSpreadThreshold: number;
+  requestedRuns: number;
+  fixtureResults: FixtureSpreadResult[];
+  passedFixtures: FixtureSpreadResult[];
+  exceededFixtures: Array<{ fixtureName: string; category: string; spread: number }>;
+  inconclusiveFixtures: Array<{ fixtureName: string; reason: string }>;
+  skippedFixtures: Array<{ fixtureName: string; reason: string }>;
+  error?: string;
+}
+
+export interface EvaluateScoreSpreadOptions {
+  requestedRuns?: number;
+  maxSpreadThreshold?: number;
+}
+
+/**
+ * Evaluates scoring consistency across repeated runs (S-7, NFR-19).
+ * Spread = max(score) - min(score) per rubric category across all runs.
+ *
+ * Acceptance rules & edge case handling:
+ * 1. Skipped fixtures: Fixtures with no candidate answers (e.g. empty-answers) are explicitly classified as SKIPPED
+ *    and excluded from the spread calculation and evaluated denominator.
+ * 2. Evaluatable fixtures: Any fixture that has candidate answers must have an expected rubric, exactly the requested
+ *    runs, zero errored runs, and valid category names/scores to be evaluated. Missing rubrics, incomplete runs,
+ *    or errors mark the fixture INCONCLUSIVE (failing the benchmark).
+ * 3. Run category validity: Every expected category must appear exactly once per run. Duplicates, missing categories,
+ *    or unexpected extra categories mark the fixture INCONCLUSIVE.
+ * 4. Score validity: Every score must be a finite number between 1 and 5. Non-finite or out-of-range scores mark INCONCLUSIVE.
+ * 5. Distinction: Genuine spread failures (spread > 1.0) have status: 'FAIL' (tracked in exceededFixtures),
+ *    distinct from invalid/incomplete data which have status: 'INCONCLUSIVE' (tracked in inconclusiveFixtures).
+ */
+export function evaluateScoreSpread(
+  fixtureResults: Array<{
+    name: string;
+    role?: string;
+    runs: RunResult[];
+    expected?: FixtureExpected;
+    hasCandidateAnswers?: boolean;
+  }>,
+  options?: EvaluateScoreSpreadOptions
+): ScoreSpreadEvaluationResult {
+  const requestedRuns = options?.requestedRuns ?? 5;
+  const maxSpreadThreshold = options?.maxSpreadThreshold ?? 1.0;
+
+  if (!fixtureResults || fixtureResults.length === 0) {
+    return {
+      pass: false,
+      maxSpreadThreshold,
+      requestedRuns,
+      fixtureResults: [],
+      passedFixtures: [],
+      exceededFixtures: [],
+      inconclusiveFixtures: [],
+      skippedFixtures: [],
+      error: 'No fixtures provided for consistency evaluation',
+    };
+  }
+
+  const evaluatedFixtures: FixtureSpreadResult[] = [];
+  const passedFixtures: FixtureSpreadResult[] = [];
+  const exceededFixtures: Array<{ fixtureName: string; category: string; spread: number }> = [];
+  const inconclusiveFixtures: Array<{ fixtureName: string; reason: string }> = [];
+  const skippedFixtures: Array<{ fixtureName: string; reason: string }> = [];
+
+  for (const fixture of fixtureResults) {
+    const fixtureName = fixture.name;
+    const role = fixture.role ?? 'unknown';
+
+    // 0. Explicitly classify empty-answers / fixtures without candidate answers as SKIPPED
+    if (fixture.name === 'empty-answers' || fixture.hasCandidateAnswers === false) {
+      const reason = 'Fixture has no candidate answers; not applicable to score consistency';
+      skippedFixtures.push({ fixtureName, reason });
+      evaluatedFixtures.push({
+        fixtureName,
+        role,
+        status: 'SKIPPED',
+        pass: false,
+        requestedRuns,
+        successfulRuns: 0,
+        categories: [],
+        skipReason: reason,
+      });
+      continue;
+    }
+
+    // 1. Determine expected categories: must come exclusively from fixture.expected.scores
+    const expectedScores = fixture.expected?.scores;
+    if (!expectedScores || expectedScores.length === 0) {
+      const reason = 'Fixture expected rubric is missing or has zero categories defined';
+      inconclusiveFixtures.push({ fixtureName, reason });
+      evaluatedFixtures.push({
+        fixtureName,
+        role,
+        status: 'INCONCLUSIVE',
+        pass: false,
+        requestedRuns,
+        successfulRuns: fixture.runs.filter((r) => !r.error).length,
+        categories: [],
+        inconclusiveReason: reason,
+      });
+      continue;
+    }
+
+    // Validate expected rubric categories: no empty/whitespace names, no duplicates
+    const expectedCategories: string[] = [];
+    const seenExpectedCategories = new Set<string>();
+    let invalidRubricReason: string | undefined;
+
+    for (const exp of expectedScores) {
+      const cat = exp.category;
+      if (!cat || !cat.trim()) {
+        invalidRubricReason = 'Fixture expected rubric contains empty category name';
+        break;
+      }
+      const trimmed = cat.trim();
+      if (seenExpectedCategories.has(trimmed)) {
+        invalidRubricReason = `Fixture expected rubric contains duplicated category: "${trimmed}"`;
+        break;
+      }
+      seenExpectedCategories.add(trimmed);
+      expectedCategories.push(trimmed);
+    }
+
+    if (invalidRubricReason) {
+      inconclusiveFixtures.push({ fixtureName, reason: invalidRubricReason });
+      evaluatedFixtures.push({
+        fixtureName,
+        role,
+        status: 'INCONCLUSIVE',
+        pass: false,
+        requestedRuns,
+        successfulRuns: fixture.runs.filter((r) => !r.error).length,
+        categories: [],
+        inconclusiveReason: invalidRubricReason,
+      });
+      continue;
+    }
+
+    // 2. Require exactly the requested number of runs. Extra runs must not be silently ignored.
+    if (fixture.runs.length !== requestedRuns) {
+      const reason = `Expected exactly ${requestedRuns} runs, but received ${fixture.runs.length}`;
+      inconclusiveFixtures.push({ fixtureName, reason });
+      evaluatedFixtures.push({
+        fixtureName,
+        role,
+        status: 'INCONCLUSIVE',
+        pass: false,
+        requestedRuns,
+        successfulRuns: fixture.runs.filter((r) => !r.error).length,
+        categories: [],
+        inconclusiveReason: reason,
+      });
+      continue;
+    }
+
+    // 3. Check for errored runs
+    const erroredRuns = fixture.runs.filter((r) => Boolean(r.error));
+    if (erroredRuns.length > 0) {
+      const reason = `${erroredRuns.length} of ${requestedRuns} runs encountered errors`;
+      inconclusiveFixtures.push({ fixtureName, reason });
+      evaluatedFixtures.push({
+        fixtureName,
+        role,
+        status: 'INCONCLUSIVE',
+        pass: false,
+        requestedRuns,
+        successfulRuns: requestedRuns - erroredRuns.length,
+        categories: [],
+        inconclusiveReason: reason,
+      });
+      continue;
+    }
+
+    // 4. Validate every run
+    let dataInvalidReason: string | undefined;
+
+    for (let runIdx = 0; runIdx < requestedRuns; runIdx++) {
+      const run = fixture.runs[runIdx];
+      const seenCategories = new Set<string>();
+
+      for (const { category, score } of run.scores) {
+        const normCategory = typeof category === 'string' ? category.trim() : '';
+        if (!normCategory) {
+          dataInvalidReason = `Run ${runIdx + 1} has empty category name`;
+          break;
+        }
+
+        if (seenCategories.has(normCategory)) {
+          dataInvalidReason = `Run ${runIdx + 1} has duplicated category: "${normCategory}"`;
+          break;
+        }
+        seenCategories.add(normCategory);
+
+        if (typeof score !== 'number' || !Number.isFinite(score) || score < 1 || score > 5) {
+          dataInvalidReason = `Run ${runIdx + 1} has invalid score for "${normCategory}": ${score} (must be finite number between 1 and 5)`;
+          break;
+        }
+      }
+
+      if (dataInvalidReason) break;
+
+      for (const expectedCat of expectedCategories) {
+        if (!seenCategories.has(expectedCat)) {
+          dataInvalidReason = `Run ${runIdx + 1} is missing expected category: "${expectedCat}"`;
+          break;
+        }
+      }
+
+      if (dataInvalidReason) break;
+
+      for (const cat of seenCategories) {
+        if (!expectedCategories.includes(cat)) {
+          dataInvalidReason = `Run ${runIdx + 1} contains unexpected category: "${cat}"`;
+          break;
+        }
+      }
+
+      if (dataInvalidReason) break;
+    }
+
+    if (dataInvalidReason) {
+      inconclusiveFixtures.push({ fixtureName, reason: dataInvalidReason });
+      evaluatedFixtures.push({
+        fixtureName,
+        role,
+        status: 'INCONCLUSIVE',
+        pass: false,
+        requestedRuns,
+        successfulRuns: requestedRuns,
+        categories: [],
+        inconclusiveReason: dataInvalidReason,
+      });
+      continue;
+    }
+
+    // 5. Calculate category spreads across all requested runs
+    const categorySpreads: CategorySpread[] = [];
+    let fixtureMaxSpread = 0;
+    let fixturePass = true;
+
+    for (const category of expectedCategories) {
+      const scores = fixture.runs.map(
+        (r) =>
+          r.scores.find(
+            (s) => (typeof s.category === 'string' ? s.category.trim() : '') === category
+          )!.score
+      );
+
+      const min = Math.min(...scores);
+      const max = Math.max(...scores);
+      const spread = Math.round((max - min) * 100) / 100;
+      const catPass = spread <= maxSpreadThreshold;
+
+      if (spread > fixtureMaxSpread) {
+        fixtureMaxSpread = spread;
+      }
+
+      if (!catPass) {
+        fixturePass = false;
+        exceededFixtures.push({ fixtureName, category, spread });
+      }
+
+      categorySpreads.push({
+        category,
+        min,
+        max,
+        spread,
+        scores,
+        pass: catPass,
+      });
+    }
+
+    if (fixturePass) {
+      const result: FixtureSpreadResult = {
+        fixtureName,
+        role,
+        status: 'PASS',
+        pass: true,
+        requestedRuns,
+        successfulRuns: requestedRuns,
+        categories: categorySpreads,
+        maxSpread: fixtureMaxSpread,
+      };
+      passedFixtures.push(result);
+      evaluatedFixtures.push(result);
+    } else {
+      const reason = `Spread exceeded threshold (${fixtureMaxSpread.toFixed(2)} > ${maxSpreadThreshold.toFixed(2)})`;
+      const result: FixtureSpreadResult = {
+        fixtureName,
+        role,
+        status: 'FAIL',
+        pass: false,
+        requestedRuns,
+        successfulRuns: requestedRuns,
+        categories: categorySpreads,
+        maxSpread: fixtureMaxSpread,
+        failureReason: reason,
+      };
+      evaluatedFixtures.push(result);
+    }
+  }
+
+  const totalEvaluated = fixtureResults.length - skippedFixtures.length;
+  const overallPass =
+    inconclusiveFixtures.length === 0 &&
+    exceededFixtures.length === 0 &&
+    passedFixtures.length === totalEvaluated &&
+    totalEvaluated > 0;
+
+  return {
+    pass: overallPass,
+    maxSpreadThreshold,
+    requestedRuns,
+    fixtureResults: evaluatedFixtures,
+    passedFixtures,
+    exceededFixtures,
+    inconclusiveFixtures,
+    skippedFixtures,
+  };
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -736,13 +1090,28 @@ function buildBrokenPrompt(input: Parameters<typeof buildEvaluationPrompt>[0]): 
   );
 }
 
-function parseArgs(argv: string[]): { runs: number; brokenPrompt: boolean; delayMs: number } {
+function parseArgs(argv: string[]): {
+  runs: number;
+  brokenPrompt: boolean;
+  delayMs: number;
+  useCache: boolean;
+  cacheFile?: string;
+} {
   let runs = DEFAULT_RUNS;
   let brokenPrompt = false;
   let delayMs = Number(process.env.BENCH_INTER_CALL_DELAY_MS ?? DEFAULT_INTER_CALL_DELAY_MS);
+  let useCache = true;
+  let cacheFile: string | undefined;
+
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--broken-prompt') {
       brokenPrompt = true;
+    } else if (argv[i] === '--no-cache' || argv[i] === '--fresh') {
+      useCache = false;
+    } else if (argv[i] === '--cache-file' && argv[i + 1]) {
+      cacheFile = argv[++i];
+    } else if (argv[i].startsWith('--cache-file=')) {
+      cacheFile = argv[i].slice('--cache-file='.length);
     } else if (argv[i] === '--runs' && argv[i + 1]) {
       const n = Number(argv[++i]);
       if (!Number.isInteger(n) || n < 1)
@@ -759,18 +1128,33 @@ function parseArgs(argv: string[]): { runs: number; brokenPrompt: boolean; delay
       delayMs = Number(argv[i].slice('--delay='.length));
     }
   }
-  return { runs, brokenPrompt, delayMs };
+  return { runs, brokenPrompt, delayMs, useCache, cacheFile };
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export const MAX_RETRY_WAIT_MS = 60_000; // 60 seconds
+
+export class ExcessiveRetryDelayError extends Error {
+  readonly retryDelayMs: number;
+  readonly maxAllowedMs: number;
+  constructor(retryDelayMs: number, maxAllowedMs: number) {
+    super(
+      `Gemini rate-limit error: server requested retry delay of ${Math.round(retryDelayMs / 1000)}s which exceeds the maximum wait of ${Math.round(maxAllowedMs / 1000)}s.`
+    );
+    this.name = 'ExcessiveRetryDelayError';
+    this.retryDelayMs = retryDelayMs;
+    this.maxAllowedMs = maxAllowedMs;
+  }
+}
+
 /**
- * Parses the retry-after delay (in seconds) from a Gemini 429 error string.
+ * Parses the retry-after delay (in milliseconds) from a Gemini 429 error string.
  * Falls back to `defaultMs` if not found.
  */
-function parseRetryAfterMs(errorMessage: string, defaultMs: number): number {
+export function parseRetryAfterMs(errorMessage: string, defaultMs: number): number {
   try {
     const body = JSON.parse(errorMessage) as {
       error?: { details?: Array<{ retryDelay?: string }> };
@@ -786,14 +1170,33 @@ function parseRetryAfterMs(errorMessage: string, defaultMs: number): number {
   return defaultMs;
 }
 
+export interface RunWithRetryOptions {
+  maxRetries?: number;
+  defaultBackoffMs?: number;
+  maxRetryWaitMs?: number;
+  onRetry?: (attempt: number, maxRetries: number, waitMs: number) => void;
+  sleepFn?: (ms: number) => Promise<void>;
+}
+
 /**
  * Runs evaluateTranscript with automatic retry on 429 / 503 errors.
+ * Immediately throws ExcessiveRetryDelayError if server-requested retryDelay exceeds maxRetryWaitMs (60s).
  */
-async function runWithRetry(
-  fn: () => ReturnType<typeof evaluateTranscript>,
-  maxRetries: number,
-  defaultBackoffMs: number
-): ReturnType<typeof evaluateTranscript> {
+export async function runWithRetry<T>(
+  fn: () => Promise<T>,
+  options?: number | RunWithRetryOptions,
+  defaultBackoffMsParam?: number
+): Promise<T> {
+  const optionsObj: RunWithRetryOptions =
+    typeof options === 'number'
+      ? { maxRetries: options, defaultBackoffMs: defaultBackoffMsParam }
+      : (options ?? {});
+
+  const maxRetries = optionsObj.maxRetries ?? MAX_RETRIES;
+  const defaultBackoffMs = optionsObj.defaultBackoffMs ?? DEFAULT_INTER_CALL_DELAY_MS;
+  const maxRetryWaitMs = optionsObj.maxRetryWaitMs ?? MAX_RETRY_WAIT_MS;
+  const sleepImpl = optionsObj.sleepFn ?? sleep;
+
   let lastError: Error | undefined;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -809,22 +1212,157 @@ async function runWithRetry(
         msg.includes('UNAVAILABLE') ||
         msg.includes('DEADLINE_EXCEEDED');
       if (!isRetryable || attempt === maxRetries) break;
+
       const waitMs =
         msg.includes('"code":429') || msg.includes('RESOURCE_EXHAUSTED')
           ? parseRetryAfterMs(msg, defaultBackoffMs)
           : defaultBackoffMs;
-      process.stdout.write(`[retry ${attempt + 1}/${maxRetries} in ${Math.round(waitMs / 1000)}s] `);
-      await sleep(waitMs);
+
+      if (waitMs > maxRetryWaitMs) {
+        throw new ExcessiveRetryDelayError(waitMs, maxRetryWaitMs);
+      }
+
+      if (optionsObj.onRetry) {
+        optionsObj.onRetry(attempt + 1, maxRetries, waitMs);
+      } else {
+        process.stdout.write(`[retry ${attempt + 1}/${maxRetries} in ${Math.round(waitMs / 1000)}s] `);
+      }
+
+      await sleepImpl(waitMs);
     }
   }
   throw lastError;
 }
 
+// ── cache helpers ────────────────────────────────────────────────────────────
+
+export interface ComputeFixtureFingerprintOptions {
+  model: string;
+  prompt: string;
+  turns?: TranscriptTurn[];
+  expected?: FixtureExpected;
+}
+
+/**
+ * Computes a deterministic SHA-256 fingerprint for a fixture evaluation.
+ * Invalidates cache whenever the model, evaluator prompt, transcript turns, or expected rubric changes.
+ */
+export function computeFixtureFingerprint(options: ComputeFixtureFingerprintOptions): string {
+  const hash = createHash('sha256');
+  hash.update(options.model);
+  hash.update('::');
+  hash.update(options.prompt);
+  if (options.turns) {
+    hash.update('::');
+    hash.update(JSON.stringify(options.turns));
+  }
+  if (options.expected) {
+    hash.update('::');
+    hash.update(JSON.stringify(options.expected));
+  }
+  return hash.digest('hex');
+}
+
+/**
+ * Validates that an individual cached run was successful with no errors,
+ * has valid scores in [1, 5], matches the expected rubric categories,
+ * and matches the expected fingerprint if provided.
+ */
+export function isValidCachedRun(
+  run: RunResult | undefined,
+  expected?: FixtureExpected,
+  expectedFingerprint?: string
+): boolean {
+  if (!run || run.error || !Array.isArray(run.scores) || run.scores.length === 0) {
+    return false;
+  }
+  if (expectedFingerprint && run.fingerprint !== expectedFingerprint) {
+    return false;
+  }
+  for (const s of run.scores) {
+    if (
+      typeof s.category !== 'string' ||
+      !s.category.trim() ||
+      typeof s.score !== 'number' ||
+      !Number.isFinite(s.score) ||
+      s.score < 1 ||
+      s.score > 5
+    ) {
+      return false;
+    }
+  }
+  if (expected && Array.isArray(expected.scores) && expected.scores.length > 0) {
+    for (const exp of expected.scores) {
+      const expCat = exp.category.trim();
+      if (!run.scores.some((s) => s.category.trim() === expCat)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Returns only the valid, error-free runs from an array of runs.
+ */
+export function filterValidCachedRuns(
+  runs: RunResult[] | undefined,
+  expected?: FixtureExpected,
+  expectedFingerprint?: string
+): RunResult[] {
+  if (!Array.isArray(runs)) return [];
+  return runs.filter((r) => isValidCachedRun(r, expected, expectedFingerprint));
+}
+
+/**
+ * Validates that a cached FixtureResult contains exactly requestedRuns successful runs,
+ * each with valid scores, matching all expected rubric categories and fingerprint.
+ */
+export function isValidCachedFixture(
+  cached: FixtureResult | undefined,
+  requestedRuns: number,
+  expected?: FixtureExpected,
+  expectedFingerprint?: string
+): boolean {
+  if (!cached || !Array.isArray(cached.runs)) return false;
+  if (cached.runs.length !== requestedRuns) return false;
+  if (expectedFingerprint && cached.fingerprint !== expectedFingerprint) {
+    return false;
+  }
+  return cached.runs.every((r) => isValidCachedRun(r, expected, expectedFingerprint));
+}
+
+export function loadBenchCache(cachePath: string): Record<string, FixtureResult> {
+  if (!existsSync(cachePath)) return {};
+  try {
+    const raw = readFileSync(cachePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, FixtureResult>;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveBenchCache(cachePath: string, cache: Record<string, FixtureResult>): void {
+  try {
+    const tmpPath = `${cachePath}.${Date.now()}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(cache, null, 2), 'utf-8');
+    renameSync(tmpPath, cachePath);
+  } catch (err) {
+    console.warn(`Warning: failed to save benchmark cache to ${cachePath}: ${(err as Error).message}`);
+  }
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const { runs: runsPerFixture, brokenPrompt, delayMs } = parseArgs(process.argv.slice(2));
+  const { runs: runsPerFixture, brokenPrompt, delayMs, useCache, cacheFile } = parseArgs(process.argv.slice(2));
   const activeModel = process.env.GEMINI_EVAL_MODEL?.trim() || DEFAULT_BENCH_MODEL;
+  const cachePath = cacheFile ?? path.resolve(__dirname, '../.bench-cache.json');
+  const cache = useCache ? loadBenchCache(cachePath) : {};
 
   if (brokenPrompt) {
     console.log(
@@ -840,6 +1378,7 @@ async function main() {
 
   const fixtureResults: FixtureResult[] = [];
   let isFirstCall = true;
+  let abortBenchmark = false;
 
   for (const file of files) {
     const name = file.replace('.json', '');
@@ -893,6 +1432,7 @@ async function main() {
         expected: undefined,
         pass: true, // correctly rejected before LLM call
         failReasons: [],
+        hasCandidateAnswers: false,
       });
       continue;
     }
@@ -907,9 +1447,66 @@ async function main() {
 
     console.log(`\n▶ ${name}  [${role.label}]`);
 
+    // Compute evaluation prompt and cache fingerprint
+    const prompt = brokenPrompt
+      ? buildBrokenPrompt({
+          roleId: role.id,
+          turns,
+          difficulty: expected?.difficulty,
+        })
+      : buildEvaluationPrompt({
+          roleId: role.id,
+          turns,
+          difficulty: expected?.difficulty,
+        });
+
+    const currentFingerprint = computeFixtureFingerprint({
+      model: activeModel,
+      prompt,
+      turns,
+      expected,
+    });
+
+    // Check if valid cached result exists
+    if (useCache && isValidCachedFixture(cache[name], runsPerFixture, expected, currentFingerprint)) {
+      const cached = cache[name];
+      console.log(`  (reusing ${runsPerFixture}/${runsPerFixture} cached runs from ${path.basename(cachePath)})`);
+      for (let r = 0; r < cached.runs.length; r++) {
+        const run = cached.runs[r];
+        console.log(
+          `  run ${r + 1}/${runsPerFixture} … [cached] ${run.wallMs} ms  in=${run.promptTokens} out=${run.outputTokens}  ` +
+            run.scores.map((s) => `${s.category[0]}:${s.score}`).join(' ')
+        );
+      }
+      fixtureResults.push({
+        ...cached,
+        hasCandidateAnswers: true,
+      });
+      continue;
+    }
+
     const runs: RunResult[] = [];
 
-    for (let run = 0; run < runsPerFixture; run++) {
+    // Check for partial valid cached runs that can be topped up
+    const existingValidRuns: RunResult[] =
+      useCache && cache[name] && Array.isArray(cache[name].runs)
+        ? filterValidCachedRuns(cache[name].runs, expected, currentFingerprint)
+        : [];
+
+    if (existingValidRuns.length > 0) {
+      const reusedCount = Math.min(existingValidRuns.length, runsPerFixture);
+      console.log(`  (reusing ${reusedCount}/${runsPerFixture} valid cached runs from ${path.basename(cachePath)})`);
+      for (let r = 0; r < reusedCount; r++) {
+        const cachedRun = existingValidRuns[r];
+        runs.push(cachedRun);
+        console.log(
+          `  run ${r + 1}/${runsPerFixture} … [cached] ${cachedRun.wallMs} ms  in=${cachedRun.promptTokens} out=${cachedRun.outputTokens}  ` +
+            cachedRun.scores.map((s) => `${s.category[0]}:${s.score}`).join(' ')
+        );
+      }
+    }
+
+    for (let run = runs.length; run < runsPerFixture; run++) {
       // Throttle to avoid free-tier rate limits (5 req/min)
       if (!isFirstCall) {
         await sleep(delayMs);
@@ -964,16 +1561,41 @@ async function main() {
           promptTokens: result.usageMetadata?.promptTokenCount ?? 0,
           outputTokens: result.usageMetadata?.candidatesTokenCount ?? 0,
           scores: result.scores.map((s) => ({ category: s.category, score: s.score })),
+          fingerprint: currentFingerprint,
         };
         runs.push(runResult);
         console.log(
           `${wallMs} ms  in=${runResult.promptTokens} out=${runResult.outputTokens}  ` +
             runResult.scores.map((s) => `${s.category[0]}:${s.score}`).join(' ')
         );
+
+        // Persist incrementally: save valid runs accumulated so far so an
+        // interrupted benchmark can recover completed runs on the next execution.
+        if (useCache) {
+          cache[name] = {
+            name,
+            role: role.label,
+            runs: [...runs],
+            expected,
+            pass: undefined,
+            failReasons: [],
+            hasCandidateAnswers: true,
+            fingerprint: currentFingerprint,
+          };
+          saveBenchCache(cachePath, cache);
+        }
       } catch (err) {
         const wallMs = Math.round(performance.now() - start);
         runs.push({ wallMs, promptTokens: 0, outputTokens: 0, scores: [], error: (err as Error).message });
         console.log(`ERROR — ${(err as Error).message}`);
+
+        if (err instanceof ExcessiveRetryDelayError) {
+          console.error(
+            `\n🛑 BENCHMARK ABORTED: Gemini rate-limit error exceeded maximum retry delay (${Math.round(err.retryDelayMs / 1000)}s > ${Math.round(err.maxAllowedMs / 1000)}s). Stopping benchmark.`
+          );
+          abortBenchmark = true;
+          break;
+        }
       }
     }
 
@@ -987,7 +1609,26 @@ async function main() {
       failReasons = validation.failReasons;
     }
 
-    fixtureResults.push({ name, role: role.label, runs, expected, pass, failReasons });
+    fixtureResults.push({
+      name,
+      role: role.label,
+      runs,
+      expected,
+      pass,
+      failReasons,
+      hasCandidateAnswers: true,
+      fingerprint: currentFingerprint,
+    });
+
+    const fixtureRes = fixtureResults[fixtureResults.length - 1];
+    if (useCache && isValidCachedFixture(fixtureRes, runsPerFixture, expected, currentFingerprint)) {
+      cache[name] = fixtureRes;
+      saveBenchCache(cachePath, cache);
+    }
+
+    if (abortBenchmark) {
+      break;
+    }
   }
 
   // ── Summary table ───────────────────────────────────────────────────────────
@@ -1235,6 +1876,55 @@ async function main() {
     console.log(`  Concise answer verdict  : ${conciseAnswersOk ? '✅ PASS' : '❌ FAIL'}`);
   }
 
+  // ── Score Spread & Consistency (S-7, NFR-19) ─────────────────────────────────
+  let scoreSpreadOk = true;
+  if (runsPerFixture >= 2) {
+    console.log(
+      `\nScore Spread & Consistency (S-7 / NFR-19, threshold <= 1.0 pt, runs: ${runsPerFixture}):`
+    );
+    const spreadEval = evaluateScoreSpread(fixtureResults, {
+      requestedRuns: runsPerFixture,
+      maxSpreadThreshold: 1.0,
+    });
+    scoreSpreadOk = spreadEval.pass;
+
+    console.log('\nPer-fixture category score spreads:');
+    for (const fixture of spreadEval.fixtureResults) {
+      if (fixture.status === 'SKIPPED') {
+        console.log(`  ⏭️  ${pad(fixture.fixtureName, 32, true)}: SKIPPED — ${fixture.skipReason}`);
+        continue;
+      }
+      if (fixture.status === 'INCONCLUSIVE') {
+        console.log(`  ⚠️  ${pad(fixture.fixtureName, 32, true)}: INCONCLUSIVE — ${fixture.inconclusiveReason}`);
+        continue;
+      }
+      const statusIcon = fixture.status === 'PASS' ? '✅' : '❌';
+      const maxSpreadStr = fixture.maxSpread !== undefined ? `max spread: ${fixture.maxSpread.toFixed(1)} pt` : '';
+      console.log(`  ${statusIcon} ${pad(fixture.fixtureName, 32, true)} (${maxSpreadStr})`);
+      for (const cat of fixture.categories) {
+        const catIcon = cat.pass ? '✅' : '❌';
+        console.log(
+          `     - ${pad(cat.category, 42, true)}: min=${cat.min.toFixed(1)}, max=${cat.max.toFixed(1)}, spread=${cat.spread.toFixed(1)} pt  ${catIcon}`
+        );
+      }
+    }
+
+    const totalCount = spreadEval.fixtureResults.length;
+    const skippedCount = spreadEval.skippedFixtures.length;
+    const evaluatedCount = totalCount - skippedCount;
+    const passedCount = spreadEval.passedFixtures.length;
+    const failedCount = new Set(spreadEval.exceededFixtures.map((e) => e.fixtureName)).size;
+    const inconclusiveCount = spreadEval.inconclusiveFixtures.length;
+
+    console.log(
+      `  Spread consistency       : ${passedCount}/${evaluatedCount} evaluated fixtures passed spread threshold (<= 1.0 pt)`
+    );
+    console.log(
+      `  Summary breakdown        : ${evaluatedCount} evaluated, ${passedCount} passed, ${failedCount} failed, ${inconclusiveCount} inconclusive, ${skippedCount} skipped`
+    );
+    console.log(`  Consistency verdict      : ${scoreSpreadOk ? '✅ PASS' : '❌ FAIL'}`);
+  }
+
   // ── Accuracy verdict ─────────────────────────────────────────────────────────
 
   console.log('\nAccuracy:');
@@ -1250,7 +1940,8 @@ async function main() {
     !techIndependenceOk ||
     !difficultyAwarenessOk ||
     !scoreSeparationOk ||
-    !conciseAnswersOk
+    !conciseAnswersOk ||
+    !scoreSpreadOk
   ) {
     if (!accuracyOk)
       console.error(
@@ -1269,6 +1960,10 @@ async function main() {
     if (!conciseAnswersOk)
       console.error(
         `❌ CONCISE ANSWERS: concise answer scored lower than long vague answer or failed technical quality threshold (>= 3.50) (S-6, NFR-19)`
+      );
+    if (!scoreSpreadOk)
+      console.error(
+        `❌ SCORE SPREAD: one or more fixtures exceeded the 1.0 point spread threshold or were inconclusive (S-7, NFR-19)`
       );
     process.exit(1);
   } else {
