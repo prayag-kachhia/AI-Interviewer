@@ -556,12 +556,12 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
         live.callbacks.onStateChange('LISTENING');
       });
 
-      // Quiet mic hum below threshold (0.03) must not delay the 9 s countdown.
+      // Ambient room/fan noise below speech threshold (0.12) must not delay the 9 s countdown.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(3000);
       });
       act(() => {
-        live.callbacks.onAudioLevel?.(0.01);
+        live.callbacks.onAudioLevel?.(0.08);
       });
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5999);

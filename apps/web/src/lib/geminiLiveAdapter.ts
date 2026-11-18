@@ -147,6 +147,14 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
+          // Give candidates breathing room for short thinking pauses mid-answer without cutting them off.
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              disabled: false,
+              endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+              silenceDurationMs: 2000,
+            },
+          },
         };
         if (this.resumptionHandle) {
           setup.sessionResumption = { handle: this.resumptionHandle };

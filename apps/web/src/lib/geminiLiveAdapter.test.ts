@@ -170,6 +170,13 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
     ws.simulateOpen();
     const [{ setup }] = ws.sent();
     expect(setup.generationConfig.responseModalities).toEqual(['AUDIO']);
+    expect(setup.realtimeInputConfig).toEqual({
+      automaticActivityDetection: {
+        disabled: false,
+        endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+        silenceDurationMs: 2000,
+      },
+    });
     expect(setup.model).toBeUndefined();
     expect(setup.systemInstruction).toBeUndefined();
     expect(MockAudioContext.instances).toHaveLength(1); // output only, no mic capture yet

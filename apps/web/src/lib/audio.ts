@@ -127,10 +127,12 @@ export class PlaybackQueue {
     let audioBuffer: AudioBuffer;
 
     if (audioData instanceof Float32Array) {
+      if (audioData.length === 0) return;
       audioBuffer = this.ctx.createBuffer(1, audioData.length, this.sampleRate);
       audioBuffer.copyToChannel(audioData as Float32Array<ArrayBuffer>, 0);
     } else if (audioData instanceof ArrayBuffer) {
       const float32 = pcm16ToFloat(audioData);
+      if (float32.length === 0) return;
       audioBuffer = this.ctx.createBuffer(1, float32.length, this.sampleRate);
       audioBuffer.copyToChannel(float32 as Float32Array<ArrayBuffer>, 0);
     } else {
@@ -146,9 +148,6 @@ export class PlaybackQueue {
       this.nextPlayTime = currentTime + 0.05; // 50ms buffer for seamless streaming
     }
 
-    source.start(this.nextPlayTime);
-    this.nextPlayTime += audioBuffer.duration;
-
     this.activeSources.push(source);
     source.onended = () => {
       const idx = this.activeSources.indexOf(source);
@@ -159,6 +158,9 @@ export class PlaybackQueue {
         this.onDrained?.();
       }
     };
+
+    source.start(this.nextPlayTime);
+    this.nextPlayTime += audioBuffer.duration;
   }
 
   /**
