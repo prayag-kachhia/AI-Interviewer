@@ -87,7 +87,7 @@ This document is the official Software Requirements Specification (SRS) and Requ
 |---|---|---|
 | **FR-31** | The system shall allow the platform owner to add, edit, or remove an interview role and its interviewer briefing without a code change. | Should |
 | **FR-32** | The system shall report to the platform owner the number of sessions run, their durations, and the resulting infrastructure cost over a chosen period. | Should |
-| **FR-33** | The system shall show the Placement Cell anonymous, aggregate cohort statistics (interviews per role per week, completion rate, average score per category), shall never reveal an individual candidate’s identity, transcript or scores, and shall hide any group of fewer than 5 candidates. | Could |
+| **FR-33** | The system shall show the Placement Cell anonymous, aggregate cohort statistics (interviews per role per week, completion rate, average score per category), shall never reveal an individual candidate’s identity, transcript or scores, and shall hide any group of fewer than 5 candidates. **Dropped on 18 Nov 2026 (see §6).** | Could |
 
 ---
 
@@ -171,7 +171,7 @@ This document is the official Software Requirements Specification (SRS) and Requ
 | **OI-3** | Write per-role evaluation rubrics. | FR-20, NFR-18, NFR-19 | Elicitation pair | Role rubrics documented in evaluation service. |
 | **OI-4** | Validate 100-concurrent-session figure. | NFR-06 | Placement Cell liaison | Placement Cell consultation. |
 | **OI-5** | Decide whether FR-30 (text alternative) is in scope. | FR-30, NFR-14 | Team lead | Scoped in for Sprint 4/5. |
-| **OI-6** | Consult Placement Cell on desired aggregate data. | FR-33 | Placement Cell liaison | Stakeholder interview. Until then FR-33 is the minimal anonymous view in RJ-13. |
+| **OI-6** | Consult Placement Cell on desired aggregate data. | FR-33 | Placement Cell liaison | Closed on 18 Nov 2026: FR-33 was dropped, so the consultation is no longer needed. |
 
 ---
 
@@ -182,7 +182,9 @@ Every requirement maps to code, tests, and current delivery status.
 ### Status Legend
 - **Done**: Fully implemented and covered by automated tests.
 - **In Progress**: Active work in current sprint.
+- **Partial**: Works, but does not yet meet the full requirement; the note says what is missing.
 - **Deferred**: Postponed beyond MVP with recorded justification.
+- **Dropped**: The team decided not to build it; kept in the table so requirement IDs stay stable.
 
 | Req ID | Priority | Description | Issue / PR | Code File(s) | Test File(s) | Status | Notes / Deferral Reason |
 |---|---|---|---|---|---|---|---|
@@ -218,7 +220,7 @@ Every requirement maps to code, tests, and current delivery status.
 | **FR-30** | Should | Full typed interview mode (no microphone needed) | #156 | `apps/web/src/screens/interview-room/TypedAnswerBox.tsx`, `apps/api/src/routes/sessions.ts` | | Done | Typed answers in the room (PK-4) |
 | **FR-31** | Should | Add/edit roles without code change | #172 | — | — | Deferred | Out of scope for MVP; roles defined in shared contracts |
 | **FR-32** | Should | Owner dashboard reporting session count, duration, cost | #201 | `apps/web/src/screens/admin-dashboard/AdminDashboard.tsx` | | In Progress | Sprint 5 task RJ-10 |
-| **FR-33** | Could | Aggregate cohort statistics for the Placement Cell, no individual data | #274 | — | | In Progress | Sprint 5 task RJ-13, after RJ-10. Minimal version until the OI-6 consultation says what the Placement Cell wants |
+| **FR-33** | Could | Aggregate cohort statistics for the Placement Cell, no individual data | #274 | — | — | Dropped | Dropped by the team on 18 Nov 2026; RJ-13 (#274) closed as not planned |
 | **NFR-01** | Must | Spoken response within 5 seconds for ≥95% of turns | #146 | `apps/web/src/lib/geminiLiveAdapter.ts` | `apps/web/src/lib/geminiLiveAdapter.test.ts` | In Progress | Not measured yet (VI-7) |
 | **NFR-02** | Should | Barge-in interruption stops audio within 500 ms | #105, #110, #141 | `apps/web/src/lib/geminiLiveAdapter.ts`, `apps/web/src/screens/interview-room/useInterview.ts` | `apps/web/src/lib/geminiLiveAdapter.test.ts`, `apps/web/src/lib/__tests__/transcriptAccumulator.test.ts`, `apps/web/src/screens/interview-room/InterviewRoom.test.tsx` | In Progress | Live adapter wired into room (`ADR-0014`); client stops playback immediately on `interrupted`; 50-event live timing measurement in test report |
 | **NFR-03** | Must | Structured feedback within 15 seconds for ≥95% of sessions | #86, #122 | `apps/api/src/services/evaluator.service.ts`, `apps/api/src/worker.ts` | `apps/api/src/__tests__/evaluator.test.ts`, `apps/api/src/__tests__/evaluate-cli.test.ts` | Partial | Background worker, benchmarked. Since per-answer feedback, a full-length interview (10+ answers) takes longer than 15 s to grade, so the Gemini timeout is 60 s (it was 12 s, which made those jobs fail). Short sessions still meet 15 s; making long ones fit needs a faster evaluation call. |

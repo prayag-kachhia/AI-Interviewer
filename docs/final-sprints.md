@@ -84,7 +84,7 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 | Rahi | 10 | 1 | 4 | 5 | 6 | D-4 (1 day) |
 | Ved | 8 | 1 | 5 | 2 | 5.5 | D-3 (1 day) |
 | Vismay | 9 | 2 | 4 | 3 | 6.25 | – |
-| Raj | 9 | 1 | 6 | 2 | 5.75 | – |
+| Raj | 8 | 1 | 5 | 2 | 5.25 | – |
 
 Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
@@ -977,7 +977,7 @@ Candidates see an honest summary of their open-source work, and the interviewer 
 
 ### Raj: identity, end-to-end tests
 
-About 5.75 days · 9 counted PRs (0 already merged) · 1 Hard, 6 Medium, 2 Easy · review partner: Prayag
+About 5.25 days · 8 counted PRs (0 already merged) · 1 Hard, 5 Medium, 2 Easy · review partner: Prayag
 
 **[RJ-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/78) · Show when resume AI analysis fell back** · Easy · 0.5 days · Sprint 4
 
@@ -1029,7 +1029,7 @@ The project owner can see how the product is used and where it fails.
 - **Done when:** An admin sees the numbers on the live site, and a normal user gets 404.
 - **Depends on:** RH-2, P-5
 
-**[RJ-13](https://github.com/prayag-kachhia/AI-Interviewer/issues/274) · Placement Cell cohort view (FR-33)** · Medium · 0.5 days · Sprint 5
+**[RJ-13](https://github.com/prayag-kachhia/AI-Interviewer/issues/274) · Placement Cell cohort view (FR-33)** · **❌ dropped on 18 Nov (not counted)** · Medium · 0.5 days · Sprint 5
 
 The Placement Cell sees how a cohort is doing without seeing any individual (OI-1, FR-27, DR-06).
 
@@ -1155,7 +1155,7 @@ Testing is documented as a Software Engineering deliverable.
 
 **Cut first:**
 - P-11, RH-7, RH-8, VI-6, K-7 and V-6;
-- then P-13, P-16, RJ-10, RJ-13 and PN-5;
+- then P-13, P-16, RJ-10 and PN-5;
 - then VM-6, VM-7 and VM-13, documenting the deferral in the SRS.
 
 ## 8. Deferred
