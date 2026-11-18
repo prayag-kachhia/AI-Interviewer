@@ -13,7 +13,6 @@ describe('ThemeProvider', () => {
   beforeEach(() => {
     localStorage.clear();
     root.className = '';
-    root.removeAttribute('data-theme');
   });
 
   it('cycles Swiss, Haute, Graphite and back', () => {
@@ -32,15 +31,12 @@ describe('ThemeProvider', () => {
   it('puts the right classes on <html> for each theme', () => {
     localStorage.setItem('theme', 'graphite');
     render(<ThemeProvider><Probe /></ThemeProvider>);
-    // Graphite is a dark theme that overrides Haute. History's leftover legacy.css only knows light
-    // and dark, so its dark rules must still match in Graphite (until RH-10, #304).
+    // Graphite is a dark theme that overrides Haute.
     expect(root).toHaveClass('dark', 'graphite');
-    expect(root.dataset.theme).toBe('dark');
 
     fireEvent.click(screen.getByRole('button'));
     expect(root).not.toHaveClass('dark');
     expect(root).not.toHaveClass('graphite');
-    expect(root.dataset.theme).toBe('light');
     expect(localStorage.getItem('theme')).toBe('light');
   });
 
