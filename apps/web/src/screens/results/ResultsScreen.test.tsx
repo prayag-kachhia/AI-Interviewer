@@ -1,6 +1,7 @@
 // ResultsScreen.test.tsx
 import "@testing-library/jest-dom/vitest";
 import { test, expect, vi, afterEach } from "vitest";
+import { axe } from "vitest-axe";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ResultsScreen } from "./ResultsScreen";
@@ -16,13 +17,13 @@ import {
 // The real API client creates a Supabase client on import; these tests replace its calls anyway.
 vi.mock("../../lib/api", () => ({
   getFeedback: vi.fn(),
-  retryFeedback: vi.fn(),
-  getTurns: vi.fn().mockResolvedValue({ success: true, data: [] }),
-  deleteSession: vi.fn(),
   getSession: vi.fn().mockResolvedValue({
     success: true,
     data: { keep: false },
   }),
+  retryFeedback: vi.fn(),
+  getTurns: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  deleteSession: vi.fn(),
   updateSessionKeep: vi.fn(),
 }));
 
@@ -42,9 +43,9 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.mocked(getFeedback).mockReset();
+  vi.mocked(getSession).mockReset().mockResolvedValue({ success: true, data: { keep: false } as any });
   vi.mocked(retryFeedback).mockReset();
   vi.mocked(deleteSession).mockReset();
-  vi.mocked(getSession).mockClear();
   vi.mocked(updateSessionKeep).mockReset();
 });
 
@@ -518,6 +519,32 @@ test("given feedback lacks per-answer feedback, then per-answer section is not r
   expect(screen.queryByTestId("per-answer-feedback-section")).not.toBeInTheDocument();
 });
 
+test("given session ended early with reason, then ResultsScreen displays the reason next to feedback (K-10, FR-19)", async () => {
+  vi.mocked(getSession).mockResolvedValueOnce({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: "2026-11-01T10:00:00Z",
+      endedAt: "2026-11-01T10:04:00Z",
+      endedEarly: true,
+      endReason: "technical_problem",
+    },
+  });
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Feedback summary.",
+    scores: [],
+  });
+
+  renderResults();
+  const badge = await screen.findByTestId("results-ended-early");
+  expect(badge).toHaveTextContent("Ended early (Technical problem)");
+});
+
 test("given an unkept interview, when I click Keep interview, then it is protected", async () => {
   vi.mocked(getSession).mockResolvedValue({
     success: true,
@@ -586,4 +613,440 @@ test("given a kept interview, when I click Unkeep interview, then protection is 
 
   expect(updateSessionKeep).toHaveBeenCalledWith("s1", false);
   expect(await screen.findByRole("button", { name: "Keep interview" })).toBeInTheDocument();
+});
+
+test("displays accurate summary statistics for questions asked, answers given, and duration (RH-8)", async () => {
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: "2026-11-17T10:00:00.000Z",
+      endedAt: "2026-11-17T10:14:32.000Z",
+      keep: false,
+    },
+  });
+
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Solid interview.",
+    scores: [],
+  });
+
+  vi.mocked(getTurns).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "t1",
+        sessionId: "s1",
+        speaker: "AI",
+        text: "Welcome to your interview today! Let's get started.",
+        timestampSec: 2,
+        turnIndex: 1,
+        createdAt: "2026-11-17T10:00:02Z",
+      },
+      {
+        id: "t2",
+        sessionId: "s1",
+        speaker: "AI",
+        text: "How do hash tables resolve collisions?",
+        timestampSec: 5,
+        turnIndex: 2,
+        createdAt: "2026-11-17T10:00:05Z",
+      },
+      {
+        id: "t3",
+        sessionId: "s1",
+        speaker: "CANDIDATE",
+        text: "They use chaining or open addressing.",
+        timestampSec: 20,
+        turnIndex: 3,
+        createdAt: "2026-11-17T10:00:20Z",
+      },
+      {
+        id: "t4",
+        sessionId: "s1",
+        speaker: "AI",
+        text: "Take your time, let me know when you're ready.",
+        timestampSec: 30,
+        turnIndex: 4,
+        createdAt: "2026-11-17T10:00:30Z",
+      },
+      {
+        id: "t5",
+        sessionId: "s1",
+        speaker: "AI",
+        text: "Tell me about a time you optimized a slow query.",
+        timestampSec: 45,
+        turnIndex: 5,
+        createdAt: "2026-11-17T10:00:45Z",
+      },
+      {
+        id: "t6",
+        sessionId: "s1",
+        speaker: "CANDIDATE",
+        text: "I added an index on user_id.",
+        timestampSec: 75,
+        turnIndex: 6,
+        createdAt: "2026-11-17T10:01:15Z",
+      },
+      {
+        id: "t7",
+        sessionId: "s1",
+        speaker: "AI",
+        text: "That concludes our interview. Thank you!",
+        timestampSec: 90,
+        turnIndex: 7,
+        createdAt: "2026-11-17T10:01:30Z",
+      },
+    ],
+  });
+
+  renderResults();
+
+  const statsSection = await screen.findByTestId("summary-stats-section");
+  expect(statsSection).toBeInTheDocument();
+
+  // Questions Asked = 2 (t2, t5)
+  const questionsCard = screen.getByTestId("stat-questions-asked");
+  expect(questionsCard).toHaveTextContent("Questions Asked");
+  expect(questionsCard).toHaveTextContent("2");
+
+  // Answers Given = 2 (t3, t6)
+  const answersCard = screen.getByTestId("stat-answers-given");
+  expect(answersCard).toHaveTextContent("Answers Given");
+  expect(answersCard).toHaveTextContent("2");
+
+  // Duration = 14:32 (872 seconds)
+  const durationCard = screen.getByTestId("stat-duration");
+  expect(durationCard).toHaveTextContent("Duration");
+  expect(durationCard).toHaveTextContent("14:32");
+});
+
+test("shows loading state in summary stats without displaying misleading zero values before transcript loads (RH-8)", async () => {
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: "2026-11-17T10:00:00.000Z",
+      endedAt: "2026-11-17T10:10:00.000Z",
+      keep: false,
+    },
+  });
+
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Solid interview.",
+    scores: [],
+  });
+
+  // Turns remain in pending loading state
+  let resolveTurns: (val: any) => void = () => {};
+  const turnsPromise = new Promise((resolve) => {
+    resolveTurns = resolve;
+  });
+  vi.mocked(getTurns).mockReturnValue(turnsPromise as any);
+
+  renderResults();
+
+  const statsSection = screen.getByTestId("summary-stats-section");
+  expect(statsSection).toBeInTheDocument();
+
+  // Questions and answers should show Loading…, not 0
+  const loadingElements = screen.getAllByText("Loading…");
+  expect(loadingElements.length).toBeGreaterThanOrEqual(2);
+
+  // Now resolve turns with empty list
+  await act(async () => {
+    resolveTurns({ success: true, data: [] });
+  });
+
+  // After loading completes with 0 turns, 0 is legitimately displayed
+  expect(await screen.findByTestId("stat-questions-asked")).toHaveTextContent("0");
+  expect(screen.getByTestId("stat-answers-given")).toHaveTextContent("0");
+});
+
+test("handles missing or invalid timestamps without inventing durations (RH-8)", async () => {
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "LIVE",
+      startedAt: "2026-11-17T10:00:00.000Z",
+      endedAt: null,
+      keep: false,
+    },
+  });
+
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "In progress.",
+    scores: [],
+  });
+
+  vi.mocked(getTurns).mockResolvedValue({ success: true, data: [] });
+
+  renderResults();
+
+  expect(await screen.findByText("Duration")).toBeInTheDocument();
+  expect(screen.getByText("Unavailable")).toBeInTheDocument();
+});
+
+test("triggers Markdown download with correct filename and cleans up object URL (RH-8)", async () => {
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  const createObjectURLMock = vi.fn().mockReturnValue("blob:http://localhost/mock-download-url");
+  const revokeObjectURLMock = vi.fn();
+  URL.createObjectURL = createObjectURLMock;
+  URL.revokeObjectURL = revokeObjectURLMock;
+
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: "2026-11-17T10:00:00.000Z",
+      endedAt: "2026-11-17T10:15:00.000Z",
+      company: "Google",
+      focus: "Frontend",
+      keep: false,
+    },
+  });
+
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Excellent responses.",
+    scores: [
+      {
+        category: "Communication",
+        score: 5,
+        comment: "Very articulate.",
+        strengths: ["Clear phrasing"],
+        improvements: ["Pacing"],
+        quote: "I prefer component modularity.",
+      },
+    ],
+  });
+
+  vi.mocked(getTurns).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "t1",
+        sessionId: "s1",
+        speaker: "AI",
+        text: "Can you explain React hooks?",
+        timestampSec: 10,
+        turnIndex: 1,
+        createdAt: "2026-11-17T10:00:10Z",
+      },
+      {
+        id: "t2",
+        sessionId: "s1",
+        speaker: "CANDIDATE",
+        text: "Hooks let you use state and other React features without writing a class.",
+        timestampSec: 30,
+        turnIndex: 2,
+        createdAt: "2026-11-17T10:00:30Z",
+      },
+    ],
+  });
+
+  renderResults();
+
+  const downloadBtn = await screen.findByRole("button", { name: "Download Markdown" });
+  expect(downloadBtn).toBeEnabled();
+
+  fireEvent.click(downloadBtn);
+
+  expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+  const createdBlob = createObjectURLMock.mock.calls[0]?.[0] as Blob;
+  expect(createdBlob).toBeInstanceOf(Blob);
+
+  expect(revokeObjectURLMock).toHaveBeenCalledWith("blob:http://localhost/mock-download-url");
+
+  URL.createObjectURL = originalCreateObjectURL;
+  URL.revokeObjectURL = originalRevokeObjectURL;
+});
+
+test("allows downloading Markdown report even when feedback is pending or failed (RH-8)", async () => {
+  const originalCreateObjectURL = URL.createObjectURL;
+  const originalRevokeObjectURL = URL.revokeObjectURL;
+  const createObjectURLMock = vi.fn().mockReturnValue("blob:http://localhost/mock-download-url");
+  const revokeObjectURLMock = vi.fn();
+  URL.createObjectURL = createObjectURLMock;
+  URL.revokeObjectURL = revokeObjectURLMock;
+
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "data-analyst",
+      status: "ENDED",
+      startedAt: "2026-11-17T10:00:00.000Z",
+      endedAt: "2026-11-17T10:10:00.000Z",
+      keep: false,
+    },
+  });
+
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "failed",
+  });
+
+  vi.mocked(getTurns).mockResolvedValue({
+    success: true,
+    data: [],
+  });
+
+  renderResults();
+
+  const downloadBtn = await screen.findByRole("button", { name: "Download Markdown" });
+  expect(downloadBtn).toBeEnabled();
+
+  fireEvent.click(downloadBtn);
+
+  expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+  expect(revokeObjectURLMock).toHaveBeenCalledWith("blob:http://localhost/mock-download-url");
+
+  URL.createObjectURL = originalCreateObjectURL;
+  URL.revokeObjectURL = originalRevokeObjectURL;
+});
+
+test("disables Download Markdown button while session data is still loading (RH-8)", async () => {
+  let resolveSession: (val: any) => void = () => {};
+  const sessionPromise = new Promise((resolve) => {
+    resolveSession = resolve;
+  });
+  vi.mocked(getSession).mockReturnValue(sessionPromise as any);
+
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Good.",
+    scores: [],
+  });
+
+  vi.mocked(getTurns).mockResolvedValue({ success: true, data: [] });
+
+  renderResults();
+
+  const downloadBtn = screen.getByRole("button", { name: "Download Markdown" });
+  expect(downloadBtn).toBeDisabled();
+
+  await act(async () => {
+    resolveSession({
+      success: true,
+      data: {
+        id: "s1",
+        userId: "u1",
+        role: "software-engineer",
+        status: "ENDED",
+        startedAt: "2026-11-17T10:00:00.000Z",
+        endedAt: "2026-11-17T10:10:00.000Z",
+        keep: false,
+      },
+    });
+  });
+
+  expect(downloadBtn).toBeEnabled();
+});
+
+test("displays an error alert if downloading markdown fails (RH-8)", async () => {
+  const originalCreateObjectURL = URL.createObjectURL;
+  URL.createObjectURL = vi.fn().mockImplementation(() => {
+    throw new Error("Disk full");
+  });
+
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: "2026-11-17T10:00:00.000Z",
+      endedAt: "2026-11-17T10:10:00.000Z",
+      keep: false,
+    },
+  });
+
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Good job.",
+    scores: [],
+  });
+
+  vi.mocked(getTurns).mockResolvedValue({ success: true, data: [] });
+
+  renderResults();
+
+  const downloadBtn = await screen.findByRole("button", { name: "Download Markdown" });
+  fireEvent.click(downloadBtn);
+
+  expect(
+    await screen.findByText("Unable to download interview report. Please try again.")
+  ).toBeInTheDocument();
+
+  URL.createObjectURL = originalCreateObjectURL;
+});
+
+test("has no accessibility violations in ready feedback state", async () => {
+  vi.mocked(getSession).mockResolvedValue({
+    success: true,
+    data: {
+      id: "s1",
+      userId: "u1",
+      role: "software-engineer",
+      status: "ENDED",
+      startedAt: "2026-11-17T10:00:00.000Z",
+      endedAt: "2026-11-17T10:10:00.000Z",
+      keep: false,
+    },
+  });
+
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "ready",
+    summary: "Solid interview performance.",
+    scores: [
+      { category: "Communication", score: 4, comment: "Good", strengths: ["Clear"], improvements: ["Pacing"], quote: "Example quote" },
+      { category: "System Design", score: 5, comment: "Great", strengths: ["Architecture"], improvements: [], quote: "" },
+      { category: "Problem Solving", score: 3, comment: "Fair", strengths: [], improvements: ["Edge cases"], quote: "" },
+    ],
+  });
+
+  vi.mocked(getTurns).mockResolvedValue({ success: true, data: [] });
+
+  const { container } = renderResults();
+  await screen.findByText("Solid interview performance.");
+
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test("has no accessibility violations in pending feedback state", async () => {
+  vi.mocked(getFeedback).mockResolvedValue({
+    sessionId: "s1",
+    status: "pending",
+  });
+
+  const { container } = renderResults();
+  await screen.findByRole("status");
+
+  expect(await axe(container)).toHaveNoViolations();
 });

@@ -201,3 +201,38 @@ test('handles upload directly without fake 1.5s timer and reflects heuristic fal
     expect(screen.getByText('Analysis complete (basic parse)!')).toBeInTheDocument();
   });
 });
+
+test('displays rejection error alert when uploaded file is not a resume (HTTP 400)', async () => {
+  vi.mocked(api.getLatestResume).mockRejectedValueOnce(new Error('404 Not Found'));
+  vi.mocked(api.uploadResume).mockRejectedValueOnce({
+    response: {
+      status: 400,
+      data: {
+        success: false,
+        message: "This doesn't look like a resume. Please upload your CV as a PDF.",
+      },
+    },
+  });
+
+  const { container } = render(
+    <MemoryRouter>
+      <Dashboard />
+    </MemoryRouter>
+  );
+
+  const file = new File(['%PDF dummy'], 'menu.pdf', { type: 'application/pdf' });
+  const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+  fireEvent.change(fileInput, { target: { files: [file] } });
+
+  const analyzeButton = screen.getByRole('button', { name: /Analyze resume/i });
+  fireEvent.click(analyzeButton);
+
+  await waitFor(() => {
+    expect(
+      screen.getByText("This doesn't look like a resume. Please upload your CV as a PDF.")
+    ).toBeInTheDocument();
+  });
+
+  expect(mockNavigate).not.toHaveBeenCalled();
+});

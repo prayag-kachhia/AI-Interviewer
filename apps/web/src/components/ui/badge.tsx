@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 const dot = "before:size-1.5 before:rounded-full before:bg-current"
 
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center gap-1.5 rounded-full border border-transparent px-2.5 py-0.5 text-xs font-medium whitespace-nowrap [&>svg]:size-3",
+  "inline-flex w-fit shrink-0 items-center gap-1.5 rounded-(--r-pill) border border-transparent px-2.5 py-0.5 text-xs font-medium label whitespace-nowrap [&>svg]:size-3",
   {
     variants: {
       variant: {

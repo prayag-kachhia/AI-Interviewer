@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { test, expect, vi, afterEach } from "vitest";
+import { axe } from "vitest-axe";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { GuidePage } from "./GuidePage";
@@ -373,4 +374,30 @@ test("does not let a stale response from a quick toggle overwrite the latest sta
   // Checkbox should stay unchecked because the second click was completed: false
   expect(checkbox).not.toBeChecked();
   expect(screen.getByText("To do")).toBeInTheDocument();
+});
+
+test("has no accessibility violations with populated improvement plan", async () => {
+  vi.mocked(getInsights).mockResolvedValue(MOCK_PLAN);
+
+  const { container } = render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  await screen.findByRole("heading", { name: "Improvement Guide" });
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test("has no accessibility violations in empty/not-found state", async () => {
+  vi.mocked(getInsights).mockRejectedValue({ response: { status: 404 } });
+
+  const { container } = render(
+    <MemoryRouter>
+      <GuidePage />
+    </MemoryRouter>
+  );
+
+  await screen.findByText("No Improvement Guide Yet");
+  expect(await axe(container)).toHaveNoViolations();
 });

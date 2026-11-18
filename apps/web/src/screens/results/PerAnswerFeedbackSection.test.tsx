@@ -55,6 +55,14 @@ describe("PerAnswerFeedbackSection (PN-9, #174)", () => {
     ).toBeInTheDocument();
   });
 
+  it("answer headers get the shared button reset, so they never show the browser's light default background", () => {
+    render(<PerAnswerFeedbackSection perAnswer={MOCK_PER_ANSWER} />);
+    // The app has no global CSS reset; [data-slot] is what clears a plain button's background and border.
+    for (const header of screen.getAllByRole("button", { expanded: false })) {
+      expect(header).toHaveAttribute("data-slot");
+    }
+  });
+
   it("answers are collapsed initially and expand on click", () => {
     render(<PerAnswerFeedbackSection perAnswer={MOCK_PER_ANSWER} />);
 

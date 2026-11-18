@@ -97,6 +97,28 @@ export type CreateSessionInput = z.infer<typeof CreateSessionInput>;
 export const SessionStatus = z.enum(["LIVE", "ENDED"]);
 export type SessionStatus = z.infer<typeof SessionStatus>;
 
+// Candidate reasons for ending an interview early (FR-19, K-10).
+export const EndReason = z.enum([
+  "finished_early",
+  "technical_problem",
+  "need_to_stop",
+  "other",
+]);
+export type EndReason = z.infer<typeof EndReason>;
+
+export const END_REASONS: { id: EndReason; label: string }[] = [
+  { id: "finished_early", label: "Finished early" },
+  { id: "technical_problem", label: "Technical problem" },
+  { id: "need_to_stop", label: "Need to stop" },
+  { id: "other", label: "Other" },
+];
+
+export function formatEndReason(reason?: string | null): string {
+  if (!reason) return "";
+  const match = END_REASONS.find((r) => r.id === reason);
+  return match ? match.label : reason;
+}
+
 export const TurnSpeaker = z.enum(["AI", "CANDIDATE"]);
 export type TurnSpeaker = z.infer<typeof TurnSpeaker>;
 
@@ -115,6 +137,12 @@ export type Turn = z.infer<typeof Turn>;
 export const FeedbackStatus = z.enum(["pending", "ready", "failed"]);
 export type FeedbackStatus = z.infer<typeof FeedbackStatus>;
 
+export const CategoryScore = z.object({
+  category: z.string().min(1),
+  score: z.number().min(1).max(5),
+});
+export type CategoryScore = z.infer<typeof CategoryScore>;
+
 export const Session = z.object({
   id: z.string(),
   userId: z.string(),
@@ -129,11 +157,13 @@ export const Session = z.object({
   keep: z.boolean().optional(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
+  endReason: EndReason.nullable().optional(),
   createdAt: z.string().optional(),
   turns: z.array(Turn).optional(),
   feedbackStatus: FeedbackStatus.nullable().optional(),
-  endedEarly: z.boolean().optional(),
   overallScore: z.number().nullable().optional(),
+  endedEarly: z.boolean().optional(),
+  categoryScores: z.array(CategoryScore).nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 
@@ -259,4 +289,35 @@ export const UpdateRoadmapProgressInput = z.object({
 });
 export type UpdateRoadmapProgressInput = z.infer<typeof UpdateRoadmapProgressInput>;
 
+// ---------------------------------------------------------------------------
+// Owner Dashboard & Admin Platform Statistics (FR-32, Issue #201)
+// ---------------------------------------------------------------------------
+
+export const AdminDailyInterview = z.object({
+  date: z.string(), // YYYY-MM-DD
+  count: z.number().int().min(0),
+});
+export type AdminDailyInterview = z.infer<typeof AdminDailyInterview>;
+
+export const AdminFeedbackCounts = z.object({
+  ready: z.number().int().min(0),
+  failed: z.number().int().min(0),
+});
+export type AdminFeedbackCounts = z.infer<typeof AdminFeedbackCounts>;
+
+export const AdminRoleAverageScore = z.object({
+  role: z.string(),
+  roleLabel: z.string(),
+  averageScore: z.number().nullable(),
+  sessionCount: z.number().int().min(0),
+});
+export type AdminRoleAverageScore = z.infer<typeof AdminRoleAverageScore>;
+
+export const AdminStats = z.object({
+  totalUsers: z.number().int().min(0),
+  interviewsPast14Days: z.array(AdminDailyInterview),
+  feedbackCounts: AdminFeedbackCounts,
+  averageScoresByRole: z.array(AdminRoleAverageScore),
+});
+export type AdminStats = z.infer<typeof AdminStats>;
 

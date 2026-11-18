@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router';
+import { BrowserRouter as Router, Routes, Route } from 'react-router';
+import { Landing } from './screens/landing/Landing';
 import { Navbar } from './components/Navbar';
 import { Login } from './screens/login/Login';
 import { ResetPassword } from './screens/reset-password/ResetPassword';
@@ -10,6 +11,7 @@ import { InterviewRoom } from './screens/interview-room/InterviewRoom';
 import { ResultsScreen } from './screens/results/ResultsScreen';
 import { HistoryPage } from './screens/history/HistoryPage';
 import { GuidePage } from './screens/guide/GuidePage';
+import { AdminDashboard } from './screens/admin/AdminDashboard';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -21,7 +23,7 @@ function App() {
         <Router>
           <Navbar />
           <Routes>
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
@@ -29,6 +31,7 @@ function App() {
             {/* Protected Routes */}
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/guide" element={<GuidePage />} />
               <Route path="/profile" element={<Profile />} />

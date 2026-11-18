@@ -32,7 +32,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: google-github-actions/auth@v3
         with:
@@ -43,11 +43,11 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version-file: .bun-version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Install
         run: bun install --frozen-lockfile
@@ -59,15 +59,21 @@ jobs:
           export DATABASE_URL
           bun run --filter @interview/api db:migrate
 
-      # --no-cpu-throttling and --min 1 keep the in-process feedback worker running between
-      # requests; without them Cloud Run pauses the CPU and feedback stays "pending".
+      # --no-cpu-throttling keeps the CPU on for as long as an instance is up, so the in-process
+      # feedback worker keeps running between requests. --min 0 lets Cloud Run stop the last
+      # instance about 15 minutes after the last request: with --min 1 it ran 24 h a day
+      # (~720 billed hours a month) for a handful of interviews. Nothing is lost when it stops:
+      # jobs live in the database, a stale lock is reclaimed after 5 minutes, the Results page
+      # keeps polling (and so keeps an instance up) while feedback is pending, and the daily
+      # retention purge is queued by the first instance to start each day. The cost is a cold
+      # start of a few seconds for the first visitor after a quiet spell.
       # --set-env-vars replaces every variable set by hand in the console, so the three Gemini
       # models are pinned here. To change a model, change it here.
       - name: Deploy the API to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" --source . --project "$PROJECT_ID" --region "$REGION" \
-            --no-cpu-throttling --min 1 --max 2 --memory 512Mi --allow-unauthenticated \
-            --set-env-vars "WEB_ORIGIN=https://$PROJECT_ID.web.app,SUPABASE_URL=${{ vars.SUPABASE_URL }},GEMINI_EVAL_MODEL=gemini-3.8-flash,GEMINI_RESUME_MODEL=gemini-3.8-flash,GEMINI_LIVE_MODEL=models/gemini-3.8-live" \
+            --no-cpu-throttling --min 0 --max 2 --memory 512Mi --allow-unauthenticated \
+            --set-env-vars "^|^WEB_ORIGIN=https://$PROJECT_ID.web.app|SUPABASE_URL=${{ vars.SUPABASE_URL }}|ADMIN_EMAILS=${{ vars.ADMIN_EMAILS }}|GEMINI_EVAL_MODEL=gemini-3.8-flash|GEMINI_RESUME_MODEL=gemini-3.8-flash|GEMINI_LIVE_MODEL=models/gemini-3.8-live" \
             --set-secrets "DATABASE_URL=database-url:latest,GEMINI_API_KEY=gemini-api-key:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest" \
             --quiet
           echo "API_URL=$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')" >> "$GITHUB_ENV"

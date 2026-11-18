@@ -6,6 +6,7 @@ import sessionRoutes from './routes/sessions';
 import feedbackRoutes from './routes/feedback';
 import insightsRoutes from './routes/insights';
 import meRoutes from './routes/me';
+import adminRoutes from './routes/admin';
 import { runWorker } from './worker';
 import { AppError } from './errors';
 
@@ -25,6 +26,7 @@ app.use('/api/sessions', sessionRoutes);
 app.use('/api/sessions', feedbackRoutes);
 app.use('/api/insights', insightsRoutes);
 app.use('/api/me', meRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {

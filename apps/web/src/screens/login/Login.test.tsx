@@ -1,10 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { axe } from "vitest-axe";
 import { render, screen, act, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { Login } from "./Login";
 import { AuthProvider, useAuth } from "../../context/AuthContext";
 import { ThemeProvider } from "../../context/ThemeContext";
+import { getStaySignedIn, clearAuthStorage, STAY_SIGNED_IN_KEY } from "../../lib/authStorage";
 
 // Mock Supabase client
 const mockGetSession = vi.fn().mockResolvedValue({ data: { session: null }, error: null });
@@ -405,7 +407,7 @@ describe("Login Screen - Sign Up Password Strength Meter", () => {
 
     const nameInput = screen.getByPlaceholderText(/jane doe/i);
     const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
-    const emailInput = emailInputs[1];
+    const emailInput = emailInputs[0];
     const passwordInput = screen.getByPlaceholderText(/create a strong password/i);
     const confirmInput = screen.getByPlaceholderText(/re-enter password/i);
     const submitBtn = screen.getByRole("button", { name: /create free account/i });
@@ -543,7 +545,7 @@ describe("Login Screen - Email OTP Signup & Unverified Sign In", () => {
 
     await act(async () => {
       fireEvent.change(nameInput, { target: { value: "Candidate Name" } });
-      fireEvent.change(emailInputs[1], { target: { value: "candidate@example.com" } });
+      fireEvent.change(emailInputs[0], { target: { value: "candidate@example.com" } });
       fireEvent.change(passwordInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.change(confirmInput, { target: { value: "Str0ng!P@ss2026#" } });
     });
@@ -596,7 +598,7 @@ describe("Login Screen - Email OTP Signup & Unverified Sign In", () => {
 
     await act(async () => {
       fireEvent.change(nameInput, { target: { value: "Candidate Name" } });
-      fireEvent.change(emailInputs[1], { target: { value: "existing@example.com" } });
+      fireEvent.change(emailInputs[0], { target: { value: "existing@example.com" } });
       fireEvent.change(passwordInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.change(confirmInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.click(submitBtn);
@@ -637,7 +639,7 @@ describe("Login Screen - Email OTP Signup & Unverified Sign In", () => {
 
     await act(async () => {
       fireEvent.change(nameInput, { target: { value: "Candidate Name" } });
-      fireEvent.change(emailInputs[1], { target: { value: "existing@example.com" } });
+      fireEvent.change(emailInputs[0], { target: { value: "existing@example.com" } });
       fireEvent.change(passwordInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.change(confirmInput, { target: { value: "Str0ng!P@ss2026#" } });
       fireEvent.click(submitBtn);
@@ -692,5 +694,294 @@ describe("Login Screen - Email OTP Signup & Unverified Sign In", () => {
     });
 
     expect(await screen.findByTestId("verify-screen")).toBeInTheDocument();
+  });
+});
+
+describe("Login Screen - Stay Signed In (FR-05 / Issue #198)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
+    clearAuthStorage();
+  });
+
+  it("renders 'Stay signed in' checkbox on sign-in form and it is unchecked by default", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: /stay signed in/i });
+    expect(checkbox).toBeInTheDocument();
+    expect(checkbox).not.toBeChecked();
+    expect(getStaySignedIn()).toBe(false);
+  });
+
+  it("allows toggling the 'Stay signed in' checkbox", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: /stay signed in/i });
+    expect(checkbox).not.toBeChecked();
+
+    await act(async () => {
+      fireEvent.click(checkbox);
+    });
+    expect(checkbox).toBeChecked();
+    expect(getStaySignedIn()).toBe(true);
+
+    await act(async () => {
+      fireEvent.click(checkbox);
+    });
+    expect(checkbox).not.toBeChecked();
+    expect(getStaySignedIn()).toBe(false);
+  });
+
+  it("does not render 'Stay signed in' checkbox on sign-up form", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={[{ pathname: "/login", state: { mode: "signup" } }]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    expect(screen.queryByRole("checkbox", { name: /stay signed in/i })).not.toBeInTheDocument();
+  });
+
+  it("submits email/password sign-in with staySignedIn: false when unchecked", async () => {
+    mockSignInWithPassword.mockResolvedValueOnce({
+      data: {
+        user: { id: "user-123", email: "user@example.com" },
+        session: { access_token: "mock-token", user: { id: "user-123", email: "user@example.com" } },
+      },
+      error: null,
+    });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/new-interview" element={<div data-testid="new-interview">New Interview</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    const passwordInputs = screen.getAllByPlaceholderText(/••••••••/i);
+    const checkbox = screen.getByRole("checkbox", { name: /stay signed in/i });
+    const signInBtn = screen.getByRole("button", { name: /sign in to dashboard/i });
+
+    expect(checkbox).not.toBeChecked();
+
+    await act(async () => {
+      fireEvent.change(emailInputs[0], { target: { value: "user@example.com" } });
+      fireEvent.change(passwordInputs[0], { target: { value: "Password123!" } });
+      fireEvent.click(signInBtn);
+    });
+
+    expect(mockSignInWithPassword).toHaveBeenCalledWith({
+      email: "user@example.com",
+      password: "Password123!",
+    });
+    expect(getStaySignedIn()).toBe(false);
+    expect(sessionStorage.getItem(STAY_SIGNED_IN_KEY)).toBe("false");
+    expect(localStorage.getItem(STAY_SIGNED_IN_KEY)).toBe("false");
+  });
+
+  it("submits email/password sign-in with staySignedIn: true when checked", async () => {
+    mockSignInWithPassword.mockResolvedValueOnce({
+      data: {
+        user: { id: "user-123", email: "user@example.com" },
+        session: { access_token: "mock-token", user: { id: "user-123", email: "user@example.com" } },
+      },
+      error: null,
+    });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/new-interview" element={<div data-testid="new-interview">New Interview</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const emailInputs = screen.getAllByPlaceholderText(/name@company.com/i);
+    const passwordInputs = screen.getAllByPlaceholderText(/••••••••/i);
+    const checkbox = screen.getByRole("checkbox", { name: /stay signed in/i });
+    const signInBtn = screen.getByRole("button", { name: /sign in to dashboard/i });
+
+    await act(async () => {
+      fireEvent.click(checkbox);
+    });
+    expect(checkbox).toBeChecked();
+
+    await act(async () => {
+      fireEvent.change(emailInputs[0], { target: { value: "user@example.com" } });
+      fireEvent.change(passwordInputs[0], { target: { value: "Password123!" } });
+      fireEvent.click(signInBtn);
+    });
+
+    expect(mockSignInWithPassword).toHaveBeenCalledWith({
+      email: "user@example.com",
+      password: "Password123!",
+    });
+    expect(getStaySignedIn()).toBe(true);
+    expect(localStorage.getItem(STAY_SIGNED_IN_KEY)).toBe("true");
+  });
+
+  it("persists staySignedIn: false when initiating Google sign-in with checkbox unchecked", async () => {
+    mockSignInWithOAuth.mockResolvedValueOnce({ error: null });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: /stay signed in/i });
+    expect(checkbox).not.toBeChecked();
+
+    const googleBtn = screen.getAllByRole("button", { name: /continue with google/i })[0];
+    await act(async () => {
+      fireEvent.click(googleBtn);
+    });
+
+    expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "google",
+      })
+    );
+    expect(getStaySignedIn()).toBe(false);
+    expect(sessionStorage.getItem(STAY_SIGNED_IN_KEY)).toBe("false");
+    expect(localStorage.getItem(STAY_SIGNED_IN_KEY)).toBe("false");
+  });
+
+  it("persists staySignedIn: true when initiating Google sign-in with checkbox checked", async () => {
+    mockSignInWithOAuth.mockResolvedValueOnce({ error: null });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: /stay signed in/i });
+    await act(async () => {
+      fireEvent.click(checkbox);
+    });
+    expect(checkbox).toBeChecked();
+
+    const googleBtn = screen.getAllByRole("button", { name: /continue with google/i })[0];
+    await act(async () => {
+      fireEvent.click(googleBtn);
+    });
+
+    expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "google",
+      })
+    );
+    expect(getStaySignedIn()).toBe(true);
+    expect(localStorage.getItem(STAY_SIGNED_IN_KEY)).toBe("true");
+  });
+
+  it("has no accessibility violations in Sign In view", async () => {
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("has no accessibility violations in Sign Up view", async () => {
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const signUpTab = screen.getByRole("tab", { name: /sign up/i });
+    await act(async () => {
+      fireEvent.click(signUpTab);
+    });
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("has no accessibility violations in Forgot Password view", async () => {
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const forgotBtn = screen.getByRole("button", { name: /forgot password\?/i });
+    await act(async () => {
+      fireEvent.click(forgotBtn);
+    });
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

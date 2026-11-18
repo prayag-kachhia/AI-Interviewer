@@ -4,6 +4,7 @@ export type {
   SessionStatus,
   TurnSpeaker,
   InterviewMode,
+  EndReason,
   ImprovementPlan,
   TopicPlan,
   PlanAction,
@@ -11,8 +12,9 @@ export type {
   LearningResource,
   InsightTopic,
   UpdateRoadmapProgressInput,
+  CategoryScore,
 } from '@interview/contracts';
-import type { CandidateProfile, Role, Session, Turn, ImprovementPlan } from '@interview/contracts';
+import type { CandidateProfile, Role, Session, Turn, ImprovementPlan, CategoryScore } from '@interview/contracts';
 
 export interface User {
   id: string;
@@ -47,7 +49,6 @@ export interface ResumeResponse {
 // Slice A — Live Session
 // ---------------------------------------------------------------------------
 
-
 export type InterviewVoiceState =
   | 'IDLE'
   | 'AI_SPEAKING'
@@ -61,6 +62,7 @@ export type TurnData = Turn;
 
 export interface HistorySession extends Session {
   overallScore?: number | null;
+  categoryScores?: CategoryScore[] | null;
 }
 
 export type SessionData = HistorySession;

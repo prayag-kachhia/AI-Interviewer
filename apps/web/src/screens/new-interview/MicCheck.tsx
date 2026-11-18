@@ -260,6 +260,9 @@ export const MicCheck: React.FC<MicCheckProps> = ({ onDeviceChange, className })
               ))
             )}
           </select>
+          <p className="text-[11px] text-muted-foreground">
+            Note: If the session falls back to browser speech, the browser uses your system default microphone.
+          </p>
         </div>
 
         {/* Level Meter Progress */}

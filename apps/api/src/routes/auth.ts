@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { createClient } from '@supabase/supabase-js';
 import prisma from '../db';
+import { isAdminEmail } from '../services/admin.service';
 
 const router = Router();
 
@@ -42,7 +43,10 @@ router.get('/me', authenticate, async (req, res) => {
 
   res.status(200).json({
     success: true,
-    data: user,
+    data: {
+      ...user,
+      isAdmin: Boolean(req.user?.isEmailConfirmed) && isAdminEmail(user.email),
+    },
   });
 });
 

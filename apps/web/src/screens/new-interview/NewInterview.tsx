@@ -1,315 +1,269 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router';
-import {
-  BrainCircuit,
-  AlertCircle,
-  ArrowRight,
-  ArrowLeft,
-  Loader2,
-  Code2,
-  BarChart3,
-  Server,
-  CheckCircle2,
-  FileText,
-} from 'lucide-react';
-import { createSession, getRoles, getLatestResume } from '../../lib/api';
-import { RoleList, ROLES, type Role } from '@interview/contracts';
+import React, { useEffect, useId, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router';
+import { AlertCircle, ArrowRight, Mic, PencilLine } from 'lucide-react';
+import { RoleList, ROLES, type InterviewMode, type Level, type Role } from '@interview/contracts';
+import { createSession, getLatestResume, getRoles } from '../../lib/api';
+import { cn } from '@/lib/utils';
+import { Alert, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { MicCheck } from './MicCheck';
 
-const ROLE_ICONS: Record<string, React.ReactNode> = {
-  'software-engineer': <Code2 size={22} color="var(--primary-color)" />,
-  'data-analyst': <BarChart3 size={22} color="var(--primary-color)" />,
-  'backend-developer': <Server size={22} color="var(--primary-color)" />,
-};
+const LEVELS: { value: Level; label: string }[] = [
+  { value: 'entry', label: 'Entry' },
+  { value: 'mid', label: 'Mid' },
+  { value: 'senior', label: 'Senior' },
+];
+
+const MODES: { value: InterviewMode; label: string; description: string; icon: React.ReactNode }[] = [
+  { value: 'voice', label: 'Voice', description: 'Talk with the interviewer out loud. Needs a microphone.', icon: <Mic /> },
+  { value: 'typed', label: 'Typed', description: 'Read questions and type your answers.', icon: <PencilLine /> },
+];
+
+const JOB_CONTEXT_MAX = 4000;
+
+/** The interview length the room enforces (useInterview's TIME_LIMIT_MIN). */
+const LENGTH_MIN = 15;
+
+/** A whole-card radio option: the card shows the gold border when its radio is checked. */
+function ChoiceCard({ value, title, description, icon }: { value: string; title: string; description?: string; icon?: React.ReactNode }) {
+  const id = useId();
+  return (
+    <label
+      htmlFor={id}
+      data-slot="choice-card"
+      className={cn(
+        'relative flex cursor-pointer gap-3 rounded-xl border bg-card p-4 pr-11 transition-colors hover:not-has-[[data-state=checked]]:border-input has-[[data-state=checked]]:border-primary',
+        !description && 'items-center py-3', // title-only cards (Level) are short, so centre everything
+      )}
+    >
+      {icon && (
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground [&_svg]:size-4">
+          {icon}
+        </span>
+      )}
+      <span className="grid gap-1">
+        <span id={`${id}-title`} className="font-medium">{title}</span>
+        {description && <span id={`${id}-desc`} className="text-sm text-muted-foreground">{description}</span>}
+      </span>
+      <RadioGroupItem
+        id={id}
+        value={value}
+        aria-labelledby={`${id}-title`}
+        aria-describedby={description ? `${id}-desc` : undefined}
+        className={cn('absolute right-4', description ? 'top-4' : 'top-1/2 -translate-y-1/2')}
+      />
+    </label>
+  );
+}
+
+function Section({ title, hint, id, children }: { title: string; hint?: string; id: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div>
+        <h2 id={id} className="mb-0 font-display text-lg font-medium text-foreground">{title}</h2>
+        {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export const NewInterview: React.FC = () => {
-  const [roles, setRoles] = useState<Role[]>(ROLES);
-  const [roleId, setRoleId] = useState<string>('');
-  const [jobContext, setJobContext] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [resumeName, setResumeName] = useState<string | null>(null);
-  const [resumeLoading, setResumeLoading] = useState(true);
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [roles, setRoles] = useState<Role[]>(ROLES);
+
+  // `?role=…&focus=…` pre-fills the form (for "Practise this" links); unknown values are ignored.
+  const initialRole = ROLES.find((r) => r.id === params.get('role'));
+  const [roleId, setRoleId] = useState(initialRole?.id ?? '');
+  const [focus, setFocus] = useState(initialRole?.focuses.find((f) => f === params.get('focus')));
+  const [company, setCompany] = useState('');
+  const [level, setLevel] = useState<Level>();
+  const [mode, setMode] = useState<InterviewMode>('voice');
+  const [jobContext, setJobContext] = useState('');
+
+  const [resumeName, setResumeName] = useState<string | null>();
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     getRoles()
       .then((res) => {
-        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-          setRoles(RoleList.parse(res.data));
-        }
+        if (res.success && Array.isArray(res.data) && res.data.length > 0) setRoles(RoleList.parse(res.data));
       })
-      .catch(() => {
-        // Fallback to centralized ROLES catalogue if offline
-      });
-  }, []);
-
-  useEffect(() => {
+      .catch(() => {}); // keep the built-in ROLES
     getLatestResume()
-      .then((res) => {
-        if (res.success && res.data?.fileName) {
-          setResumeName(res.data.fileName);
-        } else if (res.success && res.data) {
-          setResumeName(res.data.profile?.name ? `${res.data.profile.name}'s Resume` : 'Resume');
-        } else {
-          setResumeName(null);
-        }
-      })
-      .catch(() => {
-        setResumeName(null);
-      })
-      .finally(() => {
-        setResumeLoading(false);
-      });
+      .then((res) => setResumeName(res.success && res.data ? (res.data.fileName ?? 'Resume') : null))
+      .catch(() => setResumeName(null));
   }, []);
 
-  const handleStart = async () => {
-    if (!roleId || loading) return;
-    setLoading(true);
-    setError('');
-    try {
-      const res = await createSession({
-        roleId,
-        jobContext: jobContext.trim() || undefined,
-      });
-      if (res.success && res.data?.id) {
-        navigate(`/interview/${res.data.id}`);
-      } else {
-        setError(res.message || 'Could not start the interview session. Please try again.');
-      }
-    } catch (err: any) {
-      setError(
-        err.response?.data?.message ||
-          'Unable to create the interview session. Please check your connection and try again.'
-      );
-    } finally {
-      setLoading(false);
-    }
+  const role = roles.find((r) => r.id === roleId);
+
+  const chooseRole = (id: string) => {
+    setRoleId(id);
+    setFocus(undefined); // a focus belongs to one role
   };
 
+  const handleStart = async () => {
+    if (!roleId || starting) return;
+    setStarting(true);
+    setError('');
+    try {
+      const res = await createSession({ roleId, focus, company: company.trim() || undefined, level, mode, jobContext: jobContext.trim() || undefined });
+      if (res.success && res.data?.id) {
+        navigate(`/interview/${res.data.id}`);
+        return;
+      }
+      setError(res.message || 'The interview could not start. Try again.');
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'The interview could not start. Check your connection and try again.');
+    }
+    setStarting(false);
+  };
+
+  const notSet = <span className="text-muted-foreground">Not set</span>;
+  const summary: { term: string; value: React.ReactNode }[] = [
+    { term: 'Role', value: role?.label ?? <span className="text-muted-foreground">Pick a role</span> },
+    { term: 'Focus', value: focus ?? notSet },
+    { term: 'Company', value: company.trim() || notSet },
+    { term: 'Job description', value: jobContext.trim() ? 'Added' : notSet },
+    { term: 'Level', value: LEVELS.find((l) => l.value === level)?.label ?? notSet },
+    { term: 'Answering', value: mode === 'voice' ? 'Voice' : 'Typed' },
+    { term: 'Length', value: <span className="font-mono">{LENGTH_MIN} min</span> },
+  ];
+
   return (
-    <div className="container page-wrapper" style={{ maxWidth: '640px' }}>
-      <button
-        type="button"
-        className="btn btn-outline"
-        style={{ marginBottom: '1.5rem', padding: '0.5rem 1rem' }}
-        onClick={() => navigate('/dashboard')}
-      >
-        <ArrowLeft size={18} />
-        Back to Dashboard
-      </button>
+    <div className="mx-auto max-w-[1100px] px-4 pt-28 pb-40 sm:px-6 lg:pb-16">
+      <h1 className="mb-2 font-display text-3xl font-semibold tracking-tight text-foreground">Set up your interview</h1>
+      <p className="mb-10 max-w-[60ch] text-muted-foreground">
+        Choose what you want to practise. The interviewer adapts its questions to these choices and your resume.
+      </p>
 
-      <div className="card" style={{ padding: '2.75rem 2.25rem' }}>
-        <div className="card-header" style={{ marginBottom: '1.75rem' }}>
-          <div
-            style={{
-              width: '60px',
-              height: '60px',
-              borderRadius: '50%',
-              background: 'var(--primary-light)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: '1rem',
-            }}
-          >
-            <BrainCircuit size={32} color="var(--primary-color)" />
-          </div>
-          <h2 style={{ fontSize: '1.85rem', marginBottom: '0.5rem' }}>Choose an interview role</h2>
-          <p style={{ fontSize: '0.98rem', color: 'var(--text-muted)' }}>
-            Select a target role to start your live spoken AI interview session.
-          </p>
-        </div>
+      <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="flex flex-col gap-10">
+          <Section title="Role" id="role-heading">
+            <RadioGroup aria-labelledby="role-heading" value={roleId} onValueChange={chooseRole} className="grid gap-3 md:grid-cols-3">
+              {roles.map((r) => (
+                <ChoiceCard key={r.id} value={r.id} title={r.label} description={r.description} />
+              ))}
+            </RadioGroup>
+          </Section>
 
-        {error && (
-          <div className="alert alert-error" role="alert" style={{ marginBottom: '1.25rem' }}>
-            <AlertCircle size={20} />
-            <span>{error}</span>
-          </div>
-        )}
-
-        <div
-          role="radiogroup"
-          aria-label="Interview role options"
-          style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', margin: '1.5rem 0 2rem' }}
-        >
-          {roles.map((role) => {
-            const isSelected = roleId === role.id;
-            return (
-              <label
-                key={role.id}
-                className="card-hover"
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '1rem',
-                  padding: '1.15rem 1.25rem',
-                  borderRadius: '14px',
-                  border: `2px solid ${isSelected ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                  background: isSelected ? 'var(--primary-light)' : 'var(--surface-color)',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                }}
-              >
-                <input
-                  type="radio"
-                  name="interview-role"
-                  value={role.id}
-                  checked={isSelected}
-                  onChange={() => {
-                    setRoleId(role.id);
-                    setError('');
-                  }}
-                  disabled={loading}
-                  style={{ marginTop: '0.3rem', accentColor: 'var(--primary-color)' }}
-                />
-                <div style={{ flexGrow: 1 }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '0.5rem',
-                      marginBottom: role.description ? '0.25rem' : 0,
-                    }}
+          {role && (
+            <Section title="Focus (optional)" hint="Pick one area to go deeper on, or leave it open." id="focus-heading">
+              <div role="group" aria-labelledby="focus-heading" className="flex flex-wrap gap-2">
+                {role.focuses.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    data-slot="chip"
+                    aria-pressed={focus === f}
+                    onClick={() => setFocus(focus === f ? undefined : f)}
+                    className="h-10 cursor-pointer rounded-md border px-4 text-sm transition-colors outline-none hover:border-input focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-pressed:border-primary aria-pressed:text-primary"
                   >
-                    <span style={{ fontWeight: 600, fontSize: '1.05rem', color: 'var(--text-main)' }}>
-                      {role.label}
-                    </span>
-                    {isSelected ? (
-                      <CheckCircle2 size={20} color="var(--primary-color)" />
-                    ) : (
-                      ROLE_ICONS[role.id]
-                    )}
-                  </div>
-                  {role.description && (
-                    <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: 0 }}>
-                      {role.description}
-                    </p>
-                  )}
-                </div>
-              </label>
-            );
-          })}
-        </div>
-        <div
-          style={{
-            padding: '0.85rem 1rem',
-            borderRadius: '10px',
-            background: 'var(--bg-color)',
-            border: '1px solid var(--border-color)',
-            marginBottom: '1rem',
-            fontSize: '0.9rem',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '0.75rem',
-            flexWrap: 'wrap',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
-            <FileText size={18} color="var(--primary-color)" style={{ flexShrink: 0 }} />
-            <span
-              style={{
-                color: 'var(--text-main)',
-                fontWeight: 500,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {resumeLoading
-                ? 'Checking resume...'
-                : resumeName
-                  ? `Using resume: ${resumeName}`
-                  : 'No resume uploaded'}
-            </span>
-          </div>
-
-          <Link
-            to="/profile"
-            className="btn btn-outline"
-            style={{
-              padding: '0.35rem 0.75rem',
-              fontSize: '0.85rem',
-              textDecoration: 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              flexShrink: 0,
-            }}
-          >
-            View Profile
-          </Link>
-        </div>
-
-        {/* Optional Target Job Description (FR-11, PK-9) */}
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label
-            htmlFor="job-description-input"
-            style={{
-              display: 'block',
-              fontSize: '0.92rem',
-              fontWeight: 600,
-              color: 'var(--text-main)',
-              marginBottom: '0.35rem',
-            }}
-          >
-            Target Job Description <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(Optional)</span>
-          </label>
-          <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-            Paste the job description you are targeting (up to 4,000 characters). The AI interviewer will tailor its technical questions to the role.
-          </p>
-          <textarea
-            id="job-description-input"
-            aria-label="Target Job Description"
-            value={jobContext}
-            onChange={(e) => setJobContext(e.target.value)}
-            disabled={loading}
-            maxLength={4000}
-            rows={4}
-            placeholder="Paste job requirements, responsibilities, or role expectations here..."
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              borderRadius: '10px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--bg-color)',
-              color: 'var(--text-main)',
-              fontSize: '0.9rem',
-              fontFamily: 'inherit',
-              resize: 'vertical',
-              boxSizing: 'border-box',
-            }}
-          />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.25rem' }}>
-            <span style={{ fontSize: '0.75rem', color: jobContext.length > 4000 ? 'var(--danger-color)' : 'var(--text-muted)' }}>
-              {jobContext.length}/4,000 characters
-            </span>
-          </div>
-        </div>
-
-        <MicCheck className="mb-6" />
-
-        <button
-          type="button"
-          className="btn btn-primary"
-          style={{ width: '100%', padding: '0.9rem 1.5rem', fontSize: '1.05rem' }}
-          onClick={handleStart}
-          disabled={!roleId || loading}
-        >
-          {loading ? (
-            <>
-              <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-              Starting Interview...
-            </>
-          ) : (
-            <>
-              Start Interview
-              <ArrowRight size={18} />
-            </>
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </Section>
           )}
-        </button>
-        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+
+          <Section title="Company and level (optional)" id="details-heading">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <label htmlFor="company" className="text-sm text-muted-foreground">Company</label>
+                <Input id="company" placeholder="e.g. Atlassian" maxLength={100} value={company} onChange={(e) => setCompany(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-2">
+                <span id="level-label" className="text-sm text-muted-foreground">Level</span>
+                <RadioGroup aria-labelledby="level-label" value={level ?? ''} onValueChange={(v) => setLevel(v as Level)} className="grid grid-cols-3 gap-2">
+                  {LEVELS.map((l) => (
+                    <ChoiceCard key={l.value} value={l.value} title={l.label} />
+                  ))}
+                </RadioGroup>
+              </div>
+            </div>
+          </Section>
+
+          <Section
+            title="Target job description (optional)"
+            hint="Paste the posting and the interviewer will tailor its technical questions to the role."
+            id="job-heading"
+          >
+            <textarea
+              aria-labelledby="job-heading"
+              value={jobContext}
+              onChange={(e) => setJobContext(e.target.value)}
+              maxLength={JOB_CONTEXT_MAX}
+              rows={5}
+              placeholder="Paste responsibilities and requirements here…"
+              className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            />
+            <p className="text-right text-xs text-muted-foreground">{jobContext.length}/{JOB_CONTEXT_MAX.toLocaleString('en-US')} characters</p>
+          </Section>
+
+          <Section title="How you'll answer" id="mode-heading">
+            <RadioGroup aria-labelledby="mode-heading" value={mode} onValueChange={(v) => setMode(v as InterviewMode)} className="grid gap-3 md:grid-cols-2">
+              {MODES.map((m) => (
+                <ChoiceCard key={m.value} value={m.value} title={m.label} description={m.description} icon={m.icon} />
+              ))}
+            </RadioGroup>
+          </Section>
+
+          {mode === 'voice' && <MicCheck />}
+        </div>
+
+        <Card className="lg:sticky lg:top-28">
+          <CardHeader>
+            <CardTitle>Your interview</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+              {summary.map(({ term, value }) => (
+                <React.Fragment key={term}>
+                  <dt className="text-muted-foreground">{term}</dt>
+                  <dd className="text-right">{value}</dd>
+                </React.Fragment>
+              ))}
+            </dl>
+
+            <div className="flex items-center justify-between gap-3 border-t border-border pt-4 text-sm">
+              <span className="text-muted-foreground">Resume</span>
+              {resumeName === undefined ? (
+                <span className="text-muted-foreground">Checking…</span>
+              ) : resumeName ? (
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">{resumeName}</span>
+                  <Badge variant="success">On file</Badge>
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <span className="text-muted-foreground">None yet</span>
+                  <Link to="/dashboard" className="text-primary underline-offset-4 hover:underline">Upload one</Link>
+                </span>
+              )}
+            </div>
+
+            {error && (
+              <Alert variant="error">
+                <AlertCircle />
+                <AlertTitle>{error}</AlertTitle>
+              </Alert>
+            )}
+
+            {/* Pinned to the bottom of the screen on phones, inside the card from lg up. */}
+            <div className="fixed inset-x-0 bottom-0 z-10 flex flex-col gap-2 border-t bg-background p-4 lg:static lg:border-0 lg:bg-transparent lg:p-0">
+              <Button size="lg" className="w-full" onClick={handleStart} disabled={!roleId} loading={starting}>
+                {starting ? 'Starting…' : <>Start interview <ArrowRight /></>}
+              </Button>
+              <p className="text-center text-xs text-muted-foreground">You can end early at any time.</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

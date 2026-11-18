@@ -75,16 +75,16 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 
 | Person | Counted PRs | Hard | Medium | Easy | Days | Required doc (not counted) |
 |---|---|---|---|---|---|---|
-| Prayag | 11 | 2 | 6 | 3 | 6.75 | – |
+| Prayag | 17 | 3 | 8 | 6 | 10.5 | – |
 | Vishwa | 8 | 2 | 5 | 1 | 5.5 | – |
 | Kishan | 10 | 1 | 7 | 2 | 5.5 | D-1 (1 day) |
 | Prakriti | 8 | 1 | 4 | 3 | 5 | D-2 (1 day) |
 | Shaurya | 8 | 2 | 4 | 2 | 5.5 | – |
 | Praneel | 8 | 1 | 5 | 2 | 5.75 | – |
-| Rahi | 9 | 1 | 3 | 5 | 5.25 | D-4 (1 day) |
+| Rahi | 10 | 1 | 4 | 5 | 6 | D-4 (1 day) |
 | Ved | 8 | 1 | 5 | 2 | 5.5 | D-3 (1 day) |
 | Vismay | 9 | 2 | 4 | 3 | 6.25 | – |
-| Raj | 8 | 2 | 3 | 3 | 5.75 | – |
+| Raj | 8 | 1 | 5 | 2 | 5.25 | – |
 
 Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
@@ -92,7 +92,7 @@ Every issue in §5 is one counted PR. Documents are listed separately in §5a.
 
 ### Prayag: lead: UI revamp, structure, interview setup
 
-About 6.75 days · 11 counted PRs (2 already merged) · 2 Hard, 6 Medium, 3 Easy · review partner: Raj
+About 10.5 days · 17 counted PRs (2 already merged) · 3 Hard, 8 Medium, 6 Easy · review partner: Raj
 
 **[P-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/74) · Merge the API flatten (#118)** · **✅ merged in [#118](https://github.com/prayag-kachhia/AI-Interviewer/pull/118)** · Medium · 0.5 days · Sprint 4
 
@@ -200,11 +200,64 @@ The interview feels alive: an orb that breathes with the voice, and smooth trans
 
 One styling system: the old stylesheet and static inline styles are gone.
 
-- After every screen is migrated, delete the legacy classes from `index.css` and switch to `@import "tailwindcss"` (preflight on).
-- Remove the remaining static inline styles and fix regressions on every screen in light and dark.
+- Delete `legacy.css` except the few classes History still uses, and switch to Tailwind's full reset (preflight on). RH-10 deletes what's left.
+- Remove the remaining static inline styles and fix regressions on every screen in all three themes.
 - Include docs/adr/0011-design-system.md in this PR.
-- **Done when:** `git grep "style={{" -- apps/web/src` finds only dynamic values, and every screen is checked in light and dark.
-- **Depends on:** P-8, P-9, P-10, PK-5, RH-4, RJ-5, V-5 (all screen migrations)
+- **Done when:** outside `screens/history/`, `git grep "style={{" -- apps/web/src` finds only dynamic values and no screen uses a class from `legacy.css`, and every screen is checked in all three themes.
+- **Depends on:** P-8, P-9, P-10, P-17, P-18, PK-5, RH-4, V-5 (all screen migrations). Not RH-10: History keeps its old classes until RH-10 restyles it.
+
+**[P-13](https://github.com/prayag-kachhia/AI-Interviewer/issues/199) · Landing page** · Easy · 0.5 days · Sprint 5
+
+A first impression for signed-out visitors.
+
+- `screens/landing/` at `/` for signed-out users: a hero, 3 real feature cards and a call to action.
+- No invented stats.
+- **Done when:** Signed-out visitors see the landing page, and signed-in users go to the Dashboard.
+- **Depends on:** P-5
+
+**[P-14](https://github.com/prayag-kachhia/AI-Interviewer/issues/200) · End-to-end golden-path test in CI** · Hard · 1 day · Sprint 5
+
+CI proves the main flow works in a real browser, not only in unit tests.
+
+- Add Playwright to apps/web with one test: sign in → upload a resume → set up → a typed interview (PK-4) with 2 answers → end → results show feedback.
+- Run it in CI against the local dev servers, with a dedicated test user whose credentials are CI secrets (Prayag adds them) and Gemini replaced by a fake behind a test-only env flag that production never sets.
+- Add it as a CI job.
+- **Done when:** The CI job passes on main and fails when the golden path breaks.
+- **Depends on:** PK-4, V-1, the UI migrations
+
+**[P-15](https://github.com/prayag-kachhia/AI-Interviewer/issues/266) · Two themes: Swiss light, gold dark** · Medium · 0.5 days · Sprint 5
+
+Light and dark become two different looks, not one design in two colour schemes.
+
+- Per-theme variables in `styles.css` for colour, corner radius, border width, card shadow, heading style and label style. Light is the Stitch Swiss broadsheet (bone and ink, square corners, thick borders, hard shadow, uppercase headings, mono labels); dark stays the gold Chronometer Deck.
+- The `components/ui` primitives read the variables, so screens follow the theme without `dark:` classes.
+- A test checks both palettes against WCAG AA (NFR-14).
+- **Done when:** Switching the theme changes colours, corners, borders, shadows and heading style on every screen built on the primitives, and the contrast test passes.
+- **Depends on:** P-5
+
+**[P-16](https://github.com/prayag-kachhia/AI-Interviewer/issues/268) · Landing page on the two themes** · Easy · 0.25 days · Sprint 5
+
+- A ruled hero, a numbered "how it works" list of the three real steps, the three feature cards and a closing band, using only real content.
+- **Done when:** Signed-out visitors see it in both themes and every link goes to /login.
+- **Depends on:** P-13, P-15
+
+**[P-17](https://github.com/prayag-kachhia/AI-Interviewer/issues/273) · Restyle Reset password and Verify email (was RJ-12, reassigned from Raj)** · Easy · 0.5 days · Sprint 5
+
+- Rebuild both screens with the `components/ui` primitives and the theme tokens: no inline styles, no `legacy.css` classes. Keep every behaviour and test. They share `AuthLayout` and a three-way `ThemeSwitcher`.
+- **Done when:** Neither screen uses a class from `legacy.css`, and the existing tests pass.
+- **Depends on:** P-15. Blocks P-12. Build P-17 first; P-18 reuses its layout.
+
+
+**[P-18](https://github.com/prayag-kachhia/AI-Interviewer/issues/100) · Split and restyle the Login screen (was RJ-5, reassigned from Raj)** · Medium · 1 day · Sprint 5
+
+The 649-line Login screen becomes small, readable pieces on the design system.
+
+- Split `Login.tsx` into SignInForm, SignUpForm and `useAuthForm`.
+- Rebuild them with Card, Input, Button and Alert.
+- Keep `Login.test.tsx` passing.
+- **Done when:** No file in screens/login is over about 200 lines, and the tests pass.
+- **Depends on:** P-5, P-6, RJ-3, RJ-4. Blocks P-12.
+
 
 ### Vishwa: voice transport
 
@@ -644,7 +697,7 @@ Candidates see what was good and what to improve in each answer, not only overal
 
 ### Rahi: history and analytics
 
-About 5.25 days · 9 counted PRs (2 already merged) · 1 Hard, 3 Medium, 5 Easy · review partner: Ved
+About 6 days · 10 counted PRs (2 already merged) · 1 Hard, 4 Medium, 5 Easy · review partner: Ved
 
 Also owns the required document [D-4](https://github.com/prayag-kachhia/AI-Interviewer/issues/204) (not counted, see §5a).
 
@@ -733,6 +786,17 @@ Delete straight from the History list.
 - Add a Delete button with an AlertDialog confirmation on each History row, reusing VM-2's API call.
 - **Done when:** Deleting from History removes the row.
 - **Depends on:** RH-3, VM-2
+
+**[RH-10](https://github.com/prayag-kachhia/AI-Interviewer/issues/304) · Restyle the History page** · Medium · 0.75 days · Sprint 5
+
+History looks like the rest of the app. It's the last screen still on the old styles.
+
+- Rebuild `HistoryPage.tsx` with the `components/ui` primitives and the theme tokens: no old classes, no static inline styles, no hard-coded colours.
+- Keep every behaviour: the list, Try again, delete, the performance graph, the category trends, the empty and error states.
+- If the diff gets big, first move the graph and the trends into their own files, unchanged, in a small PR.
+- Once P-12 has merged, `legacy.css` holds only History's old classes: delete the file and its import in `styles.css`.
+- **Done when:** The page looks right in Swiss, Haute and Graphite and at phone width, uses no class from `legacy.css`, and the existing tests pass.
+- **Depends on:** RH-3, RH-5, RH-6, RH-9 (all merged)
 
 ### Ved: improvement guide, user docs
 
@@ -913,7 +977,7 @@ Candidates see an honest summary of their open-source work, and the interviewer 
 
 ### Raj: identity, end-to-end tests
 
-About 5.75 days · 8 counted PRs (0 already merged) · 2 Hard, 3 Medium, 3 Easy · review partner: Prayag
+About 5.25 days · 8 counted PRs (0 already merged) · 1 Hard, 5 Medium, 2 Easy · review partner: Prayag
 
 **[RJ-1](https://github.com/prayag-kachhia/AI-Interviewer/issues/78) · Show when resume AI analysis fell back** · Easy · 0.5 days · Sprint 4
 
@@ -955,35 +1019,6 @@ Shared computers don't keep people signed in.
 - Add a 'Stay signed in' checkbox. When it's off, store the Supabase session in `sessionStorage`, so it ends when the browser closes.
 - **Done when:** With it off, closing and reopening the browser signs you out.
 
-**[RJ-5](https://github.com/prayag-kachhia/AI-Interviewer/issues/100) · Split and restyle the Login screen** · Medium · 1 day · Sprint 5
-
-The 649-line Login screen becomes small, readable pieces on the design system.
-
-- Split `Login.tsx` into SignInForm, SignUpForm and `useAuthForm`.
-- Rebuild them with Card, Input, Button and Alert.
-- Keep `Login.test.tsx` passing.
-- **Done when:** No file in screens/login is over about 200 lines, and the tests pass.
-- **Depends on:** P-5, P-6, RJ-3, RJ-4
-
-**[RJ-6](https://github.com/prayag-kachhia/AI-Interviewer/issues/199) · Landing page** · Easy · 0.5 days · Sprint 5
-
-A first impression for signed-out visitors.
-
-- `screens/landing/` at `/` for signed-out users: a hero, 3 real feature cards and a call to action.
-- No invented stats.
-- **Done when:** Signed-out visitors see the landing page, and signed-in users go to the Dashboard.
-- **Depends on:** P-5
-
-**[RJ-9](https://github.com/prayag-kachhia/AI-Interviewer/issues/200) · End-to-end golden-path test in CI** · Hard · 1 day · Sprint 5
-
-CI proves the main flow works in a real browser, not only in unit tests.
-
-- Add Playwright to apps/web with one test: sign in → upload a resume → set up → a typed interview (PK-4) with 2 answers → end → results show feedback.
-- Run it in CI against the local dev servers, with a dedicated test user whose credentials are CI secrets (Prayag adds them) and Gemini replaced by a fake behind a test-only env flag that production never sets.
-- Add it as a CI job.
-- **Done when:** The CI job passes on main and fails when the golden path breaks.
-- **Depends on:** PK-4, V-1, the UI migrations
-
 **[RJ-10](https://github.com/prayag-kachhia/AI-Interviewer/issues/201) · Owner dashboard (FR-32)** · Medium · 0.75 days · Sprint 5
 
 The project owner can see how the product is used and where it fails.
@@ -993,6 +1028,56 @@ The project owner can see how the product is used and where it fails.
 - Add tests for access and the counts.
 - **Done when:** An admin sees the numbers on the live site, and a normal user gets 404.
 - **Depends on:** RH-2, P-5
+
+**[RJ-13](https://github.com/prayag-kachhia/AI-Interviewer/issues/274) · Placement Cell cohort view (FR-33)** · **❌ dropped on 18 Nov (not counted)** · Medium · 0.5 days · Sprint 5
+
+The Placement Cell sees how a cohort is doing without seeing any individual (OI-1, FR-27, DR-06).
+
+- `GET /api/admin/cohort`, behind the same `ADMIN_EMAILS` gate as RJ-10 (404 for everyone else): interviews per role per week, completion rate and average score per category. Any group of fewer than 5 candidates is hidden.
+- Shown as a second section on the admin screen.
+- **Done when:** An admin sees cohort numbers, no response contains a name, email or transcript, and a normal user gets 404.
+- **Depends on:** RJ-10
+
+**[RJ-14](https://github.com/prayag-kachhia/AI-Interviewer/issues/292) · Resume match: contract, table and keyword scorer (FR-34)** · Medium · 0.5 days · Sprint 5
+
+A candidate can check how well their saved resume fits a job description. This part lays the foundation.
+
+- In `packages/contracts`:
+  - `ResumeMatch`: an overall score 0–100, four categories with weights, matched and missing keywords, strengths, gaps and suggestions, and `source: 'ai' | 'keywords'`.
+  - `CreateResumeMatchInput` and `JOB_DESCRIPTION_MAX = 4000`.
+  - A helper that computes the overall score as the weighted mean of the categories, never taken from the AI. Weights: skills 40, experience 30, keywords 20, education 10.
+- A `resume_matches` table: resume and user foreign keys with cascade, the job description, score, source and result JSON. The migration is created against a local Postgres only.
+- A keyword scorer with no AI (`resume-match.keywords.ts`), reusing `COMMON_SKILLS` from `heuristic.service.ts`.
+- Add FR-34 (Could) to `docs/requirements.md`, with a traceability row.
+- **Done when:** The contract and migration are in, and the keyword scorer and score helper have unit tests.
+- **Depends on:** nothing. Blocks RJ-15 and RJ-16.
+
+**[RJ-15](https://github.com/prayag-kachhia/AI-Interviewer/issues/293) · Resume match: Gemini grading and API (FR-34)** · Medium · 0.75 days · Sprint 5
+
+- `resume-match.service.ts`, modelled on `evaluator.service.ts`:
+  - injectable `generate`, a 12 s timeout, a structured schema, and Zod validation;
+  - the `GEMINI_RESUME_MODEL` model, so no new env var;
+  - resume and job description delimited as data;
+  - any failure falls back to the keyword scorer.
+- Routes:
+  - `POST /api/resume/:id/matches`, `GET /api/resume/:id/matches` and `DELETE /api/resume/:id/matches/:matchId`;
+  - 404 for another user's resume or result (FR-27);
+  - the newest 20 results kept per user.
+- Matches added to `GET /api/me/export`.
+- **Done when:** Tests cover the fallback paths, 401/404/400, create, list, delete, the cap and the export.
+- **Depends on:** RJ-14
+
+**[RJ-16](https://github.com/prayag-kachhia/AI-Interviewer/issues/294) · Resume match: the screen (FR-34)** · Medium · 0.75 days · Sprint 5
+
+- `screens/resume-match/` at `/resume-match`. It holds:
+  - the saved resume (or an empty state linking to the Dashboard);
+  - a job-description box with a counter;
+  - the score with category bars, matched and missing keyword badges, strengths, gaps and suggestions;
+  - an "AI estimate" or "Keyword match, no AI" note;
+  - earlier results that can be viewed and deleted.
+- Reached from a Dashboard card, not the navbar (it is full at 1024 px). Built on the `components/ui` primitives only.
+- **Done when:** Component tests pass and the screen looks right in all three themes at desktop and phone width.
+- **Depends on:** RJ-14, RJ-15
 
 ## 5a. Required documents (not counted)
 
@@ -1036,7 +1121,7 @@ Testing is documented as a Software Engineering deliverable.
 - docs/test-plan.md covers the levels: unit, integration, CI, benchmark, manual voice checks and cross-browser.
 - docs/test-report.md holds the CI results, the S-4 and S-7 numbers, and PN-5's results.
 - **Done when:** Both documents are merged, with real numbers.
-- **Depends on:** S-7, PN-5, RJ-9
+- **Depends on:** S-7, PN-5, P-14
 
 
 ## 6. Critical path
@@ -1070,7 +1155,7 @@ Testing is documented as a Software Engineering deliverable.
 
 **Cut first:**
 - P-11, RH-7, RH-8, VI-6, K-7 and V-6;
-- then RJ-6, RJ-10 and PN-5;
+- then P-13, P-16, RJ-10 and PN-5;
 - then VM-6, VM-7 and VM-13, documenting the deferral in the SRS.
 
 ## 8. Deferred

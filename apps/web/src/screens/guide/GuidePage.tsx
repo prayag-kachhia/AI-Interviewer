@@ -140,7 +140,7 @@ export const GuidePage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="container mx-auto max-w-4xl px-4 py-16 flex flex-col items-center justify-center gap-4" role="status">
+      <div className="mx-auto max-w-4xl px-4 pt-28 pb-16 flex flex-col items-center justify-center gap-4" role="status">
         <Loader2 className="size-8 motion-safe:animate-spin text-primary" />
         <p className="text-muted-foreground text-sm font-medium">Loading improvement guide…</p>
       </div>
@@ -149,7 +149,7 @@ export const GuidePage: React.FC = () => {
 
   if (error) {
     return (
-      <div className="container mx-auto max-w-3xl px-4 py-12">
+      <div className="mx-auto max-w-3xl px-4 pt-28 pb-12">
         <Alert variant="error">
           <AlertCircle className="size-5" />
           <AlertTitle>Error</AlertTitle>
@@ -166,7 +166,7 @@ export const GuidePage: React.FC = () => {
 
   if (notFound || !plan) {
     return (
-      <div className="container mx-auto max-w-3xl px-4 py-12">
+      <div className="mx-auto max-w-3xl px-4 pt-28 pb-12">
         <Card className="text-center p-8">
           <CardHeader className="flex flex-col items-center gap-2">
             <div className="rounded-full bg-secondary p-3 text-muted-foreground mb-2">
@@ -224,14 +224,14 @@ export const GuidePage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto max-w-5xl px-4 py-8 flex flex-col gap-8">
+    <div className="mx-auto max-w-5xl px-4 pt-28 pb-8 flex flex-col gap-8">
       {/* Page Header */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2 text-primary font-medium text-sm">
           <Sparkles className="size-4" />
           <span>Candidate Improvement Plan</span>
         </div>
-        <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
+        <h1 className="heading text-3xl text-foreground">
           Improvement Guide
         </h1>
         <p className="text-muted-foreground text-base max-w-3xl">
@@ -242,7 +242,7 @@ export const GuidePage: React.FC = () => {
       {/* 1. Weaknesses Section */}
       <section aria-labelledby="weaknesses-heading" className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 id="weaknesses-heading" className="font-display text-xl font-semibold flex items-center gap-2">
+          <h2 id="weaknesses-heading" className="heading text-xl flex items-center gap-2">
             <TrendingUp className="size-5 text-primary" />
             Topic Weaknesses
           </h2>
@@ -256,7 +256,7 @@ export const GuidePage: React.FC = () => {
             <Card key={topic.topic} className="flex flex-col justify-between">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-lg">{topic.topic}</CardTitle>
+                  <CardTitle as="h3" className="text-lg">{topic.topic}</CardTitle>
                   <Badge variant={getScoreBadgeVariant(topic.score)}>
                     Score: {topic.score} / 5
                   </Badge>
@@ -288,7 +288,7 @@ export const GuidePage: React.FC = () => {
       {/* 2. Roadmap Section */}
       <section aria-labelledby="roadmap-heading" className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 id="roadmap-heading" className="font-display text-xl font-semibold flex items-center gap-2">
+          <h2 id="roadmap-heading" className="heading text-xl flex items-center gap-2">
             <Compass className="size-5 text-primary" />
             Improvement Roadmap
           </h2>
@@ -378,7 +378,7 @@ export const GuidePage: React.FC = () => {
       {/* 3. Resources Section */}
       <section aria-labelledby="resources-heading" className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h2 id="resources-heading" className="font-display text-xl font-semibold flex items-center gap-2">
+          <h2 id="resources-heading" className="heading text-xl flex items-center gap-2">
             <BookOpen className="size-5 text-primary" />
             Curated Learning Resources
           </h2>
@@ -402,7 +402,7 @@ export const GuidePage: React.FC = () => {
                       {res.type}
                     </Badge>
                   </div>
-                  <CardTitle className="text-base font-semibold mt-1">
+                  <CardTitle as="h3" className="text-base font-semibold mt-1">
                     {res.title}
                   </CardTitle>
                   <CardDescription className="text-xs line-clamp-2">

@@ -7,6 +7,7 @@ import {
   PlaybackQueue,
 } from './audio';
 import pcmCaptureWorkletUrl from './pcmCaptureWorklet.ts?worker&url';
+import { TranscriptAccumulator } from './transcriptAccumulator';
 import type { VoiceAdapterCallbacks, VoiceSessionAdapter } from './voiceAdapter';
 
 const LIVE_URL =
@@ -53,6 +54,8 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
 
   private isMuted = false;
   private isDeliberateClose = false;
+  private isSessionClosed = false;
+  private accumulator: TranscriptAccumulator | null = null;
   private resumptionHandle: string | null = null;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -62,7 +65,27 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     this.sessionId = sessionId;
     this.callbacks = callbacks;
     this.isDeliberateClose = false;
+    this.isSessionClosed = false;
     this.reconnectAttempts = 0;
+    this.accumulator = new TranscriptAccumulator({
+      onTurn: (turn) => {
+        this.callbacks?.onTranscript({
+          speaker: turn.speaker,
+          text: turn.text,
+          isFinal: true,
+        });
+      },
+      onPartialUpdate: (speaker, partialText) => {
+        if (speaker && partialText) {
+          this.callbacks?.onTranscript({
+            speaker,
+            text: partialText,
+            isFinal: false,
+          });
+        }
+      },
+      isSessionEnded: () => this.isSessionClosed,
+    });
     this.resumptionHandle = sessionStorage.getItem(resumptionKey(sessionId));
     callbacks.onStateChange('IDLE');
     await this.startConnection();
@@ -184,28 +207,24 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     const serverContent = response.serverContent;
     if (!serverContent) return;
 
-    // FR-14: the candidate spoke over the interviewer, so cut its audio off.
+    // FR-14: the candidate spoke over the interviewer, so cut its audio off and flush the partial AI turn.
     if (serverContent.interrupted) {
       this.playbackQueue?.stop();
+      this.accumulator?.flushTurn();
+      if (serverContent.inputTranscription?.text) {
+        this.accumulator?.handleChunk('CANDIDATE', serverContent.inputTranscription.text);
+      }
       this.callbacks?.onStateChange('LISTENING');
       return;
     }
 
     if (serverContent.inputTranscription?.text) {
-      this.callbacks?.onTranscript({
-        speaker: 'CANDIDATE',
-        text: serverContent.inputTranscription.text,
-        isFinal: false,
-      });
+      this.accumulator?.handleChunk('CANDIDATE', serverContent.inputTranscription.text);
       this.callbacks?.onStateChange('LISTENING');
     }
 
     if (serverContent.outputTranscription?.text) {
-      this.callbacks?.onTranscript({
-        speaker: 'AI',
-        text: serverContent.outputTranscription.text,
-        isFinal: false,
-      });
+      this.accumulator?.handleChunk('AI', serverContent.outputTranscription.text);
     }
 
     if (serverContent.modelTurn?.parts) {
@@ -218,6 +237,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
 
     if (serverContent.turnComplete) {
+      this.accumulator?.flushTurn();
       this.callbacks?.onStateChange('LISTENING');
     }
   }
@@ -309,6 +329,8 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
   }
 
   private fail(message: string): void {
+    this.isSessionClosed = true;
+    this.accumulator?.reset();
     this.callbacks?.onError?.(message);
     this.callbacks?.onStateChange('ERROR');
     this.cleanupAudioAndSocket();
@@ -334,8 +356,13 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
   }
 
-  /** Ends the session for good, so the stored resumption handle is dropped too. */
+  /** Ends the session for good, so pending turns flush once and the stored resumption handle is dropped. */
   disconnect(): void {
+    if (!this.isSessionClosed) {
+      this.accumulator?.flushTurn();
+      this.isSessionClosed = true;
+      this.accumulator?.reset();
+    }
     this.isDeliberateClose = true;
     this.reconnectAttempts = 0;
     this.resumptionHandle = null;
