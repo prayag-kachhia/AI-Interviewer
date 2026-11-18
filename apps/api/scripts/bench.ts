@@ -1568,6 +1568,22 @@ async function main() {
           `${wallMs} ms  in=${runResult.promptTokens} out=${runResult.outputTokens}  ` +
             runResult.scores.map((s) => `${s.category[0]}:${s.score}`).join(' ')
         );
+
+        // Persist incrementally: save valid runs accumulated so far so an
+        // interrupted benchmark can recover completed runs on the next execution.
+        if (useCache) {
+          cache[name] = {
+            name,
+            role: role.label,
+            runs: [...runs],
+            expected,
+            pass: undefined,
+            failReasons: [],
+            hasCandidateAnswers: true,
+            fingerprint: currentFingerprint,
+          };
+          saveBenchCache(cachePath, cache);
+        }
       } catch (err) {
         const wallMs = Math.round(performance.now() - start);
         runs.push({ wallMs, promptTokens: 0, outputTokens: 0, scores: [], error: (err as Error).message });

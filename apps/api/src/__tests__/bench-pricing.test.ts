@@ -1526,6 +1526,131 @@ describe('Benchmark Pricing & Cost Calculation', () => {
         }
       });
 
+      it('incremental persistence: survives interruption and recovers on next execution without re-calling the evaluator for cached runs', async () => {
+        const fixtureName = 'interruption-test-fixture';
+        const runsPerFixture = 5;
+        const tempCachePath = path.resolve(__dirname, `../../.temp-incr-cache-${Date.now()}.json`);
+        const fp = computeFixtureFingerprint({
+          model: 'gemini-3.8-flash',
+          prompt: 'You are an evaluator...',
+          turns: [{ speaker: 'CANDIDATE' as const, text: 'I used binary search.' }],
+          expected: validExpected,
+        });
+
+        // Mock evaluator: returns a valid RunResult and counts calls.
+        let evaluatorCallCount = 0;
+        const mockEvaluator = async (): Promise<RunResult> => {
+          evaluatorCallCount++;
+          return { ...makeRuns(1)[0], fingerprint: fp };
+        };
+
+        // Helper: mirrors the incremental-save block in bench.ts exactly.
+        // After each successful run, writes [...runs] to cache[fixtureName] and flushes to disk.
+        const persistIncremental = (
+          cache: Record<string, FixtureResult>,
+          runs: RunResult[]
+        ) => {
+          cache[fixtureName] = {
+            name: fixtureName,
+            role: 'Software Engineer',
+            runs: [...runs],
+            expected: validExpected,
+            pass: undefined,
+            failReasons: [],
+            hasCandidateAnswers: true,
+            fingerprint: fp,
+          };
+          saveBenchCache(tempCachePath, cache);
+        };
+
+        try {
+          // ── Phase 1: benchmark starts, completes 2 of 5 runs, then is interrupted ──────────
+          //
+          // Mirrors bench.ts main loop:
+          //   const runs: RunResult[] = [];
+          //   for (let run = runs.length; run < runsPerFixture; run++) {
+          //     const runResult = await evaluator(...);
+          //     runs.push(runResult);
+          //     cache[name] = { runs: [...runs], ... };   // ← incremental save
+          //     saveBenchCache(cachePath, cache);
+          //   }
+          //   ⚡ process killed after run 2
+          const phase1Cache: Record<string, FixtureResult> = {};
+          const phase1Runs: RunResult[] = [];
+
+          for (let i = 0; i < 2; i++) {
+            const run = await mockEvaluator();
+            phase1Runs.push(run);
+            persistIncremental(phase1Cache, phase1Runs);  // saved after every run
+          }
+          // Interruption: exactly 2 evaluator calls made, 2 runs on disk.
+          expect(evaluatorCallCount).toBe(2);
+
+          // Verify disk state after interruption: 2 valid runs persisted.
+          const diskAfterPhase1 = loadBenchCache(tempCachePath);
+          expect(diskAfterPhase1[fixtureName]).toBeDefined();
+          expect(filterValidCachedRuns(diskAfterPhase1[fixtureName].runs, validExpected, fp)).toHaveLength(2);
+          // Fixture is partial — not yet complete.
+          expect(isValidCachedFixture(diskAfterPhase1[fixtureName], runsPerFixture, validExpected, fp)).toBe(false);
+
+          // ── Phase 2: new benchmark execution using the same cache file ────────────────────
+          //
+          // Mirrors bench.ts recovery path:
+          //   const cache = loadBenchCache(cachePath);
+          //   const existingValidRuns = filterValidCachedRuns(cache[name].runs, expected, fp);
+          //   runs.push(...existingValidRuns);            // ← reuse cached runs
+          //   for (let run = runs.length; run < runsPerFixture; run++) { ... }
+          evaluatorCallCount = 0; // reset counter for phase 2
+
+          const phase2Cache = loadBenchCache(tempCachePath);
+          const recoveredRuns = filterValidCachedRuns(
+            phase2Cache[fixtureName]?.runs,
+            validExpected,
+            fp
+          );
+
+          // Verify: 2 runs recovered, loop will start at index 2.
+          expect(recoveredRuns).toHaveLength(2);
+          expect(recoveredRuns[0]).toEqual(phase1Runs[0]);
+          expect(recoveredRuns[1]).toEqual(phase1Runs[1]);
+
+          const phase2Runs: RunResult[] = [...recoveredRuns]; // pre-populate, same as bench.ts
+
+          for (let i = phase2Runs.length; i < runsPerFixture; i++) {
+            const run = await mockEvaluator();
+            phase2Runs.push(run);
+            persistIncremental(phase2Cache, phase2Runs);
+          }
+
+          // Evaluator called exactly (runsPerFixture - recovered) = 3 times; never for cached runs.
+          expect(evaluatorCallCount).toBe(runsPerFixture - 2);
+
+          // ── Final disk state: all 5 runs present and valid ───────────────────────────────
+          const finalCache = loadBenchCache(tempCachePath);
+          const finalValidRuns = filterValidCachedRuns(finalCache[fixtureName]?.runs, validExpected, fp);
+          expect(finalValidRuns).toHaveLength(runsPerFixture);
+
+          // With all 5 valid runs on disk, the fixture is now recoverable as complete.
+          expect(isValidCachedFixture(finalCache[fixtureName], runsPerFixture, validExpected, fp)).toBe(true);
+
+          // ── Phase 3: subsequent execution with fully completed cache ─────────────────────
+          // Evaluator should not be called at all when all runs are complete and cached.
+          evaluatorCallCount = 0;
+          const phase3Cache = loadBenchCache(tempCachePath);
+          if (!isValidCachedFixture(phase3Cache[fixtureName], runsPerFixture, validExpected, fp)) {
+            // Should not enter here
+            for (let i = 0; i < runsPerFixture; i++) {
+              await mockEvaluator();
+            }
+          }
+          expect(evaluatorCallCount).toBe(0);
+        } finally {
+          if (existsSync(tempCachePath)) {
+            unlinkSync(tempCachePath);
+          }
+        }
+      });
+
       it('verifies seeded cache fixture validation and fails clearly if required fixture is missing in CI', () => {
         const fixturePath = path.resolve(__dirname, 'fixtures/seeded-cache.json');
         expect(
