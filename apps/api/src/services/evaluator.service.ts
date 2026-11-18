@@ -11,8 +11,12 @@ import {
   CONCISE_ANSWERS_PRINCIPLE,
 } from './rubrics';
 
-// Leaves room inside the 15-second feedback budget for polling and the database.
-export const EVALUATION_TIMEOUT_MS = 12_000;
+// How long Gemini gets to grade one transcript. The SDK also sends this to Google as the server
+// deadline (X-Server-Timeout), so a shorter value makes Google answer 504 DEADLINE_EXCEEDED.
+// Per-answer feedback makes the output grow with every answer: a full 15-minute interview
+// (10-20 answers) takes longer than 12 s, which failed every job on 18 Nov. This runs in the
+// background worker, so nobody waits on the request; the Results page polls for the outcome.
+export const EVALUATION_TIMEOUT_MS = 60_000;
 // A pinned model, not the moving `gemini-flash-latest` alias, so scores don't drift when
 // Google swaps the model behind the alias.
 const DEFAULT_MODEL = 'gemini-3.8-flash';

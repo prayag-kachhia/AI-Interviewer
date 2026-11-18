@@ -50,7 +50,7 @@ const DEFAULT_RUNS = 3;
  */
 const DEFAULT_INTER_CALL_DELAY_MS = 13_000;
 
-/** Timeout used for bench runs — longer than the production 12 s to handle model load spikes. */
+/** Timeout used for bench runs. The fixtures are short; production allows 60 s (EVALUATION_TIMEOUT_MS). */
 const BENCH_TIMEOUT_MS = 30_000;
 
 /** Max retries per run for transient 429 / 503 errors. */
