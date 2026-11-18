@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { beforeEach, expect, test, vi } from 'vitest';
+import { axe } from 'vitest-axe';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Navbar } from './Navbar';
@@ -79,6 +80,14 @@ test('the menu button opens the links below lg, and a link or Escape closes it',
   fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Guide' }));
   expect(screen.queryByRole('navigation', { name: 'Menu' })).not.toBeInTheDocument();
+});
+
+test('has no accessibility violations (desktop and mobile menu open)', async () => {
+  const { container } = renderAt('/dashboard');
+  expect(await axe(container)).toHaveNoViolations();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+  expect(await axe(container)).toHaveNoViolations();
 });
 
 test('does not show the Admin link to a non-admin candidate', () => {

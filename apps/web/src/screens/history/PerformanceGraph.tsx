@@ -71,9 +71,9 @@ export const PerformanceGraph: React.FC<PerformanceGraphProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <TrendingUp className="size-5 text-primary" aria-hidden="true" />
-            <CardTitle className="text-xl">Performance Trend</CardTitle>
+            <CardTitle id="performance-trend-heading" className="text-xl">Performance Trend</CardTitle>
           </div>
-          <CardDescription className="mt-1 text-sm">
+          <CardDescription id="performance-trend-description" className="mt-1 text-sm">
             Overall score progression over time (1–5 scale). Click any point to view results.
           </CardDescription>
         </div>
@@ -95,8 +95,10 @@ export const PerformanceGraph: React.FC<PerformanceGraphProps> = ({
 
       <CardContent>
         <div
-          role="img"
-          aria-label="Performance line graph showing overall interview scores over time on a 1 to 5 scale"
+          // A group, not an image: its points are clickable, and an image can't contain controls.
+          role="group"
+          aria-labelledby="performance-trend-heading"
+          aria-describedby="performance-trend-description"
           className="h-[280px] w-full"
         >
           <ChartContainer config={chartConfig} className="h-[280px] w-full">
@@ -227,7 +229,7 @@ export const PerformanceGraph: React.FC<PerformanceGraphProps> = ({
                   <td>{d.roleLabel}</td>
                   <td>{d.score} / 5</td>
                   <td>
-                    <Link to={`/interview/${d.sessionId}/feedback`}>
+                    <Link to={`/interview/${d.sessionId}/feedback`} tabIndex={-1}>
                       View feedback for {d.roleLabel} on {d.fullDate}
                     </Link>
                   </td>

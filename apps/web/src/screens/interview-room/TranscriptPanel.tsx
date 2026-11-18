@@ -74,7 +74,7 @@ export const TranscriptPanel: React.FC<TranscriptPanelProps> = ({
                     )}
                   >
                     Turn #{turn.turnIndex} • {isAi ? 'AI Interviewer' : 'Candidate'} •{' '}
-                    <span className="font-mono">t+{turn.timestampSec.toFixed(1)}s</span>
+                    <span className="font-mono">t+{(turn.timestampSec ?? 0).toFixed(1)}s</span>
                   </div>
                   <div className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
                     {turn.text}

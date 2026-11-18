@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, test, vi } from 'vitest';
+import { axe } from 'vitest-axe';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { InterviewRoom } from './InterviewRoom';
@@ -1068,6 +1069,52 @@ describe('InterviewRoom voice transport wiring (VI-8, #141)', () => {
       expect(
         live.sendText.mock.calls.filter(([arg]) => arg === '2 minutes remain; start wrapping up')
       ).toHaveLength(1);
+    });
+  });
+
+  describe('accessibility audit (PN-5)', () => {
+    it('has no accessibility violations in active interview state', async () => {
+      vi.mocked(api.getSession).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 's1',
+          userId: 'user-1',
+          role: 'software-engineer',
+          status: 'LIVE',
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          turns: [
+            { id: 't1', sessionId: 's1', turnIndex: 1, timestampSec: 0, speaker: 'AI', text: 'Welcome! Tell me about yourself.', createdAt: new Date().toISOString() },
+            { id: 't2', sessionId: 's1', turnIndex: 2, timestampSec: 5.2, speaker: 'CANDIDATE', text: 'I am a software engineer with 5 years experience.', createdAt: new Date().toISOString() },
+          ],
+        },
+      });
+
+      const { container } = renderRoom('s1');
+      await screen.findByText('Welcome! Tell me about yourself.');
+      expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it('has no accessibility violations when end interview confirmation dialog is open', async () => {
+      vi.mocked(api.getSession).mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 's1',
+          userId: 'user-1',
+          role: 'software-engineer',
+          status: 'LIVE',
+          startedAt: new Date().toISOString(),
+          endedAt: null,
+          turns: [],
+        },
+      });
+
+      const { container } = renderRoom('s1');
+      await screen.findByRole('button', { name: /end interview/i });
+      fireEvent.click(screen.getByRole('button', { name: /end interview/i }));
+      await screen.findByRole('dialog');
+
+      expect(await axe(container)).toHaveNoViolations();
     });
   });
 });

@@ -256,7 +256,7 @@ export const GuidePage: React.FC = () => {
             <Card key={topic.topic} className="flex flex-col justify-between">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-lg">{topic.topic}</CardTitle>
+                  <CardTitle as="h3" className="text-lg">{topic.topic}</CardTitle>
                   <Badge variant={getScoreBadgeVariant(topic.score)}>
                     Score: {topic.score} / 5
                   </Badge>
@@ -402,7 +402,7 @@ export const GuidePage: React.FC = () => {
                       {res.type}
                     </Badge>
                   </div>
-                  <CardTitle className="text-base font-semibold mt-1">
+                  <CardTitle as="h3" className="text-base font-semibold mt-1">
                     {res.title}
                   </CardTitle>
                   <CardDescription className="text-xs line-clamp-2">

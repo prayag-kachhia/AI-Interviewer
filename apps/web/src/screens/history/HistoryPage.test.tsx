@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { test, expect, vi, afterEach } from "vitest";
+import { axe } from "vitest-axe";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { HistoryPage } from "./HistoryPage";
@@ -189,7 +190,9 @@ test("given past interviews with no overall scores, renders performance graph em
   expect(
     screen.getByText("No scored interviews available yet. Completed interviews with feedback scores will be plotted here.")
   ).toBeInTheDocument();
-  expect(screen.queryByRole("img", { name: /Performance line graph/i })).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("table", { name: /Chronological list of mock interview overall scores/i })
+  ).not.toBeInTheDocument();
 
   // Cards are still rendered below
   expect(screen.getByTestId("history-session-session-1")).toBeInTheDocument();
@@ -239,10 +242,10 @@ test("given scored interviews in reverse order, plots them chronologically (olde
     </MemoryRouter>
   );
 
-  const graph = await screen.findByRole("img", {
-    name: "Performance line graph showing overall interview scores over time on a 1 to 5 scale",
+  const table = await screen.findByRole("table", {
+    name: "Chronological list of mock interview overall scores",
   });
-  expect(graph).toBeInTheDocument();
+  expect(table).toBeInTheDocument();
 
   expect(screen.getByTestId("performance-count")).toHaveTextContent("3");
   expect(screen.getByTestId("performance-latest-score")).toHaveTextContent("4.8 / 5");
@@ -333,7 +336,7 @@ test("filters out null, missing, NaN, and out-of-range scores safely", async () 
     </MemoryRouter>
   );
 
-  await screen.findByRole("img", { name: /Performance line graph/i });
+  await screen.findByRole("table", { name: /Chronological list/i });
 
   // Only the 2 valid scores are counted
   expect(screen.getByTestId("performance-count")).toHaveTextContent("2");
@@ -369,7 +372,7 @@ test("given only one scored interview, renders graph with single point correctly
     </MemoryRouter>
   );
 
-  expect(await screen.findByRole("img", { name: /Performance line graph/i })).toBeInTheDocument();
+  expect(await screen.findByRole("table", { name: /Chronological list/i })).toBeInTheDocument();
   expect(screen.getByTestId("performance-count")).toHaveTextContent("1");
   expect(screen.getByTestId("performance-latest-score")).toHaveTextContent("4.5 / 5");
 
@@ -411,7 +414,7 @@ test("handles duplicate dates gracefully without crashing or grouping into one p
     </MemoryRouter>
   );
 
-  expect(await screen.findByRole("img", { name: /Performance line graph/i })).toBeInTheDocument();
+  expect(await screen.findByRole("table", { name: /Chronological list/i })).toBeInTheDocument();
   expect(screen.getByTestId("performance-count")).toHaveTextContent("2");
 
   // Both dots exist
@@ -1172,7 +1175,7 @@ test("graph and history breakdown update automatically after deletion", async ()
     </MemoryRouter>
   );
 
-  await screen.findByRole("img", { name: /Performance line graph/i });
+  await screen.findByRole("table", { name: /Chronological list/i });
   expect(screen.getByTestId("performance-count")).toHaveTextContent("2");
   expect(screen.getByTestId("performance-latest-score")).toHaveTextContent("4.8 / 5");
 
@@ -1423,4 +1426,48 @@ test("keyboard interactions and accessibility attributes are correctly wired", a
   await waitFor(() => {
     expect(deleteSession).toHaveBeenCalledWith("s-a11y");
   });
+});
+
+test("has no accessibility violations in populated history state", async () => {
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [
+      {
+        id: "session-1",
+        userId: "u1",
+        role: "backend-developer",
+        status: "ENDED",
+        startedAt: "2026-11-01T10:00:00Z",
+        endedAt: "2026-11-01T10:20:00Z",
+        feedbackStatus: "ready",
+        overallScore: 4.5,
+        endedEarly: false,
+      },
+    ],
+  });
+
+  const { container } = render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  await screen.findByTestId("history-session-session-1");
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test("has no accessibility violations in empty history state", async () => {
+  vi.mocked(getSessions).mockResolvedValue({
+    success: true,
+    data: [],
+  });
+
+  const { container } = render(
+    <MemoryRouter>
+      <HistoryPage />
+    </MemoryRouter>
+  );
+
+  await screen.findByText("No Interviews Yet");
+  expect(await axe(container)).toHaveNoViolations();
 });

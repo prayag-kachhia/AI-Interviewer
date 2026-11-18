@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { axe } from 'vitest-axe';
 import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { VerifyEmail } from './VerifyEmail';
@@ -380,5 +381,34 @@ describe('VerifyEmail Screen (Phase 3 & Phase 6)', () => {
       message:
         'If this email is unverified, a new code has been sent. If you already have an account, please sign in.',
     });
+  });
+
+  it('has no accessibility violations in default verification view', async () => {
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={[{ pathname: '/verify-email', state: { email: 'candidate@example.com' } }]}>
+            <VerifyEmail />
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('has no accessibility violations in email edit mode', async () => {
+    const { container } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/verify-email']}>
+            <VerifyEmail />
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    expect(screen.getByRole('textbox', { name: /email address/i })).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

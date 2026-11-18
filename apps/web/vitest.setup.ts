@@ -1,6 +1,9 @@
 import "@testing-library/jest-dom/vitest";
+import * as matchers from "vitest-axe/matchers.js";
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { afterEach, expect } from "vitest";
+
+expect.extend(matchers);
 
 // Testing Library only cleans up automatically when vitest globals are on; they are off here.
 afterEach(cleanup);

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, expect, test, vi } from 'vitest';
+import { axe } from 'vitest-axe';
 import { ROLES } from '@interview/contracts';
 import { NewInterview } from './NewInterview';
 import * as api from '../../lib/api';
@@ -18,7 +19,7 @@ beforeEach(() => {
 });
 
 function renderSetup(url = '/new-interview') {
-  render(
+  return render(
     <MemoryRouter initialEntries={[url]}>
       <Routes>
         <Route path="/new-interview" element={<NewInterview />} />
@@ -152,4 +153,20 @@ test('sends a pasted target job description with the session (PK-9, FR-11)', asy
   await waitFor(() =>
     expect(api.createSession).toHaveBeenCalledWith(expect.objectContaining({ roleId: 'software-engineer', jobContext: posting })),
   );
+});
+
+test('has no accessibility violations in initial setup state', async () => {
+  const { container } = renderSetup();
+  await screen.findByRole('radio', { name: 'Software Engineer' });
+  expect(await axe(container)).toHaveNoViolations();
+});
+
+test('has no accessibility violations in configured interview state', async () => {
+  const { container } = renderSetup();
+  fireEvent.click(await screen.findByRole('radio', { name: 'Software Engineer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Debugging' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Senior' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Typed' }));
+
+  expect(await axe(container)).toHaveNoViolations();
 });
