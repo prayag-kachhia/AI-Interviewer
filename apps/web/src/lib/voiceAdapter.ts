@@ -1,4 +1,5 @@
 import type { InterviewVoiceState, TurnSpeaker } from '../types';
+import { getPreferredMicId } from './audio';
 
 /**
  * Contract for short-lived voice session tokens.
@@ -97,7 +98,20 @@ export class BrowserWebSpeechVoiceAdapter implements VoiceSessionAdapter {
     // Initialize microphone audio level meter if permitted by browser
     if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
       try {
-        this.mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const preferredDeviceId = getPreferredMicId();
+        let mediaStream: MediaStream;
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            audio: preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : true,
+          });
+        } catch (err) {
+          if (preferredDeviceId && err instanceof DOMException && err.name === 'OverconstrainedError') {
+            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          } else {
+            throw err;
+          }
+        }
+        this.mediaStream = mediaStream;
         const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
         if (AudioCtx) {
           this.audioContext = new AudioCtx();
