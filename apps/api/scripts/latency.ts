@@ -1,5 +1,3 @@
-import prisma from '../src/db';
-
 export interface LatencyStats {
   count: number;
   min: number;
@@ -94,9 +92,12 @@ export function parseArgs(argv: string[]) {
 
 export async function run() {
   const { limit, targetMs, json } = parseArgs(process.argv.slice(2));
+  let prismaClient: any = null;
 
   try {
-    const turns = await prisma.turn.findMany({
+    const dbModule = await import('../src/db');
+    prismaClient = dbModule.default;
+    const turns = await prismaClient.turn.findMany({
       where: {
         speaker: 'AI',
         latencyMs: { not: null },
@@ -171,7 +172,9 @@ export async function run() {
     }
     throw err;
   } finally {
-    await prisma.$disconnect();
+    if (prismaClient) {
+      await prismaClient.$disconnect();
+    }
   }
 }
 

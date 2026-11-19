@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
-import { test, expect, vi, afterEach } from 'vitest';
 import { axe } from 'vitest-axe';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { test, expect, vi, afterEach } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Profile } from './Profile';
 import * as api from '../../lib/api';
@@ -168,37 +168,131 @@ const renderWithoutResume = async () => {
   await screen.findByText('No Profile Found');
 };
 
-test('given the user confirms account deletion, deletes and goes to login', async () => {
-  mockDeleteAccount.mockResolvedValueOnce({ success: true });
+test('Delete Account button opens the confirmation dialog with permanent warning and user email', async () => {
   await renderWithoutResume();
 
   fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+  const dialog = await screen.findByRole('alertdialog');
+  expect(within(dialog).getByRole('heading', { name: /Confirm Account Deletion/i })).toBeInTheDocument();
+  expect(within(dialog).getByText(/This action is/i)).toBeInTheDocument();
+  expect(within(dialog).getByText(/irreversible/i)).toBeInTheDocument();
+  expect(within(dialog).getByText(/john@example\.com/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/All uploaded PDF resumes/i)).toBeInTheDocument();
+});
+
+test('dialog requires typing exact DELETE to enable deletion action', async () => {
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+  const deleteButton = await screen.findByRole('button', { name: /yes, delete everything/i });
+  const input = screen.getByLabelText(/type DELETE to confirm account deletion/i);
+
+  // Initially disabled
+  expect(deleteButton).toBeDisabled();
+
+  // Incorrect confirmation keeps deletion disabled
+  fireEvent.change(input, { target: { value: 'delete' } });
+  expect(deleteButton).toBeDisabled();
+
+  fireEvent.change(input, { target: { value: 'DELET' } });
+  expect(deleteButton).toBeDisabled();
+
+  fireEvent.change(input, { target: { value: 'DELETE ' } });
+  expect(deleteButton).toBeDisabled();
+
+  // Exact DELETE enables deletion
+  fireEvent.change(input, { target: { value: 'DELETE' } });
+  expect(deleteButton).not.toBeDisabled();
+});
+
+test('Cancel button closes the dialog and resets confirmation input', async () => {
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+  const input = await screen.findByLabelText(/type DELETE to confirm account deletion/i);
+  fireEvent.change(input, { target: { value: 'DELETE' } });
+
+  fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  expect(mockDeleteAccount).not.toHaveBeenCalled();
+
+  // Reopening starts fresh
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+  const reopenedInput = await screen.findByLabelText(/type DELETE to confirm account deletion/i);
+  expect(reopenedInput).toHaveValue('');
+  expect(screen.getByRole('button', { name: /yes, delete everything/i })).toBeDisabled();
+});
+
+test('successful deletion calls deleteAccount and navigates to /login with success message', async () => {
+  mockDeleteAccount.mockResolvedValueOnce({ success: true, message: 'Account deleted' });
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+  fireEvent.change(screen.getByLabelText(/type DELETE to confirm account deletion/i), {
+    target: { value: 'DELETE' },
+  });
+
   fireEvent.click(await screen.findByRole('button', { name: /yes, delete everything/i }));
 
-  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/login', expect.anything()));
+  await waitFor(() =>
+    expect(mockNavigate).toHaveBeenCalledWith('/login', {
+      state: {
+        message: 'Your account and all associated data have been permanently deleted.',
+        mode: 'signin',
+      },
+    })
+  );
   expect(mockDeleteAccount).toHaveBeenCalledTimes(1);
 });
 
-test('given account deletion fails, keeps the dialog open and shows the error', async () => {
-  mockDeleteAccount.mockResolvedValueOnce({ success: false, message: 'Server said no' });
+test('failed deletion displays error, keeps user signed in, and does not navigate', async () => {
+  mockDeleteAccount.mockResolvedValueOnce({ success: false, message: 'Database transaction rolled back' });
   await renderWithoutResume();
 
   fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+  fireEvent.change(screen.getByLabelText(/type DELETE to confirm account deletion/i), {
+    target: { value: 'DELETE' },
+  });
+
   fireEvent.click(await screen.findByRole('button', { name: /yes, delete everything/i }));
 
-  expect(await screen.findByText('Server said no')).toBeInTheDocument();
+  expect(await screen.findByText('Database transaction rolled back')).toBeInTheDocument();
   expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
-test('given the user cancels, nothing is deleted', async () => {
+test('loading state prevents duplicate deletion submissions while in progress', async () => {
+  let resolvePromise: (value: { success: boolean }) => void = () => {};
+  const pendingPromise = new Promise<{ success: boolean }>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  mockDeleteAccount.mockReturnValueOnce(pendingPromise);
   await renderWithoutResume();
 
   fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
-  fireEvent.click(await screen.findByRole('button', { name: /cancel/i }));
+  fireEvent.change(screen.getByLabelText(/type DELETE to confirm account deletion/i), {
+    target: { value: 'DELETE' },
+  });
 
-  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
-  expect(mockDeleteAccount).not.toHaveBeenCalled();
+  const deleteBtn = await screen.findByRole('button', { name: /yes, delete everything/i });
+
+  // First click triggers deleteAccount
+  fireEvent.click(deleteBtn);
+  expect(mockDeleteAccount).toHaveBeenCalledTimes(1);
+
+  // Subsequent click while in flight is ignored
+  fireEvent.click(deleteBtn);
+  expect(mockDeleteAccount).toHaveBeenCalledTimes(1);
+
+  // Resolve the deletion
+  resolvePromise({ success: true });
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/login', expect.anything()));
 });
 
 test('given data export fails, shows the error message', async () => {
@@ -228,7 +322,7 @@ test('has no accessibility violations in populated profile state', async () => {
         experience: ['Software Engineer at Tech Corp'],
         projects: ['AI Interviewer'],
         certifications: ['AWS Certified Solutions Architect'],
-        achievements: ['Dean\'s List'],
+        achievements: ["Dean's List"],
         languages: ['English', 'Spanish'],
       },
     },

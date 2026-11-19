@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GeminiLiveVoiceAdapter } from './geminiLiveAdapter';
+import { setPreferredMicId } from './audio';
 import { getVoiceToken } from './api';
 import type { VoiceAdapterCallbacks } from './voiceAdapter';
 
@@ -7,12 +8,27 @@ vi.mock('./api', () => ({
   getVoiceToken: vi.fn(),
 }));
 
-const mockPlaybackQueue = { enqueue: vi.fn(), stop: vi.fn() };
+const mockPlaybackQueue = {
+  pendingCount: 0,
+  onDrained: undefined as (() => void) | undefined,
+  enqueue: vi.fn(() => {
+    mockPlaybackQueue.pendingCount += 1;
+  }),
+  stop: vi.fn(() => {
+    mockPlaybackQueue.pendingCount = 0;
+  }),
+  drain() {
+    mockPlaybackQueue.pendingCount = 0;
+    mockPlaybackQueue.onDrained?.();
+  },
+};
 
 vi.mock('./audio', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./audio')>()),
   PlaybackQueue: class {
-    constructor() {
+    constructor(_ctx: unknown, _sampleRate?: number, onDrained?: () => void) {
+      mockPlaybackQueue.pendingCount = 0;
+      mockPlaybackQueue.onDrained = onDrained;
       return mockPlaybackQueue;
     }
   },
@@ -155,6 +171,13 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
     ws.simulateOpen();
     const [{ setup }] = ws.sent();
     expect(setup.generationConfig.responseModalities).toEqual(['AUDIO']);
+    expect(setup.realtimeInputConfig).toEqual({
+      automaticActivityDetection: {
+        disabled: false,
+        endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+        silenceDurationMs: 2000,
+      },
+    });
     expect(setup.model).toBeUndefined();
     expect(setup.systemInstruction).toBeUndefined();
     expect(MockAudioContext.instances).toHaveLength(1); // output only, no mic capture yet
@@ -458,6 +481,46 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
     });
   });
 
+  describe('preferred microphone device selection (VI-4, #143)', () => {
+    it('passes preferred deviceId to getUserMedia when saved in sessionStorage', async () => {
+      setPreferredMicId('mic-device-abc');
+      const adapter = new GeminiLiveVoiceAdapter();
+      const callbacks = makeCallbacks();
+      await adapter.connect('session-mic-1', callbacks);
+
+      expect(getUserMedia).toHaveBeenCalledWith({
+        audio: expect.objectContaining({
+          deviceId: { exact: 'mic-device-abc' },
+        }),
+      });
+    });
+
+    it('falls back to default microphone if preferred device triggers OverconstrainedError', async () => {
+      setPreferredMicId('disconnected-mic');
+      getUserMedia.mockRejectedValueOnce(new DOMException('Device not found', 'OverconstrainedError'));
+
+      const adapter = new GeminiLiveVoiceAdapter();
+      const callbacks = makeCallbacks();
+      await adapter.connect('session-mic-2', callbacks);
+
+      expect(getUserMedia).toHaveBeenCalledTimes(2);
+      expect(getUserMedia).toHaveBeenNthCalledWith(1, {
+        audio: expect.objectContaining({
+          deviceId: { exact: 'disconnected-mic' },
+        }),
+      });
+      expect(getUserMedia).toHaveBeenNthCalledWith(2, {
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+    });
+  });
+
   describe('transcript accumulation', () => {
     it('combines streamed chunks into one final turn when chunk and turnComplete arrive together', async () => {
       const { callbacks, ws } = await connectReady();
@@ -606,6 +669,77 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
           isFinal: true,
         },
       ]);
+    });
+  });
+
+  describe('playback drain before LISTENING (Issue #296)', () => {
+    it('flushes the AI turn on turnComplete but waits for PlaybackQueue to drain before emitting LISTENING', async () => {
+      const { callbacks, ws } = await connectReady();
+      vi.mocked(callbacks.onStateChange).mockClear();
+
+      ws.simulateMessage({
+        serverContent: {
+          outputTranscription: { text: 'Explain how B-trees work in Postgres.' },
+          modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: 'AQID' } }] },
+        },
+      });
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('AI_SPEAKING');
+      expect(mockPlaybackQueue.pendingCount).toBe(1);
+
+      // Gemini finished generating, but audio is still playing in PlaybackQueue.
+      ws.simulateMessage({ serverContent: { turnComplete: true } });
+
+      // Transcript must flush immediately, while state remains AI_SPEAKING.
+      expect(callbacks.onTranscript).toHaveBeenCalledWith({
+        speaker: 'AI',
+        text: 'Explain how B-trees work in Postgres.',
+        isFinal: true,
+      });
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('AI_SPEAKING');
+      expect(callbacks.onStateChange).not.toHaveBeenCalledWith('LISTENING');
+
+      // Once PlaybackQueue finishes playing the last buffer, adapter transitions to LISTENING.
+      mockPlaybackQueue.drain();
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('LISTENING');
+    });
+
+    it('does not switch to LISTENING on mid-turn drain, and switches immediately if already drained on turnComplete', async () => {
+      const { callbacks, ws } = await connectReady();
+      vi.mocked(callbacks.onStateChange).mockClear();
+
+      ws.simulateMessage({
+        serverContent: {
+          modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: 'AQID' } }] },
+        },
+      });
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('AI_SPEAKING');
+
+      // Brief network stall drains playback before turnComplete arrives: must stay AI_SPEAKING.
+      mockPlaybackQueue.drain();
+      expect(callbacks.onStateChange).not.toHaveBeenCalledWith('LISTENING');
+
+      // Now turnComplete arrives with pendingCount === 0: switches to LISTENING right away.
+      ws.simulateMessage({ serverContent: { turnComplete: true } });
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('LISTENING');
+    });
+
+    it('switches to LISTENING immediately when candidate interrupts while audio is still queued', async () => {
+      const { callbacks, ws } = await connectReady();
+      vi.mocked(callbacks.onStateChange).mockClear();
+
+      ws.simulateMessage({
+        serverContent: {
+          outputTranscription: { text: 'Let me ask you about...' },
+          modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm;rate=24000', data: 'AQID' } }] },
+        },
+      });
+      ws.simulateMessage({ serverContent: { turnComplete: true } });
+      expect(callbacks.onStateChange).not.toHaveBeenCalledWith('LISTENING');
+
+      // Candidate barges in before playback finishes.
+      ws.simulateMessage({ serverContent: { interrupted: true } });
+      expect(mockPlaybackQueue.stop).toHaveBeenCalled();
+      expect(callbacks.onStateChange).toHaveBeenLastCalledWith('LISTENING');
     });
   });
 });
