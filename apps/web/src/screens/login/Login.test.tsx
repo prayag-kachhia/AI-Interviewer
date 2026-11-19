@@ -19,8 +19,14 @@ const mockResetPasswordForEmail = vi.fn().mockResolvedValue({ error: null });
 const mockSignInWithPassword = vi.fn();
 const mockSignUp = vi.fn();
 
+let mockIsSupabaseConfigured = true;
+const mockLinkIdentity = vi.fn().mockResolvedValue({ data: { url: "https://github.com/login/oauth/authorize" }, error: null });
+const mockGetUserIdentities = vi.fn().mockResolvedValue({ data: { identities: [] }, error: null });
+
 vi.mock("../../lib/supabase", () => ({
-  isSupabaseConfigured: true,
+  get isSupabaseConfigured() {
+    return mockIsSupabaseConfigured;
+  },
   supabase: {
     auth: {
       getSession: () => mockGetSession(),
@@ -30,6 +36,8 @@ vi.mock("../../lib/supabase", () => ({
       signInWithPassword: (params: any) => mockSignInWithPassword(params),
       signUp: (params: any) => mockSignUp(params),
       resetPasswordForEmail: (email: any, opts: any) => mockResetPasswordForEmail(email, opts),
+      linkIdentity: (params: any) => mockLinkIdentity(params),
+      getUserIdentities: () => mockGetUserIdentities(),
     },
   },
 }));
@@ -303,6 +311,321 @@ describe("Login Screen - Google Sign In Button Visibility", () => {
     googleButtons = await screen.findAllByRole("button", { name: /continue with google/i });
     expect(googleButtons.length).toBeGreaterThanOrEqual(1);
     expect(googleButtons[0]).toBeInTheDocument();
+  });
+});
+
+describe("Login Screen - GitHub Sign In (FR-01 / VM-11)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsSupabaseConfigured = true;
+    localStorage.clear();
+    sessionStorage.clear();
+    clearAuthStorage();
+    mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
+    mockSignInWithOAuth.mockResolvedValue({ error: null });
+  });
+
+  it("renders Continue with GitHub button on initial load", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const githubButtons = await screen.findAllByRole("button", { name: /continue with github/i });
+    expect(githubButtons.length).toBeGreaterThanOrEqual(1);
+    expect(githubButtons[0]).toBeInTheDocument();
+  });
+
+  it("remains visible when switching between Sign In and Sign Up tabs", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    let githubButtons = await screen.findAllByRole("button", { name: /continue with github/i });
+    expect(githubButtons[0]).toBeInTheDocument();
+
+    const signUpTabs = screen.getAllByRole("tab", { name: /sign up/i });
+    await act(async () => {
+      fireEvent.click(signUpTabs[0]);
+    });
+
+    githubButtons = await screen.findAllByRole("button", { name: /continue with github/i });
+    expect(githubButtons[0]).toBeInTheDocument();
+
+    const signInTabs = screen.getAllByRole("tab", { name: /sign in/i });
+    await act(async () => {
+      fireEvent.click(signInTabs[0]);
+    });
+
+    githubButtons = await screen.findAllByRole("button", { name: /continue with github/i });
+    expect(githubButtons[0]).toBeInTheDocument();
+  });
+
+  it("appears after signing out", async () => {
+    let authCallback: ((event: string, session: any) => void) | null = null;
+    mockOnAuthStateChange.mockImplementation((callback) => {
+      authCallback = callback;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+
+    const mockUser = {
+      id: "gh-user-123",
+      email: "ghuser@example.com",
+      user_metadata: { full_name: "GitHub User" },
+    };
+    mockGetSession.mockResolvedValueOnce({
+      data: { session: { user: mockUser, access_token: "mock-gh-token" } },
+      error: null,
+    });
+    vi.mocked(await import("../../lib/api")).getMe.mockResolvedValueOnce({
+      success: true,
+      data: { id: "gh-user-123", email: "ghuser@example.com", name: "GitHub User" },
+    });
+
+    const TestAuthConsumer = () => {
+      const { user, signOut } = useAuth();
+      return (
+        <div>
+          {user ? (
+            <div>
+              <span data-testid="user-email">{user.email}</span>
+              <button data-testid="logout-btn" onClick={() => signOut()}>
+                Logout
+              </button>
+            </div>
+          ) : (
+            <Login />
+          )}
+        </div>
+      );
+    };
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <TestAuthConsumer />
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    expect(await screen.findByTestId("user-email")).toHaveTextContent("ghuser@example.com");
+
+    const logoutBtn = screen.getByTestId("logout-btn");
+    await act(async () => {
+      fireEvent.click(logoutBtn);
+    });
+
+    if (authCallback) {
+      await act(async () => {
+        (authCallback as any)("SIGNED_OUT", null);
+      });
+    }
+
+    const githubButtons = await screen.findAllByRole("button", { name: /continue with github/i });
+    expect(githubButtons[0]).toBeInTheDocument();
+  });
+
+  it("appears after page refresh", async () => {
+    const { unmount } = render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    let githubButtons = await screen.findAllByRole("button", { name: /continue with github/i });
+    expect(githubButtons[0]).toBeInTheDocument();
+
+    unmount();
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    githubButtons = await screen.findAllByRole("button", { name: /continue with github/i });
+    expect(githubButtons[0]).toBeInTheDocument();
+  });
+
+  it("clicking GitHub calls signInWithOAuth with provider github and dashboard redirect", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const githubBtn = screen.getAllByRole("button", { name: /continue with github/i })[0];
+    await act(async () => {
+      fireEvent.click(githubBtn);
+    });
+
+    expect(mockSignInWithOAuth).toHaveBeenCalledWith({
+      provider: "github",
+      options: {
+        redirectTo: expect.stringContaining("/dashboard"),
+      },
+    });
+  });
+
+  it("preserves staySignedIn: false when initiating GitHub sign-in with checkbox unchecked", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: /stay signed in/i });
+    expect(checkbox).not.toBeChecked();
+
+    const githubBtn = screen.getAllByRole("button", { name: /continue with github/i })[0];
+    await act(async () => {
+      fireEvent.click(githubBtn);
+    });
+
+    expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "github" })
+    );
+    expect(getStaySignedIn()).toBe(false);
+  });
+
+  it("preserves staySignedIn: true when initiating GitHub sign-in with checkbox checked", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const checkbox = screen.getByRole("checkbox", { name: /stay signed in/i });
+    await act(async () => {
+      fireEvent.click(checkbox);
+    });
+    expect(checkbox).toBeChecked();
+
+    const githubBtn = screen.getAllByRole("button", { name: /continue with github/i })[0];
+    await act(async () => {
+      fireEvent.click(githubBtn);
+    });
+
+    expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "github" })
+    );
+    expect(getStaySignedIn()).toBe(true);
+    expect(localStorage.getItem(STAY_SIGNED_IN_KEY)).toBe("true");
+  });
+
+  it("handles OAuth errors from redirect URL hash or query", async () => {
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login?error=server_error&error_description=GitHub+OAuth+failed"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    expect(await screen.findByText(/github oauth failed/i)).toBeInTheDocument();
+  });
+
+  it("handles signInWithOAuth failure and displays error", async () => {
+    mockSignInWithOAuth.mockResolvedValueOnce({
+      error: { message: "GitHub authentication service unavailable" },
+    });
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    const githubBtn = screen.getAllByRole("button", { name: /continue with github/i })[0];
+    await act(async () => {
+      fireEvent.click(githubBtn);
+    });
+
+    expect(await screen.findByText(/github authentication service unavailable/i)).toBeInTheDocument();
+  });
+
+  it("handles Supabase-not-configured behaviour gracefully", async () => {
+    mockIsSupabaseConfigured = false;
+    try {
+      render(
+        <ThemeProvider>
+          <AuthProvider>
+            <MemoryRouter initialEntries={["/login"]}>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+              </Routes>
+            </MemoryRouter>
+          </AuthProvider>
+        </ThemeProvider>
+      );
+
+      const githubBtn = screen.getAllByRole("button", { name: /continue with github/i })[0];
+      await act(async () => {
+        fireEvent.click(githubBtn);
+      });
+
+      expect(await screen.findByText(/supabase is not configured/i)).toBeInTheDocument();
+      expect(mockSignInWithOAuth).not.toHaveBeenCalled();
+    } finally {
+      mockIsSupabaseConfigured = true;
+    }
   });
 });
 

@@ -7,6 +7,7 @@ import {
   Mail, Phone, Briefcase, GraduationCap,
   FolderGit2, Code2, Award, Languages, Loader2, ArrowLeft,
   Trash2, ShieldAlert, AlertTriangle, AlertCircle, Download, FileText,
+  Link2, CheckCircle2,
   type LucideIcon,
 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -18,6 +19,13 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { GoogleIcon, GitHubIcon } from '../login/GoogleButton';
+import {
+  getOAuthErrorFromUrl,
+  hasGoogleIdentity,
+  hasGitHubIdentity,
+  getVerifiedGitHubUsername,
+} from '../../lib/githubIdentity';
 
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
@@ -61,8 +69,25 @@ export const Profile: React.FC = () => {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
-  const { user, deleteAccount } = useAuth();
+  // Connected accounts linking states
+  const [linkingGitHub, setLinkingGitHub] = useState(false);
+  const [linkingError, setLinkingError] = useState('');
+
+  const { user, deleteAccount, linkGitHubIdentity, refreshIdentities } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const urlError = getOAuthErrorFromUrl(window.location.search, window.location.hash);
+    if (urlError) {
+      setLinkingError(urlError);
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch {
+        // Safe fallback in test environments
+      }
+    }
+    refreshIdentities?.();
+  }, [refreshIdentities]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -143,6 +168,124 @@ export const Profile: React.FC = () => {
       setDeleting(false);
     }
   };
+
+  const handleConnectGitHub = async () => {
+    if (linkingGitHub) return;
+    setLinkingGitHub(true);
+    setLinkingError('');
+    try {
+      const res = await linkGitHubIdentity();
+      if (!res.success) {
+        setLinkingError(res.message || 'Failed to connect GitHub account.');
+        setLinkingGitHub(false);
+      }
+    } catch (err: any) {
+      setLinkingError(err.message || 'An unexpected error occurred while linking GitHub.');
+      setLinkingGitHub(false);
+    }
+  };
+
+  const isGoogleConnected = hasGoogleIdentity(user?.identities);
+  const googleIdentity = user?.identities?.find((id) => id.provider === 'google');
+  const googleEmail = googleIdentity?.email;
+
+  const isGitHubConnected = hasGitHubIdentity(user?.identities) || Boolean(user?.githubUsername);
+  const verifiedGitHubUsername = user?.githubUsername || getVerifiedGitHubUsername(user?.identities);
+
+  const connectedAccountsCard = (
+    <Card className="mt-10 border-border">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-3 text-xl">
+          <Link2 className="size-6 text-primary" /> Connected Accounts
+        </CardTitle>
+        <CardDescription>
+          Manage third-party authentication providers linked to your candidate profile.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {linkingError && (
+          <Alert variant="error">
+            <AlertCircle />
+            <AlertDescription>{linkingError}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border p-5">
+          <div className="flex items-center gap-3">
+            <GoogleIcon className="size-5 shrink-0" />
+            <div>
+              <div className="font-semibold">Google</div>
+              <div className="text-sm text-muted-foreground">
+                {isGoogleConnected
+                  ? googleEmail
+                    ? `Connected as ${googleEmail}`
+                    : 'Connected'
+                  : 'Not connected'}
+              </div>
+            </div>
+          </div>
+          <div>
+            {isGoogleConnected ? (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <CheckCircle2 className="size-3 text-success" /> Connected
+              </Badge>
+            ) : (
+              <Badge variant="outline">Not connected</Badge>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-border p-5">
+          <div className="flex items-center gap-3">
+            <GitHubIcon className="size-5 shrink-0" />
+            <div>
+              <div className="flex items-center gap-2 font-semibold">
+                <span>GitHub</span>
+                {isGitHubConnected && verifiedGitHubUsername && (
+                  <span className="font-mono text-sm font-normal text-muted-foreground">
+                    (@{verifiedGitHubUsername})
+                  </span>
+                )}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {isGitHubConnected
+                  ? verifiedGitHubUsername
+                    ? `Connected as @${verifiedGitHubUsername}`
+                    : 'Connected'
+                  : 'Link your GitHub account to verify your developer identity and repository context.'}
+              </div>
+            </div>
+          </div>
+          <div>
+            {isGitHubConnected ? (
+              <Badge variant="default" className="flex items-center gap-1">
+                <CheckCircle2 className="size-3" /> Connected
+              </Badge>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleConnectGitHub}
+                disabled={linkingGitHub}
+              >
+                {linkingGitHub ? (
+                  <>
+                    <Loader2 className="animate-spin motion-reduce:animate-none" />
+                    <span>Connecting...</span>
+                  </>
+                ) : (
+                  <>
+                    <GitHubIcon className="size-4" />
+                    <span>Connect GitHub</span>
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   const dangerZone = (
     <Card className="mt-10 border-destructive/30">
@@ -259,6 +402,7 @@ export const Profile: React.FC = () => {
               <Button onClick={() => navigate('/dashboard')}>Go to Dashboard to Upload</Button>
             </CardContent>
           </Card>
+          {connectedAccountsCard}
           {dangerZone}
         </div>
         {deleteDialog}
@@ -352,6 +496,7 @@ export const Profile: React.FC = () => {
         </div>
       </Card>
 
+      {connectedAccountsCard}
       {dangerZone}
       {deleteDialog}
     </div>

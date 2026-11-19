@@ -11,11 +11,22 @@ vi.mock('../../lib/api', () => ({
   exportMyData: vi.fn(),
 }));
 
+let mockAuthUser: any = {
+  id: 'u1',
+  name: 'John Candidate',
+  email: 'john@example.com',
+  identities: [],
+};
 const mockDeleteAccount = vi.fn();
+const mockLinkGitHubIdentity = vi.fn().mockResolvedValue({ success: true, url: 'https://github.com/login/oauth/authorize' });
+const mockRefreshIdentities = vi.fn().mockResolvedValue([]);
+
 vi.mock('../../context/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 'u1', name: 'John Candidate', email: 'john@example.com' },
+    user: mockAuthUser,
     deleteAccount: mockDeleteAccount,
+    linkGitHubIdentity: mockLinkGitHubIdentity,
+    refreshIdentities: mockRefreshIdentities,
   }),
 }));
 
@@ -32,6 +43,14 @@ afterEach(() => {
   vi.restoreAllMocks();
   mockNavigate.mockReset();
   mockDeleteAccount.mockReset();
+  mockLinkGitHubIdentity.mockReset();
+  mockRefreshIdentities.mockReset();
+  mockAuthUser = {
+    id: 'u1',
+    name: 'John Candidate',
+    email: 'john@example.com',
+    identities: [],
+  };
 });
 
 test('given no profile exists, displays "No Profile Found"', async () => {
@@ -271,4 +290,196 @@ test('has no accessibility violations when delete dialog is open', async () => {
   await screen.findByRole('alertdialog');
 
   expect(await axe(container)).toHaveNoViolations();
+});
+
+test('existing user with no GitHub identity sees Connect GitHub button and Not connected status', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'John Candidate',
+    email: 'john@example.com',
+    identities: [{ provider: 'google', identity_data: { email: 'john@example.com' } }],
+  };
+  await renderWithoutResume();
+
+  expect(screen.getByRole('button', { name: /connect github/i })).toBeInTheDocument();
+  expect(screen.getByText(/Link your GitHub account to verify your developer identity/i)).toBeInTheDocument();
+});
+
+test('clicking Connect GitHub invokes linkIdentity via linkGitHubIdentity with provider github', async () => {
+  await renderWithoutResume();
+
+  const connectBtn = screen.getByRole('button', { name: /connect github/i });
+  fireEvent.click(connectBtn);
+
+  expect(mockLinkGitHubIdentity).toHaveBeenCalledTimes(1);
+});
+
+test('existing linked GitHub identity displays its verified username', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'John Candidate',
+    email: 'john@example.com',
+    identities: [
+      {
+        provider: 'github',
+        identity_data: { user_name: 'vismay-solanki' },
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.getByText('(@vismay-solanki)')).toBeInTheDocument();
+  expect(screen.getByText('Connected as @vismay-solanki')).toBeInTheDocument();
+});
+
+test('GitHub username comes from identity data, never arbitrary user display name', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'Unverified Display Name',
+    email: 'john@example.com',
+    identities: [
+      {
+        provider: 'github',
+        identity_data: {
+          user_name: 'actual-github-handle',
+          name: 'Unverified Display Name',
+        },
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.getByText('(@actual-github-handle)')).toBeInTheDocument();
+  expect(screen.queryByText('(@Unverified Display Name)')).not.toBeInTheDocument();
+});
+
+test('a non-GitHub identity cannot be displayed as GitHub', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'Google Only Candidate',
+    email: 'googleuser@example.com',
+    identities: [
+      {
+        provider: 'google',
+        identity_data: { user_name: 'google_user', email: 'googleuser@example.com' },
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.getByRole('button', { name: /connect github/i })).toBeInTheDocument();
+  expect(screen.queryByText('(@google_user)')).not.toBeInTheDocument();
+});
+
+test('missing GitHub username is handled safely without throwing', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'Candidate',
+    email: 'user@example.com',
+    identities: [
+      {
+        provider: 'github',
+        identity_data: {},
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.queryByRole('button', { name: /connect github/i })).not.toBeInTheDocument();
+  expect(screen.getAllByText('Connected').length).toBeGreaterThanOrEqual(1);
+});
+
+test('already-connected GitHub account displays connected status instead of Connect button', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'Linked Candidate',
+    email: 'linked@example.com',
+    githubUsername: 'octocat',
+    identities: [
+      {
+        provider: 'github',
+        identity_data: { user_name: 'octocat' },
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.queryByRole('button', { name: /connect github/i })).not.toBeInTheDocument();
+  expect(screen.getByText('(@octocat)')).toBeInTheDocument();
+});
+
+test('linking errors are displayed correctly in an Alert', async () => {
+  mockLinkGitHubIdentity.mockResolvedValueOnce({
+    success: false,
+    message: 'Identity is already linked to another user',
+  });
+  await renderWithoutResume();
+
+  const connectBtn = screen.getByRole('button', { name: /connect github/i });
+  fireEvent.click(connectBtn);
+
+  expect(await screen.findByText('Identity is already linked to another user')).toBeInTheDocument();
+});
+
+test('duplicate submissions are prevented while linking is in progress', async () => {
+  let resolvePromise: (val: any) => void = () => {};
+  mockLinkGitHubIdentity.mockImplementationOnce(
+    () => new Promise((resolve) => { resolvePromise = resolve; })
+  );
+  await renderWithoutResume();
+
+  const connectBtn = screen.getByRole('button', { name: /connect github/i });
+
+  fireEvent.click(connectBtn);
+  expect(mockLinkGitHubIdentity).toHaveBeenCalledTimes(1);
+
+  expect(connectBtn).toBeDisabled();
+
+  fireEvent.click(connectBtn);
+  expect(mockLinkGitHubIdentity).toHaveBeenCalledTimes(1);
+
+  resolvePromise({ success: true });
+});
+
+test('existing user identity remains unchanged during linking', async () => {
+  mockAuthUser = {
+    id: 'user-keep-id',
+    name: 'Original Candidate',
+    email: 'original@example.com',
+    identities: [],
+  };
+  await renderWithoutResume();
+
+  const connectBtn = screen.getByRole('button', { name: /connect github/i });
+  fireEvent.click(connectBtn);
+
+  expect(mockAuthUser.id).toBe('user-keep-id');
+  expect(mockAuthUser.email).toBe('original@example.com');
+});
+
+test('identity-refresh effect does not repeatedly execute when user state changes', async () => {
+  const { rerender } = render(
+    <MemoryRouter>
+      <Profile />
+    </MemoryRouter>
+  );
+
+  await waitFor(() => {
+    expect(mockRefreshIdentities).toHaveBeenCalledTimes(1);
+  });
+
+  // Simulate user state change in AuthContext
+  mockAuthUser = {
+    ...mockAuthUser,
+    name: 'Updated Name',
+    githubUsername: 'new-octocat',
+  };
+
+  rerender(
+    <MemoryRouter>
+      <Profile />
+    </MemoryRouter>
+  );
+
+  expect(mockRefreshIdentities).toHaveBeenCalledTimes(1);
 });
