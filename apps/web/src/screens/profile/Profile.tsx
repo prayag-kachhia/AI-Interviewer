@@ -60,6 +60,7 @@ export const Profile: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
   const { user, deleteAccount } = useAuth();
   const navigate = useNavigate();
@@ -123,6 +124,7 @@ export const Profile: React.FC = () => {
     }
   };
   const handleDeleteAccount = async () => {
+    if (deleting) return;
     setDeleting(true);
     setDeleteError('');
     try {
@@ -130,7 +132,7 @@ export const Profile: React.FC = () => {
       if (res.success) {
         navigate('/login', {
           state: {
-            message: 'Your account and all associated resumes have been permanently deleted.',
+            message: 'Your account and all associated data have been permanently deleted.',
             mode: 'signin',
           },
         });
@@ -191,7 +193,19 @@ export const Profile: React.FC = () => {
   );
 
   const deleteDialog = (
-    <AlertDialog open={showDeleteModal} onOpenChange={(open) => !deleting && setShowDeleteModal(open)}>
+    <AlertDialog
+      open={showDeleteModal}
+      onOpenChange={(open) => {
+        if (deleting) return;
+
+        setShowDeleteModal(open);
+
+        if (!open) {
+          setDeleteConfirmation('');
+          setDeleteError('');
+        }
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-3">
@@ -205,10 +219,27 @@ export const Profile: React.FC = () => {
         <div className="rounded-md border border-border bg-background p-4 text-sm">
           <p className="mb-2 font-semibold">The following will be permanently erased:</p>
           <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-            <li>User account ({user?.email})</li>
+            <li>User account and profile ({user?.email})</li>
             <li>All uploaded PDF resumes</li>
-            <li>AI-generated candidate profile and skills history</li>
+            <li>All mock interview sessions, transcripts, and evaluation feedback</li>
+            <li>AI-generated candidate profile and improvement guide</li>
           </ul>
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="delete-confirmation" className="text-sm font-medium">
+            Type <strong>DELETE</strong> to confirm account deletion.
+          </label>
+
+          <input
+            id="delete-confirmation"
+            type="text"
+            value={deleteConfirmation}
+            onChange={(e) => setDeleteConfirmation(e.target.value)}
+            placeholder="Type DELETE"
+            autoComplete="off"
+            disabled={deleting}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
         </div>
 
         {deleteError && (
@@ -221,6 +252,7 @@ export const Profile: React.FC = () => {
         <AlertDialogFooter>
           <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
           <AlertDialogAction
+            disabled={deleting || deleteConfirmation !== 'DELETE'}
             loading={deleting}
             onClick={(e) => {
               // Keep the dialog open so a failed delete can show its error.
