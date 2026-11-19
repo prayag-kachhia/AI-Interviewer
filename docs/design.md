@@ -4,7 +4,7 @@
 > **Author:** Kishan Savani (@kishan-savani-ops)  
 > **Reviewer:** Vishwa Mohan (@vishwa-mohan), Prayag Kachhia (@prayag-kachhia)  
 > **Status:** Accepted & Frozen (Sprint 5)  
-> **Supersedes:** Sections 2 and 5 of [`docs/codebase-guide.md`](codebase-guide.md) (marked as archived).
+> **Supersedes:** the early architecture sections of [`docs/codebase-guide.md`](codebase-guide.md), which was rewritten on 19 Nov as a developer guide that points here for the architecture.
 
 ---
 
@@ -265,7 +265,7 @@ sequenceDiagram
     Worker->>DB: UPDATE jobs SET status='processing', lockedAt=NOW
     Worker->>DB: SELECT * FROM turns WHERE sessionId=sess_123 ORDER BY turnIndex ASC
     DB-->>Worker: Full transcript turns
-    Worker->>Flash: evaluateTranscript(turns, roleRubric) [timeout: 12s, gemini-3.8-flash]
+    Worker->>Flash: evaluateTranscript(turns, roleRubric) [timeout: 60s, gemini-3.8-flash]
     Flash-->>Worker: Structured JSON { summary, scores: [Communication, ProblemSolving, Technical], perAnswer }
     Worker->>DB: UPDATE feedback SET status='ready', summary=..., scores=...
     Worker->>DB: UPDATE jobs SET status='completed'
@@ -320,7 +320,7 @@ stateDiagram-v2
     [*] --> Pending : Session ends\n(Feedback record initialized)
 
     Pending --> Ready : Worker evaluation succeeds\n(Valid JSON, scores & summary saved)
-    Pending --> Failed : Evaluation error\n(LLM timeout > 12s, rate limit 429,\nor schema parsing failure after 3 attempts)
+    Pending --> Failed : Evaluation error\n(LLM timeout > 60s, rate limit 429,\nor schema parsing failure after 3 attempts)
 
     Failed --> Pending : POST /api/sessions/:id/feedback/retry\n(Candidate clicks "Try again" on ResultsScreen)
 
@@ -693,4 +693,4 @@ This document formally succeeds earlier exploratory and initial planning section
 | **Section 5 ("One interview, end to end")** | **Section 4 & 6 ("End-to-End Sequence Flow" & "Request-Chain Walkthrough")** | Replaces deprecated hardcoded question providers with the server-side `briefingFor` brain, transactional job queue, and per-answer evaluation flow. |
 | **Early Data Tables** | **Section 3 ("Database ER Architecture")** | Updated with all Sprint 4 & Sprint 5 migrations: `endedEarly`, `endReason`, `keep`, `jobContext`, `mode`, `Job`, and `ImprovementPlan`. |
 
-The corresponding sections in [`docs/codebase-guide.md`](codebase-guide.md) have been stamped with historical archival notices linking directly to this document.
+On 19 Nov the codebase guide was rewritten as a developer guide (where code lives, where to make a change, likely evaluation questions). It no longer has these sections and links here for the architecture.

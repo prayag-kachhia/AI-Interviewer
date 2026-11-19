@@ -14,8 +14,8 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
    lead) writes them as Given/When/Then statements. Your tests must cover them. If they're missing or unclear,
    ask before building — don't guess.
 3. **Check whether you need a new contract.** Shapes the API and web share belong in
-   `packages/contracts`. The imported code still declares its shapes in
-   `apps/api/src/types/index.ts` and `apps/web/src/types/index.ts`. If your task needs a new
+   `packages/contracts`; `apps/api/src/types/index.ts` and `apps/web/src/types/index.ts`
+   mostly re-export them. If your task needs a new
    shape, add it in the same PR as the code that uses it, and never add a second copy of one that
    already exists.
 
@@ -31,8 +31,8 @@ AI assistants, but if you can't explain your change, it doesn't get merged.
   endpoint or token format.
 - **Vendor code is quarantined:** Gemini is called only from one service per job under
   `apps/api/src/services/`: `gemini.service.ts` (resume analysis), `evaluator.service.ts`
-  (feedback), `interviewer.service.ts` (next question) and `voice-provider.service.ts` (the voice
-  token). The browser reaches Gemini Live only with that short-lived token, in
+  (feedback), `interviewer.service.ts` (next question), `insights.service.ts` (improvement guide) and
+  `voice-provider.service.ts` (the voice token). The browser reaches Gemini Live only with that short-lived token, in
   `apps/web/src/lib/geminiLiveAdapter.ts`.
 - **Placeholder code is marked `STUB`** with the owning slice named.
 
