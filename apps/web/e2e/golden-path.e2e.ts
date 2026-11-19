@@ -17,11 +17,13 @@ test('a candidate can practise a typed interview and get feedback', async ({ pag
     await page.goto('/login');
     await page.getByLabel('Email address').fill(email!);
     await page.getByLabel('Password', { exact: true }).fill(password!);
-    await page.getByRole('button', { name: /^sign in$/i }).click();
-    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.getByRole('button', { name: /sign in to dashboard/i }).click();
+    // A first-time browser lands on /new-interview, later ones on /dashboard (useAuthForm).
+    await expect(page).toHaveURL(/\/(dashboard|new-interview)$/);
   });
 
   await test.step('upload a resume', async () => {
+    await page.goto('/dashboard');
     await page.getByLabel('Upload PDF resume').setInputFiles(RESUME);
     await page.getByRole('button', { name: /analyze resume/i }).click();
     await expect(page.getByText(/analyzed with ai/i)).toBeVisible({ timeout: 30_000 });
