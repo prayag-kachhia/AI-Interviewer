@@ -15,6 +15,7 @@ export interface VoiceTranscriptEvent {
   speaker: TurnSpeaker;
   text: string;
   isFinal: boolean;
+  latencyMs?: number | null;
 }
 
 export interface VoiceAdapterCallbacks {

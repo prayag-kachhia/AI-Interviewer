@@ -53,6 +53,8 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
   private resumptionHandle: string | null = null;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastCandidateInputTime: number | null = null;
+  private hasRecordedAiAudioForTurn = false;
 
   async connect(sessionId: string, callbacks: VoiceAdapterCallbacks): Promise<void> {
     this.cleanupAudioAndSocket();
@@ -61,12 +63,15 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     this.isDeliberateClose = false;
     this.isSessionClosed = false;
     this.reconnectAttempts = 0;
+    this.lastCandidateInputTime = null;
+    this.hasRecordedAiAudioForTurn = false;
     this.accumulator = new TranscriptAccumulator({
       onTurn: (turn) => {
         this.callbacks?.onTranscript({
           speaker: turn.speaker,
           text: turn.text,
           isFinal: true,
+          ...(turn.latencyMs !== undefined && turn.latencyMs !== null ? { latencyMs: turn.latencyMs } : {}),
         });
       },
       onPartialUpdate: (speaker, partialText) => {
@@ -186,7 +191,9 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     if (serverContent.interrupted) {
       this.playbackQueue?.stop();
       this.accumulator?.flushTurn();
+      this.hasRecordedAiAudioForTurn = false;
       if (serverContent.inputTranscription?.text) {
+        this.lastCandidateInputTime = Date.now();
         this.accumulator?.handleChunk('CANDIDATE', serverContent.inputTranscription.text);
       }
       this.callbacks?.onStateChange('LISTENING');
@@ -194,16 +201,31 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
 
     if (serverContent.inputTranscription?.text) {
+      this.lastCandidateInputTime = Date.now();
+      this.hasRecordedAiAudioForTurn = false;
       this.accumulator?.handleChunk('CANDIDATE', serverContent.inputTranscription.text);
       this.callbacks?.onStateChange('LISTENING');
     }
 
-    if (serverContent.outputTranscription?.text) {
-      this.accumulator?.handleChunk('AI', serverContent.outputTranscription.text);
-    }
-
     if (serverContent.modelTurn?.parts) {
       this.callbacks?.onStateChange('AI_SPEAKING');
+
+      // VI-7 (NFR-01): Time from end of candidate's turn to first AI audio chunk
+      if (!this.hasRecordedAiAudioForTurn) {
+        const hasAudio = serverContent.modelTurn.parts.some((p) => Boolean(p.inlineData?.data));
+        if (hasAudio) {
+          this.hasRecordedAiAudioForTurn = true;
+          // Flush the candidate turn first if still buffered
+          this.accumulator?.flushIfSpeaker('CANDIDATE');
+
+          if (this.lastCandidateInputTime !== null) {
+            const latencyMs = Math.max(0, Math.round(Date.now() - this.lastCandidateInputTime));
+            this.accumulator?.setTurnLatency(latencyMs);
+            this.lastCandidateInputTime = null;
+          }
+        }
+      }
+
       for (const part of serverContent.modelTurn.parts) {
         if (part.inlineData?.data) {
           this.playbackQueue?.enqueue(base64Decode(part.inlineData.data));
@@ -211,8 +233,13 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
       }
     }
 
+    if (serverContent.outputTranscription?.text) {
+      this.accumulator?.handleChunk('AI', serverContent.outputTranscription.text);
+    }
+
     if (serverContent.turnComplete) {
       this.accumulator?.flushTurn();
+      this.hasRecordedAiAudioForTurn = false;
       this.callbacks?.onStateChange('LISTENING');
     }
   }
@@ -384,5 +411,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
 
     this.callbacks?.onAudioLevel?.(0);
+    this.lastCandidateInputTime = null;
+    this.hasRecordedAiAudioForTurn = false;
   }
 }

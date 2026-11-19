@@ -164,4 +164,42 @@ describe('TranscriptAccumulator', () => {
     expect(finishedTurns).toHaveLength(0);
     expect(partialUpdates.at(-1)).toEqual({ speaker: null, text: '' });
   });
+
+  it('attaches latencyMs to the emitted turn and resets it after flushing (VI-7, #146)', () => {
+    const accumulator = createAccumulator();
+
+    accumulator.setTurnLatency(1420);
+    accumulator.handleChunk('AI', 'Tell me about database indices.');
+    accumulator.flushTurn();
+
+    expect(finishedTurns).toEqual([
+      { speaker: 'AI', text: 'Tell me about database indices.', latencyMs: 1420 },
+    ]);
+
+    // Next turn without latency should have no latencyMs property
+    accumulator.handleChunk('CANDIDATE', 'B-trees allow logarithmic search.');
+    accumulator.flushTurn();
+
+    expect(finishedTurns[1]).toEqual({
+      speaker: 'CANDIDATE',
+      text: 'B-trees allow logarithmic search.',
+    });
+  });
+
+  it('flushIfSpeaker flushes only when current speaker matches target speaker', () => {
+    const accumulator = createAccumulator();
+
+    accumulator.handleChunk('CANDIDATE', 'Candidate thought');
+    // Does not flush if targeting AI
+    accumulator.flushIfSpeaker('AI');
+    expect(finishedTurns).toHaveLength(0);
+
+    // Flushes when targeting CANDIDATE
+    accumulator.flushIfSpeaker('CANDIDATE');
+    expect(finishedTurns).toHaveLength(1);
+    expect(finishedTurns[0]).toEqual({
+      speaker: 'CANDIDATE',
+      text: 'Candidate thought',
+    });
+  });
 });

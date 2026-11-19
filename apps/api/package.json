@@ -13,7 +13,8 @@
     "db:generate": "prisma generate",
     "postinstall": "prisma generate",
     "worker": "bun src/worker.ts",
-    "bench": "bun scripts/bench.ts"
+    "bench": "bun scripts/bench.ts",
+    "latency": "bun scripts/latency.ts"
   },
   "keywords": [],
   "author": "",
