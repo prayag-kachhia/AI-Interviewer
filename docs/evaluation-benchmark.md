@@ -446,23 +446,23 @@ Rates are verified against Google's official Gemini API pricing documentation:
 
 ### Per-Interview Cost Breakdown
 
-Token counts below reflect a representative 15-minute voice interview (4 server-generated questions + multi-rubric evaluation with per-answer feedback):
+Token counts below reflect a representative 15-minute voice interview (modeled on 4 server-generated questions + multi-rubric evaluation with per-answer feedback from benchmark fixtures). Note: Figures represent modeled benchmark simulations rather than live production database measurements:
 
-| Interaction | Prompt Tokens | Output Tokens | Cost (USD) | Cost (INR @ ₹84.00) | Data Source |
+| Interaction | Prompt Tokens | Output Tokens | Cost (USD) | Cost (INR @ ₹84.00) | Classification / Source |
 |---|---|---|---|---|---|
-| **Transcript Evaluation** (`evaluateTranscript`) | 1 450 | 510 | \$0.003000 | ₹0.2520 | Measured / Benchmark |
-| **Question Generation** (4 questions) | 1 800 | 300 | \$0.002475 | ₹0.2079 | Measured / Benchmark |
-| **Subtotal LLM Text / Reasoning** | **3 250** | **810** | **\$0.005475** | **₹0.4599** | **Measured Tokens** |
-| **Candidate Audio** (~10 min listening) | ~15 000 | — | \$0.045000 | ₹3.7800 | Projected Estimate |
-| **Interviewer Audio** (~5 min speaking) | — | ~7 500 | \$0.090000 | ₹7.5600 | Projected Estimate |
-| **Subtotal 15-min Live Audio** | **~15 000** | **~7 500** | **\$0.135000** | **₹11.3400** | **Projected Estimate** |
-| **Total Estimated Cost per Completed Interview** | — | — | **\$0.140475** | **₹11.7999 (~₹11.80)** | **Combined Infrastructure** |
+| **Transcript Evaluation** (`evaluateTranscript`) | 1 450 | 510 | \$0.003000 | ₹0.2520 | Benchmark Fixture Simulation |
+| **Question Generation** (4 questions) | 1 800 | 300 | \$0.002475 | ₹0.2079 | Benchmark Fixture Simulation |
+| **Subtotal LLM Text / Reasoning** | **3 250** | **810** | **\$0.005475** | **₹0.4599** | **Modeled Benchmark Tokens** |
+| **Candidate Audio** (~10 min listening) | ~15 000 | — | \$0.045000 | ₹3.7800 | Projected Estimate (Published Token Rate) |
+| **Interviewer Audio** (~5 min speaking) | — | ~7 500 | \$0.090000 | ₹7.5600 | Projected Estimate (Published Token Rate) |
+| **Subtotal 15-min Live Audio** | **~15 000** | **~7 500** | **\$0.135000** | **₹11.3400** | **Projected Model Estimate** |
+| **Total Estimated Cost per Completed Interview** | — | — | **\$0.140475** | **₹11.7999 (~₹11.80)** | **Combined Infrastructure Projection** |
 
 ---
 
 ### Proposed Per-Session Budget Ceiling (OI-2 / NFR-16)
 
-Based on actual measured LLM tokens and projected 15-minute Live audio costs:
+Based on benchmark-modeled LLM tokens and projected 15-minute Live audio costs:
 - **Baseline Estimated Cost**: **₹11.80 per completed interview** (\$0.1405).
 - **Proposed Budget Ceiling (OI-2)**: **₹25.00 per completed interview**.
 - **Headroom Buffer**: **~112% headroom** above the standard 15-minute baseline.
@@ -471,6 +471,10 @@ Based on actual measured LLM tokens and projected 15-minute Live audio costs:
   - Absorbs transient evaluator retries on temporary 503/429 errors (up to `MAX_ATTEMPTS = 3`).
   - Accounts for high candidate speaking cadence or noisy environments where audio token sampling density increases.
 - **Enforcement Note**: The ₹25.00 figure serves as a project infrastructure budget and monitoring metric for **NFR-16** audits. It is not an enforced programmatic cutoff that terminates active user sessions. Programmatic quota management is tracked under **S-9 (#167)**.
+
+#### Live-site verification
+
+Live-site verification: **PENDING** — Post-merge smoke verification of token usage recording (`Feedback.usage`) and cost calculation against live Supabase production database on the deployed live site (`ai-interviewer-it314.web.app`) is pending staging/production deployment.
 
 ---
 

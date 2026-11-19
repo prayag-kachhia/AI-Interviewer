@@ -137,7 +137,13 @@ export async function generateNextQuestion(
   }
 
   if (usageMetadata) {
-    await recordNextQuestionUsage(sessionId, usageMetadata);
+    try {
+      await recordNextQuestionUsage(sessionId, usageMetadata);
+    } catch (err) {
+      console.warn(
+        `[interviewer.service] Failed to record next-question token usage for session ${sessionId}: ${(err as Error).message}`
+      );
+    }
   }
 
   return addTurn(sessionId, userId, 'AI', questionText);

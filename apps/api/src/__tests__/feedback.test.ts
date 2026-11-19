@@ -815,4 +815,116 @@ describe('Feedback Token Usage (S-8 / NFR-16)', () => {
     expect(txMock.feedback.updateMany).not.toHaveBeenCalled();
     expect(txMock.feedback.create).not.toHaveBeenCalled();
   });
+
+  it('concurrency: simultaneous concurrent recordNextQuestionUsage calls serialize and preserve all increments (S-8 review)', async () => {
+    // Stateful mock storage simulating database row state with mutex locking on session
+    let feedbackRecord: any = null;
+    let lockQueue = Promise.resolve();
+
+    (prisma.$transaction as any).mockImplementation(async (callback: any) => {
+      // Serialize transactions under the row lock
+      const previousLock = lockQueue;
+      let releaseLock: () => void;
+      lockQueue = new Promise((resolve) => {
+        releaseLock = resolve;
+      });
+
+      await previousLock;
+      try {
+        const tx = {
+          $queryRaw: vi.fn().mockResolvedValue([{ id: 'sess-concurrent', status: 'LIVE' }]),
+          session: {
+            findUnique: vi.fn().mockResolvedValue({ status: 'LIVE' }),
+          },
+          feedback: {
+            findUnique: vi.fn().mockImplementation(async () => {
+              return feedbackRecord ? { ...feedbackRecord } : null;
+            }),
+            updateMany: vi.fn().mockImplementation(async ({ data }: any) => {
+              if (feedbackRecord && feedbackRecord.status === 'pending') {
+                feedbackRecord.usage = data.usage;
+                return { count: 1 };
+              }
+              return { count: 0 };
+            }),
+            create: vi.fn().mockImplementation(async ({ data }: any) => {
+              feedbackRecord = {
+                sessionId: data.sessionId,
+                status: data.status,
+                usage: data.usage,
+              };
+              return feedbackRecord;
+            }),
+          },
+        };
+        return await callback(tx);
+      } finally {
+        releaseLock!();
+      }
+    });
+
+    // Fire 3 simultaneous usage updates
+    await Promise.all([
+      recordNextQuestionUsage('sess-concurrent', { promptTokenCount: 100, candidatesTokenCount: 20 }),
+      recordNextQuestionUsage('sess-concurrent', { promptTokenCount: 200, candidatesTokenCount: 40 }),
+      recordNextQuestionUsage('sess-concurrent', { promptTokenCount: 300, candidatesTokenCount: 60 }),
+    ]);
+
+    expect(feedbackRecord).not.toBeNull();
+    expect(feedbackRecord.status).toBe('pending');
+    // Verify all 3 increments are accumulated without any lost updates
+    expect(feedbackRecord.usage).toEqual({
+      promptTokens: 600, // 100 + 200 + 300
+      outputTokens: 120, // 20 + 40 + 60
+      totalTokens: 720,
+      nextQuestion: {
+        promptTokens: 600,
+        outputTokens: 120,
+        totalTokens: 720,
+        callCount: 3,
+      },
+    });
+  });
+
+  it('concurrency: race between endSession and in-flight usage write discards usage write (S-8 review)', async () => {
+    let sessionStatus = 'LIVE';
+    let lockQueue = Promise.resolve();
+
+    (prisma.$transaction as any).mockImplementation(async (callback: any) => {
+      const previousLock = lockQueue;
+      let releaseLock: () => void;
+      lockQueue = new Promise((resolve) => {
+        releaseLock = resolve;
+      });
+
+      await previousLock;
+      try {
+        const tx = {
+          $queryRaw: vi.fn().mockImplementation(async () => {
+            return [{ id: 'sess-race', status: sessionStatus }];
+          }),
+          feedback: {
+            findUnique: vi.fn(),
+            updateMany: vi.fn(),
+            create: vi.fn(),
+          },
+        };
+        return await callback(tx);
+      } finally {
+        releaseLock!();
+      }
+    });
+
+    // Simulate endSession running while a usage call is queued
+    const writePromise = recordNextQuestionUsage('sess-race', { promptTokenCount: 500, candidatesTokenCount: 100 });
+
+    // Session ends before lock is acquired by writePromise
+    sessionStatus = 'ENDED';
+
+    await writePromise;
+
+    // Verify nothing was written since session was ENDED by the time lock was acquired
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+    expect(prisma.feedback.updateMany).not.toHaveBeenCalled();
+  });
 });

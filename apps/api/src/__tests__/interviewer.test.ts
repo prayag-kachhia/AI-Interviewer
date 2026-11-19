@@ -144,4 +144,25 @@ describe('interviewer.service', () => {
     expect(result.text).toBe('What is your favorite design pattern?');
     expect(recordNextQuestionUsage).not.toHaveBeenCalled();
   });
+
+  it('best-effort tracking: continues and saves turn even if recordNextQuestionUsage fails (S-8 review)', async () => {
+    vi.mocked(recordNextQuestionUsage).mockRejectedValueOnce(new Error('DB connection dropped'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const mockGenerate = vi.fn().mockResolvedValue({
+      text: 'Tell me about a time you resolved a merge conflict.',
+      usageMetadata: { promptTokenCount: 300, candidatesTokenCount: 50, totalTokenCount: 350 },
+    });
+
+    const result = await generateNextQuestion(LIVE_SESSION.id, USER_ID, {
+      generate: mockGenerate,
+    });
+
+    expect(result.speaker).toBe('AI');
+    expect(result.text).toBe('Tell me about a time you resolved a merge conflict.');
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to record next-question token usage')
+    );
+    warnSpy.mockRestore();
+  });
 });

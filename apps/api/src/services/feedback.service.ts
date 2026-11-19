@@ -130,16 +130,27 @@ export async function recordNextQuestionUsage(
   usageMetadata: EvaluationUsageMetadata
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    // 1. Verify session is still LIVE
-    const session = await tx.session.findUnique({
-      where: { id: sessionId },
-      select: { status: true },
-    });
-    if (!session || session.status !== 'LIVE') {
+    // 1. Synchronize using an exclusive row-level lock on the session row (FOR UPDATE).
+    // This serializes concurrent question updates and synchronizes with endSession.
+    let sessionStatus: string | undefined;
+    if (typeof tx.$queryRaw === 'function') {
+      const lockedSessions = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+        SELECT id, status FROM sessions WHERE id = ${sessionId} FOR UPDATE
+      `;
+      sessionStatus = lockedSessions[0]?.status;
+    } else {
+      const session = await tx.session.findUnique({
+        where: { id: sessionId },
+        select: { status: true },
+      });
+      sessionStatus = session?.status;
+    }
+
+    if (!sessionStatus || sessionStatus !== 'LIVE') {
       return;
     }
 
-    // 2. Check existing feedback status
+    // 2. Check existing feedback status (safely serialized under session row lock)
     const existing = await tx.feedback.findUnique({
       where: { sessionId },
       select: { status: true, usage: true },
@@ -162,15 +173,6 @@ export async function recordNextQuestionUsage(
         },
       });
     } else {
-      // Re-verify session is still LIVE immediately before creating new pending feedback
-      const recheck = await tx.session.findUnique({
-        where: { id: sessionId },
-        select: { status: true },
-      });
-      if (!recheck || recheck.status !== 'LIVE') {
-        return;
-      }
-
       await tx.feedback.create({
         data: {
           sessionId,

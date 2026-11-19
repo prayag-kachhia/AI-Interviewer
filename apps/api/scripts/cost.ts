@@ -6,6 +6,7 @@
  * Usage:
  *   bun scripts/cost.ts
  *   bun scripts/cost.ts --limit 50
+ *   bun scripts/cost.ts --simulate
  */
 
 import path from 'node:path';
@@ -17,9 +18,8 @@ import type { StoredFeedbackUsage } from '../src/services/feedback.service';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-if (!process.env.GEMINI_API_KEY && !process.env.DATABASE_URL) {
-  dotenv.config({ path: path.resolve(__dirname, '../.env') });
-}
+// Unconditionally load .env without overriding existing process.env variables
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 export interface PricingConfig {
   model: string;
@@ -50,6 +50,10 @@ export const DEFAULT_PRICING: PricingConfig = {
   usdToInr: 84.0, // Benchmark standard conversion rate
 };
 
+export const KNOWN_MODEL_PRICING: Record<string, { inputCostPer1M: number; outputCostPer1M: number }> = {
+  'gemini-3.8-flash': { inputCostPer1M: 0.75, outputCostPer1M: 3.75 },
+};
+
 /**
  * Published Multimodal Live API rate card and conversational duration model:
  * Official documentation: https://ai.google.dev/pricing
@@ -69,14 +73,30 @@ export const DEFAULT_LIVE_AUDIO_CONFIG: LiveAudioEstimateConfig = {
 
 export function resolvePricingConfig(env: NodeJS.ProcessEnv = process.env): PricingConfig {
   const model = env.GEMINI_EVAL_MODEL?.trim() || DEFAULT_PRICING.model;
-  const inputCost = env.BENCH_INPUT_COST_USD_PER_1M ? Number(env.BENCH_INPUT_COST_USD_PER_1M) : DEFAULT_PRICING.inputCostPer1M;
-  const outputCost = env.BENCH_OUTPUT_COST_USD_PER_1M ? Number(env.BENCH_OUTPUT_COST_USD_PER_1M) : DEFAULT_PRICING.outputCostPer1M;
+
+  const hasCustomInputRate = env.BENCH_INPUT_COST_USD_PER_1M !== undefined && env.BENCH_INPUT_COST_USD_PER_1M.trim() !== '';
+  const hasCustomOutputRate = env.BENCH_OUTPUT_COST_USD_PER_1M !== undefined && env.BENCH_OUTPUT_COST_USD_PER_1M.trim() !== '';
+
+  const known = KNOWN_MODEL_PRICING[model];
+  if (!known && (!hasCustomInputRate || !hasCustomOutputRate)) {
+    throw new Error(
+      `Unsupported pricing model "${model}": no verified rate card available. ` +
+      `Provide custom rates via BENCH_INPUT_COST_USD_PER_1M and BENCH_OUTPUT_COST_USD_PER_1M, ` +
+      `or use supported model: ${Object.keys(KNOWN_MODEL_PRICING).join(', ')}`
+    );
+  }
+
+  const defaultInput = known ? known.inputCostPer1M : DEFAULT_PRICING.inputCostPer1M;
+  const defaultOutput = known ? known.outputCostPer1M : DEFAULT_PRICING.outputCostPer1M;
+
+  const inputCost = hasCustomInputRate ? Number(env.BENCH_INPUT_COST_USD_PER_1M) : defaultInput;
+  const outputCost = hasCustomOutputRate ? Number(env.BENCH_OUTPUT_COST_USD_PER_1M) : defaultOutput;
   const usdToInr = env.BENCH_USD_TO_INR ? Number(env.BENCH_USD_TO_INR) : DEFAULT_PRICING.usdToInr;
 
   return {
     model,
-    inputCostPer1M: Number.isFinite(inputCost) ? inputCost : DEFAULT_PRICING.inputCostPer1M,
-    outputCostPer1M: Number.isFinite(outputCost) ? outputCost : DEFAULT_PRICING.outputCostPer1M,
+    inputCostPer1M: Number.isFinite(inputCost) ? inputCost : defaultInput,
+    outputCostPer1M: Number.isFinite(outputCost) ? outputCost : defaultOutput,
     usdToInr: Number.isFinite(usdToInr) ? usdToInr : DEFAULT_PRICING.usdToInr,
   };
 }
@@ -179,18 +199,82 @@ export function calculateInterviewCost(
   };
 }
 
+export function isValidStoredUsage(u: unknown): u is StoredFeedbackUsage {
+  if (!u || typeof u !== 'object' || Array.isArray(u)) {
+    return false;
+  }
+  const obj = u as Record<string, any>;
+
+  // Top-level token counts must be finite non-negative numbers
+  if (
+    typeof obj.promptTokens !== 'number' ||
+    !Number.isFinite(obj.promptTokens) ||
+    obj.promptTokens < 0 ||
+    typeof obj.outputTokens !== 'number' ||
+    !Number.isFinite(obj.outputTokens) ||
+    obj.outputTokens < 0 ||
+    typeof obj.totalTokens !== 'number' ||
+    !Number.isFinite(obj.totalTokens) ||
+    obj.totalTokens < 0
+  ) {
+    return false;
+  }
+
+  // Nested evaluator must be present with valid token counts
+  if (
+    !obj.evaluator ||
+    typeof obj.evaluator !== 'object' ||
+    Array.isArray(obj.evaluator) ||
+    typeof obj.evaluator.promptTokens !== 'number' ||
+    !Number.isFinite(obj.evaluator.promptTokens) ||
+    obj.evaluator.promptTokens < 0 ||
+    typeof obj.evaluator.outputTokens !== 'number' ||
+    !Number.isFinite(obj.evaluator.outputTokens) ||
+    obj.evaluator.outputTokens < 0 ||
+    typeof obj.evaluator.totalTokens !== 'number' ||
+    !Number.isFinite(obj.evaluator.totalTokens) ||
+    obj.evaluator.totalTokens < 0
+  ) {
+    return false;
+  }
+
+  // Nested nextQuestion must be present with valid token counts and callCount
+  if (
+    !obj.nextQuestion ||
+    typeof obj.nextQuestion !== 'object' ||
+    Array.isArray(obj.nextQuestion) ||
+    typeof obj.nextQuestion.promptTokens !== 'number' ||
+    !Number.isFinite(obj.nextQuestion.promptTokens) ||
+    obj.nextQuestion.promptTokens < 0 ||
+    typeof obj.nextQuestion.outputTokens !== 'number' ||
+    !Number.isFinite(obj.nextQuestion.outputTokens) ||
+    obj.nextQuestion.outputTokens < 0 ||
+    typeof obj.nextQuestion.totalTokens !== 'number' ||
+    !Number.isFinite(obj.nextQuestion.totalTokens) ||
+    obj.nextQuestion.totalTokens < 0 ||
+    typeof obj.nextQuestion.callCount !== 'number' ||
+    !Number.isFinite(obj.nextQuestion.callCount) ||
+    obj.nextQuestion.callCount < 0
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export function aggregateFeedbackUsage(records: Array<{ usage: unknown }>): {
   count: number;
   averageUsage: StoredFeedbackUsage;
+  excludedCount: number;
 } {
   const validRecords: StoredFeedbackUsage[] = [];
+  let excludedCount = 0;
 
   for (const r of records) {
-    if (r.usage && typeof r.usage === 'object') {
-      const u = r.usage as StoredFeedbackUsage;
-      if (typeof u.promptTokens === 'number' && typeof u.outputTokens === 'number') {
-        validRecords.push(u);
-      }
+    if (isValidStoredUsage(r.usage)) {
+      validRecords.push(r.usage);
+    } else {
+      excludedCount++;
     }
   }
 
@@ -204,16 +288,17 @@ export function aggregateFeedbackUsage(records: Array<{ usage: unknown }>): {
         evaluator: { promptTokens: 0, outputTokens: 0, totalTokens: 0 },
         nextQuestion: { promptTokens: 0, outputTokens: 0, totalTokens: 0, callCount: 0 },
       },
+      excludedCount,
     };
   }
 
   const sum = validRecords.reduce(
     (acc, cur) => {
-      acc.evalPrompt += cur.evaluator?.promptTokens ?? 0;
-      acc.evalOutput += cur.evaluator?.outputTokens ?? 0;
-      acc.nqPrompt += cur.nextQuestion?.promptTokens ?? 0;
-      acc.nqOutput += cur.nextQuestion?.outputTokens ?? 0;
-      acc.nqCalls += cur.nextQuestion?.callCount ?? 0;
+      acc.evalPrompt += cur.evaluator!.promptTokens;
+      acc.evalOutput += cur.evaluator!.outputTokens;
+      acc.nqPrompt += cur.nextQuestion!.promptTokens;
+      acc.nqOutput += cur.nextQuestion!.outputTokens;
+      acc.nqCalls += cur.nextQuestion!.callCount;
       return acc;
     },
     { evalPrompt: 0, evalOutput: 0, nqPrompt: 0, nqOutput: 0, nqCalls: 0 }
@@ -247,12 +332,41 @@ export function aggregateFeedbackUsage(records: Array<{ usage: unknown }>): {
         callCount: Math.round(avgNqCalls),
       },
     },
+    excludedCount,
   };
+}
+
+export function parseArgs(args: string[] = process.argv.slice(2)): { limit?: number; simulate?: boolean } {
+  const result: { limit?: number; simulate?: boolean } = {};
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--limit' && i + 1 < args.length) {
+      const parsed = parseInt(args[i + 1], 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        result.limit = parsed;
+        i++;
+      } else {
+        throw new Error(`Invalid --limit value: "${args[i + 1]}". Must be a positive integer.`);
+      }
+    } else if (arg.startsWith('--limit=')) {
+      const val = arg.split('=')[1];
+      const parsed = parseInt(val, 10);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        result.limit = parsed;
+      } else {
+        throw new Error(`Invalid --limit value: "${val}". Must be a positive integer.`);
+      }
+    } else if (arg === '--simulate') {
+      result.simulate = true;
+    }
+  }
+  return result;
 }
 
 // ── CLI Main ──────────────────────────────────────────────────────────────────
 
 async function main() {
+  const args = parseArgs();
   const pricing = resolvePricingConfig();
   const audioConfig = DEFAULT_LIVE_AUDIO_CONFIG;
 
@@ -263,30 +377,61 @@ async function main() {
   console.log(`Rates Source          : Official Published Rate Card (https://ai.google.dev/pricing)`);
   console.log(`Prompt / Output Rate  : $${pricing.inputCostPer1M.toFixed(2)} / $${pricing.outputCostPer1M.toFixed(2)} per 1M tokens`);
   console.log(`USD to INR Exchange   : ₹${pricing.usdToInr.toFixed(2)}`);
+  if (args.limit) {
+    console.log(`Record Fetch Limit    : ${args.limit} completed sessions`);
+  }
   console.log('─'.repeat(80));
 
   let records: Array<{ usage: unknown }> = [];
-  try {
-    const { default: prisma } = await import('../src/db');
-    records = await prisma.feedback.findMany({
-      where: { usage: { not: Prisma.JsonNullValueFilter.AnyNull } },
-      select: { usage: true },
-    });
-  } catch (err) {
-    console.warn(`[Database query notice]: ${(err as Error).message}`);
+  let dbQueried = false;
+
+  if (args.simulate) {
+    console.log(`Mode                  : Explicit --simulate flag requested.`);
+  } else if (!process.env.DATABASE_URL) {
+    console.error(`[Error]: DATABASE_URL is not set. Run with --simulate to view modeled benchmark estimates, or configure DATABASE_URL.`);
+    process.exit(1);
+  } else {
+    try {
+      const { default: prisma } = await import('../src/db');
+      records = await prisma.feedback.findMany({
+        where: {
+          status: 'ready',
+          session: { status: 'ENDED' },
+          usage: { not: Prisma.JsonNullValueFilter.AnyNull },
+        },
+        select: { usage: true },
+        orderBy: { createdAt: 'desc' },
+        ...(args.limit ? { take: args.limit } : {}),
+      });
+      dbQueried = true;
+    } catch (err) {
+      console.error(`[Database query error]: Failed to query feedback usage records: ${(err as Error).message}`);
+      process.exit(1);
+    }
   }
 
-  const { count, averageUsage } = aggregateFeedbackUsage(records);
+  const { count, averageUsage, excludedCount } = aggregateFeedbackUsage(records);
 
   let usageToReport: StoredFeedbackUsage;
   let isMeasured: boolean;
 
-  if (count > 0) {
+  if (dbQueried && count > 0) {
     isMeasured = true;
     usageToReport = averageUsage;
-    console.log(`Source                : [MEASURED DATA] Based on ${count} recorded feedback rows in database`);
+    console.log(`Source                : [MEASURED PRODUCTION DATA] Based on ${count} completed interview records`);
+    if (excludedCount > 0) {
+      console.log(`                        (${excludedCount} records excluded due to incomplete or malformed usage structures)`);
+    }
   } else {
     isMeasured = false;
+    if (dbQueried) {
+      console.log(`Source                : [ESTIMATE / SIMULATION MODE] Database query succeeded, but 0 eligible completed`);
+      console.log(`                        interview records with usage were found.`);
+    } else {
+      console.log(`Source                : [ESTIMATE / SIMULATION MODE] Simulation mode active.`);
+    }
+    console.log(`                        Displaying modeled token usage from benchmark fixtures.`);
+
     // Benchmark simulation default (modeled on representative 4-question session + evaluator)
     usageToReport = {
       promptTokens: 3250,
@@ -304,8 +449,6 @@ async function main() {
         callCount: 4,
       },
     };
-    console.log(`Source                : [ESTIMATE / SIMULATION MODE] No feedback rows with recorded usage found.`);
-    console.log(`                        Displaying modeled token usage from benchmark fixtures.`);
   }
 
   const cost = calculateInterviewCost(usageToReport, pricing, audioConfig);
