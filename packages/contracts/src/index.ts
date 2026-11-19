@@ -321,3 +321,146 @@ export const AdminStats = z.object({
 });
 export type AdminStats = z.infer<typeof AdminStats>;
 
+// ---------------------------------------------------------------------------
+// Resume Match (FR-34, Issue #292 / RJ-14)
+// ---------------------------------------------------------------------------
+
+export const JOB_DESCRIPTION_MAX = 4000;
+
+export const CreateResumeMatchInput = z.object({
+  jobDescription: z
+    .string()
+    .trim()
+    .min(1, "Job description is required")
+    .max(
+      JOB_DESCRIPTION_MAX,
+      `Job description must not exceed ${JOB_DESCRIPTION_MAX} characters`
+    ),
+});
+export type CreateResumeMatchInput = z.infer<typeof CreateResumeMatchInput>;
+
+export const ResumeMatchSource = z.enum(["ai", "keywords"]);
+export type ResumeMatchSource = z.infer<typeof ResumeMatchSource>;
+
+export const RESUME_MATCH_CATEGORIES = [
+  { category: "Skills match", weight: 0.4 },
+  { category: "Experience relevance", weight: 0.3 },
+  { category: "Keyword coverage", weight: 0.2 },
+  { category: "Education and credentials", weight: 0.1 },
+] as const;
+
+export type ResumeMatchCategory = (typeof RESUME_MATCH_CATEGORIES)[number]["category"];
+
+export const RESUME_MATCH_CATEGORY_WEIGHTS: Record<ResumeMatchCategory, number> = {
+  "Skills match": 0.4,
+  "Experience relevance": 0.3,
+  "Keyword coverage": 0.2,
+  "Education and credentials": 0.1,
+};
+
+export const ResumeMatchCategoryScore = z.object({
+  category: z.string().min(1),
+  score: z.number().int().min(0).max(100),
+  comment: z.string(),
+});
+export type ResumeMatchCategoryScore = z.infer<typeof ResumeMatchCategoryScore>;
+
+export const ResumeMatchResult = z.object({
+  score: z.number().int().min(0).max(100),
+  source: ResumeMatchSource,
+  categories: z.array(ResumeMatchCategoryScore),
+  matchedKeywords: z.array(z.string()),
+  missingKeywords: z.array(z.string()),
+  strengths: z.array(z.string()),
+  gaps: z.array(z.string()),
+  suggestions: z.array(z.string()),
+});
+export type ResumeMatchResult = z.infer<typeof ResumeMatchResult>;
+
+export const ResumeMatch = z.object({
+  id: z.string(),
+  resumeId: z.string(),
+  jobDescription: z.string(),
+  score: z.number().int().min(0).max(100),
+  source: ResumeMatchSource,
+  categories: z.array(ResumeMatchCategoryScore),
+  matchedKeywords: z.array(z.string()),
+  missingKeywords: z.array(z.string()),
+  strengths: z.array(z.string()),
+  gaps: z.array(z.string()),
+  suggestions: z.array(z.string()),
+  createdAt: z.string(),
+});
+export type ResumeMatch = z.infer<typeof ResumeMatch>;
+
+/**
+ * Calculates the overall resume match score from the four weighted categories (RJ-14, FR-34):
+ * overall = round(0.40 * skills + 0.30 * experience + 0.20 * keywords + 0.10 * education)
+ *
+ * Each category score is clamped to [0, 100] before calculating.
+ * Requires exactly the four configured categories, rejecting missing or duplicate entries.
+ */
+export function calculateResumeMatchOverallScore(
+  categories: Array<{ category: string; score: number }>
+): number {
+  if (!Array.isArray(categories)) {
+    throw new TypeError("Categories must be an array");
+  }
+
+  const seen = new Set<string>();
+  const scoresByCategory = new Map<string, number>();
+
+  for (const item of categories) {
+    if (!item || typeof item !== "object" || typeof item.category !== "string") {
+      throw new TypeError(
+        "Each category score must be an object with string category and numeric score"
+      );
+    }
+
+    const cat = item.category;
+
+    if (seen.has(cat)) {
+      throw new Error(`Duplicate category: "${cat}"`);
+    }
+    seen.add(cat);
+
+    if (typeof item.score !== "number" || !Number.isFinite(item.score)) {
+      throw new TypeError(
+        `Category score for "${cat}" must be a finite number, received: ${item.score}`
+      );
+    }
+
+    // Clamp each category score to 0–100 before calculating
+    const clamped = Math.min(100, Math.max(0, item.score));
+    scoresByCategory.set(cat, clamped);
+  }
+
+  // Require the four expected categories; do not silently produce misleading results for missing/duplicate categories.
+  for (const expected of RESUME_MATCH_CATEGORIES) {
+    if (!scoresByCategory.has(expected.category)) {
+      throw new Error(`Missing required category: "${expected.category}"`);
+    }
+  }
+
+  if (scoresByCategory.size !== RESUME_MATCH_CATEGORIES.length) {
+    const unexpected = Array.from(scoresByCategory.keys()).filter(
+      (k) => !RESUME_MATCH_CATEGORIES.some((c) => c.category === k)
+    );
+    throw new Error(`Unexpected category: "${unexpected.join(", ")}"`);
+  }
+
+  const skills = scoresByCategory.get("Skills match")!;
+  const experience = scoresByCategory.get("Experience relevance")!;
+  const keywords = scoresByCategory.get("Keyword coverage")!;
+  const education = scoresByCategory.get("Education and credentials")!;
+
+  const weightedSum =
+    0.4 * skills +
+    0.3 * experience +
+    0.2 * keywords +
+    0.1 * education;
+
+  const rounded = Math.round(weightedSum);
+  return Math.min(100, Math.max(0, rounded));
+}
+

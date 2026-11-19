@@ -82,7 +82,7 @@ export function isResumeHeuristically(text: string): boolean {
   return hasContactInfo(text) && hasResumeSection(text);
 }
 
-const COMMON_SKILLS = [
+export const COMMON_SKILLS = [
   'JavaScript', 'TypeScript', 'Python', 'Java', 'C++', 'C#', 'Go', 'Rust', 'Ruby', 'PHP', 'Swift', 'Kotlin',
   'HTML', 'HTML5', 'CSS', 'CSS3', 'Tailwind', 'Bootstrap', 'Sass',
   'React', 'React.js', 'Next.js', 'Vue', 'Vue.js', 'Angular', 'Svelte',

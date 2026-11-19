@@ -19,6 +19,7 @@ model User {
   resumes        Resume[]
   sessions       Session[]
   improvementPlan ImprovementPlan?
+  resumeMatches  ResumeMatch[]
 
   @@map("users")
 }
@@ -33,6 +34,7 @@ model Resume {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   sessions      Session[]
+  resumeMatches ResumeMatch[]
 }
 
 // ---------------------------------------------------------------------------
@@ -142,5 +144,23 @@ model ImprovementPlan {
   updatedAt DateTime @default(now()) @updatedAt
 
   @@map("improvement_plans")
+}
+
+// Resume match against a target job description (FR-34, Issue #292 / RJ-14).
+model ResumeMatch {
+  id             String   @id @default(uuid()) @db.Uuid
+  resumeId       String
+  resume         Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobDescription String
+  score          Int
+  source         String
+  result         Json
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([resumeId])
+  @@map("resume_matches")
 }
 
