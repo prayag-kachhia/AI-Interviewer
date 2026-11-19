@@ -84,6 +84,7 @@ model Turn {
   speaker      TurnSpeaker
   text         String
   timestampSec Float
+  latencyMs    Int?
   createdAt    DateTime    @default(now())
 
   @@unique([sessionId, turnIndex])

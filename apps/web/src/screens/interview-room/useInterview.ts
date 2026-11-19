@@ -163,7 +163,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   }, [role]);
 
   const persistTurnToServer = useCallback(
-    (speaker: 'AI' | 'CANDIDATE', text: string): Promise<TurnData | null> => {
+    (speaker: 'AI' | 'CANDIDATE', text: string, latencyMs?: number | null): Promise<TurnData | null> => {
       const trimmed = text.trim();
       if (!sessionId || !startedAtRef.current || statusRef.current !== 'LIVE' || !trimmed) {
         return Promise.resolve(null);
@@ -178,7 +178,10 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
             return null;
           }
           setError('');
-          const res = await postTurn(sessionId, speaker, trimmed);
+          const res =
+            latencyMs !== undefined && latencyMs !== null
+              ? await postTurn(sessionId, speaker, trimmed, latencyMs)
+              : await postTurn(sessionId, speaker, trimmed);
           if (res?.success && res.data) {
             const savedTurn = res.data;
             setTurns((prev) => {
@@ -273,7 +276,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       if (event.speaker === 'AI') {
         markAiQuestionActive();
         setCurrentAiQuestion(event.text);
-        await persistTurnToServer('AI', event.text);
+        await persistTurnToServer('AI', event.text, event.latencyMs);
         return;
       }
 

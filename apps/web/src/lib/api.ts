@@ -126,11 +126,13 @@ export const getTurns = async (sessionId: string): Promise<TurnsListResponse> =>
 export const postTurn = async (
   sessionId: string,
   speaker: TurnSpeaker,
-  text: string
+  text: string,
+  latencyMs?: number | null
 ): Promise<TurnResponse> => {
   const { data } = await api.post<TurnResponse>(`/sessions/${sessionId}/turns`, {
     speaker,
     text,
+    ...(latencyMs !== undefined ? { latencyMs } : {}),
   });
   return data;
 };

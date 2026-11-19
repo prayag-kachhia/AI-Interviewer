@@ -238,7 +238,8 @@ export async function addTurn(
   sessionId: string,
   userId: string,
   speaker: 'AI' | 'CANDIDATE',
-  text: string
+  text: string,
+  latencyMs?: number | null
 ) {
   if (text.length > MAX_TURN_TEXT_LENGTH) {
     throw new TurnTextTooLongError();
@@ -283,6 +284,7 @@ export async function addTurn(
           text,
           timestampSec: elapsedSec,
           turnIndex: turnCount + 1,
+          latencyMs: latencyMs ?? null,
         },
       });
     } catch (error: any) {

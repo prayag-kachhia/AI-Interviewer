@@ -601,6 +601,77 @@ describe('GeminiLiveVoiceAdapter (VI-1, #130)', () => {
     });
   });
 
+  describe('interviewer response latency measurement (VI-7, #146, NFR-01)', () => {
+    it('times from end of candidate turn to first AI audio chunk and passes latencyMs to final turn', async () => {
+      const { callbacks, ws } = await connectReady();
+      const nowSpy = vi.spyOn(Date, 'now');
+
+      // Candidate finishes speaking at t = 10000
+      nowSpy.mockReturnValue(10000);
+      ws.simulateMessage({ serverContent: { inputTranscription: { text: 'I built a distributed cache.' } } });
+
+      // AI starts responding at t = 11450 (1450ms latency) with audio chunk
+      nowSpy.mockReturnValue(11450);
+      ws.simulateMessage({
+        serverContent: {
+          modelTurn: {
+            parts: [{ inlineData: { data: 'AAA=' } }],
+          },
+          outputTranscription: { text: 'How did you handle invalidation?' },
+        },
+      });
+
+      // AI completes turn
+      ws.simulateMessage({ serverContent: { turnComplete: true } });
+
+      const finals = vi
+        .mocked(callbacks.onTranscript)
+        .mock.calls.map(([evt]) => evt)
+        .filter((evt) => evt.isFinal);
+
+      expect(finals).toEqual([
+        {
+          speaker: 'CANDIDATE',
+          text: 'I built a distributed cache.',
+          isFinal: true,
+        },
+        {
+          speaker: 'AI',
+          text: 'How did you handle invalidation?',
+          isFinal: true,
+          latencyMs: 1450,
+        },
+      ]);
+
+      nowSpy.mockRestore();
+    });
+
+    it('leaves latencyMs null for the initial AI greeting since no candidate turn preceded it', async () => {
+      const { callbacks, ws } = await connectReady();
+
+      ws.simulateMessage({
+        serverContent: {
+          modelTurn: { parts: [{ inlineData: { data: 'AAA=' } }] },
+          outputTranscription: { text: 'Hello! I am your AI interviewer.' },
+          turnComplete: true,
+        },
+      });
+
+      const finals = vi
+        .mocked(callbacks.onTranscript)
+        .mock.calls.map(([evt]) => evt)
+        .filter((evt) => evt.isFinal);
+
+      expect(finals).toEqual([
+        {
+          speaker: 'AI',
+          text: 'Hello! I am your AI interviewer.',
+          isFinal: true,
+        },
+      ]);
+    });
+  });
+
   describe('playback drain before LISTENING (Issue #296)', () => {
     it('flushes the AI turn on turnComplete but waits for PlaybackQueue to drain before emitting LISTENING', async () => {
       const { callbacks, ws } = await connectReady();
