@@ -147,10 +147,12 @@ export class PlaybackQueue {
   private sampleRate: number;
   private nextPlayTime = 0;
   private activeSources: AudioBufferSourceNode[] = [];
+  private onDrained?: () => void;
 
-  constructor(ctx: AudioContext, sampleRate = 24000) {
+  constructor(ctx: AudioContext, sampleRate = 24000, onDrained?: () => void) {
     this.ctx = ctx;
     this.sampleRate = sampleRate;
+    this.onDrained = onDrained;
   }
 
   /**
@@ -161,10 +163,12 @@ export class PlaybackQueue {
     let audioBuffer: AudioBuffer;
 
     if (audioData instanceof Float32Array) {
+      if (audioData.length === 0) return;
       audioBuffer = this.ctx.createBuffer(1, audioData.length, this.sampleRate);
       audioBuffer.copyToChannel(audioData as Float32Array<ArrayBuffer>, 0);
     } else if (audioData instanceof ArrayBuffer) {
       const float32 = pcm16ToFloat(audioData);
+      if (float32.length === 0) return;
       audioBuffer = this.ctx.createBuffer(1, float32.length, this.sampleRate);
       audioBuffer.copyToChannel(float32 as Float32Array<ArrayBuffer>, 0);
     } else {
@@ -180,16 +184,19 @@ export class PlaybackQueue {
       this.nextPlayTime = currentTime + 0.05; // 50ms buffer for seamless streaming
     }
 
-    source.start(this.nextPlayTime);
-    this.nextPlayTime += audioBuffer.duration;
-
     this.activeSources.push(source);
     source.onended = () => {
       const idx = this.activeSources.indexOf(source);
       if (idx !== -1) {
         this.activeSources.splice(idx, 1);
       }
+      if (this.activeSources.length === 0) {
+        this.onDrained?.();
+      }
     };
+
+    source.start(this.nextPlayTime);
+    this.nextPlayTime += audioBuffer.duration;
   }
 
   /**
@@ -199,6 +206,7 @@ export class PlaybackQueue {
   stop(): void {
     for (const source of this.activeSources) {
       try {
+        source.onended = null;
         source.stop();
         source.disconnect();
       } catch {

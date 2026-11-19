@@ -201,6 +201,39 @@ describe("audio helpers (Issue #81)", () => {
       mockCtx._sources[0].onended?.();
       expect(queue.pendingCount).toBe(0);
     });
+
+    it("fires onDrained only after the final queued source finishes naturally (Issue #296)", () => {
+      const mockCtx = createMockAudioContext();
+      const onDrained = vi.fn();
+      const queue = new PlaybackQueue(mockCtx as unknown as AudioContext, 24000, onDrained);
+
+      queue.enqueue(new Float32Array(2400));
+      queue.enqueue(new Float32Array(2400));
+      expect(queue.pendingCount).toBe(2);
+
+      // First chunk finishes — second chunk is still playing, so onDrained must not fire yet.
+      mockCtx._sources[0].onended?.();
+      expect(queue.pendingCount).toBe(1);
+      expect(onDrained).not.toHaveBeenCalled();
+
+      // Final chunk finishes — queue is drained.
+      mockCtx._sources[1].onended?.();
+      expect(queue.pendingCount).toBe(0);
+      expect(onDrained).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not fire onDrained when stop() clears sources on interruption", () => {
+      const mockCtx = createMockAudioContext();
+      const onDrained = vi.fn();
+      const queue = new PlaybackQueue(mockCtx as unknown as AudioContext, 24000, onDrained);
+
+      queue.enqueue(new Float32Array(2400));
+      queue.stop();
+
+      expect(queue.pendingCount).toBe(0);
+      expect(mockCtx._sources[0].onended).toBeNull();
+      expect(onDrained).not.toHaveBeenCalled();
+    });
   });
 
   describe("preferred microphone storage helpers (VI-4, #143)", () => {
