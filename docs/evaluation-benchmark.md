@@ -34,7 +34,7 @@ Each fixture is scored with the rubric of the role named in its `*.expected.json
 
 - Calls are spaced **13 s** apart to stay under the free tier's 5 requests per minute. Change it
   with `--delay <ms>` or `BENCH_INTER_CALL_DELAY_MS`.
-- Each run may take up to **30 s** (production allows 12 s), and 429 / 503 / 504 errors are
+- Each run may take up to **30 s** (production allows 60 s), and 429 / 503 / 504 errors are
   retried up to 3 times.
 
 ### Cost overrides
@@ -150,7 +150,7 @@ wide score windows (4–5 across all categories).
 > a 13 s backoff delay) before succeeding on the third attempt. Without retry waits the actual
 > model response time was ~18 s. Under the production `gemini-3.8-flash` on a warmed-up API
 > key, latency is expected to be significantly lower. The 15 s target applies to the production
-> evaluator (12 s timeout); the bench timeout is intentionally relaxed to 30 s to tolerate
+> evaluator (60 s timeout); the bench timeout is intentionally relaxed to 30 s to tolerate
 > free-tier fluctuations.
 
 ### Cost
