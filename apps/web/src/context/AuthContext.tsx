@@ -1,13 +1,28 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { deleteUserAccount, getMe } from '../lib/api';
 import { getStaySignedIn, setStaySignedIn, clearAuthStorage } from '../lib/authStorage';
+import {
+  extractGitHubUsername,
+  getVerifiedGitHubUsername,
+} from '../lib/githubIdentity';
+
+export interface LinkedIdentity {
+  id: string;
+  provider: string;
+  identityId: string;
+  username?: string;
+  email?: string;
+  createdAt?: string;
+}
 
 export interface AuthUser {
   id: string;
   email: string;
   name: string;
   isAdmin?: boolean;
+  identities?: LinkedIdentity[];
+  githubUsername?: string;
 }
 
 export interface AuthContextType {
@@ -32,6 +47,11 @@ export interface AuthContextType {
     email?: string;
   }>;
   signInWithGoogle: (staySignedIn?: boolean) => Promise<{ success: boolean; message?: string }>;
+  signInWithGitHub: (staySignedIn?: boolean) => Promise<{ success: boolean; message?: string }>;
+  linkGitHubIdentity: (
+    redirectTo?: string
+  ) => Promise<{ success: boolean; message?: string; url?: string | null }>;
+  refreshIdentities: () => Promise<LinkedIdentity[]>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<{ success: boolean; message?: string }>;
   resetPasswordForEmail: (
@@ -57,6 +77,9 @@ const AuthContext = createContext<AuthContextType>({
   signIn: async () => ({ success: false }),
   signUp: async () => ({ success: false }),
   signInWithGoogle: async () => ({ success: false }),
+  signInWithGitHub: async () => ({ success: false }),
+  linkGitHubIdentity: async () => ({ success: false }),
+  refreshIdentities: async () => [],
   signOut: async () => { },
   deleteAccount: async () => ({ success: false }),
   resetPasswordForEmail: async () => ({ success: false }),
@@ -65,14 +88,30 @@ const AuthContext = createContext<AuthContextType>({
   resendOtp: async () => ({ success: false }),
 });
 
-const mapSupabaseUser = (supabaseUser: any): AuthUser => ({
-  id: supabaseUser.id,
-  email: supabaseUser.email || '',
-  name:
-    supabaseUser.user_metadata?.full_name ||
-    supabaseUser.user_metadata?.name ||
-    'Candidate',
-});
+const mapSupabaseUser = (supabaseUser: any, identitiesOverride?: any[]): AuthUser => {
+  const rawIdentities: any[] = identitiesOverride || supabaseUser.identities || [];
+  const identities: LinkedIdentity[] = rawIdentities.map((id: any) => ({
+    id: id.id || id.identity_id || '',
+    identityId: id.identity_id || id.id || '',
+    provider: id.provider || '',
+    username: extractGitHubUsername(id) || undefined,
+    email: id.identity_data?.email || id.email || undefined,
+    createdAt: id.created_at || undefined,
+  }));
+
+  const githubUsername = getVerifiedGitHubUsername(rawIdentities) || undefined;
+
+  return {
+    id: supabaseUser.id,
+    email: supabaseUser.email || '',
+    name:
+      supabaseUser.user_metadata?.full_name ||
+      supabaseUser.user_metadata?.name ||
+      'Candidate',
+    identities,
+    githubUsername,
+  };
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -131,6 +170,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
               sessionUser.user_metadata?.name ||
               fallbackUser.name,
             isAdmin: Boolean(profile.data.isAdmin),
+            identities: fallbackUser.identities,
+            githubUsername: fallbackUser.githubUsername,
           };
           lastSyncedUserRef.current = updatedUser;
           if (mountedRef.current && inFlightSyncRef.current === userId) {
@@ -177,9 +218,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!isCurrent) return;
 
         if (session?.user) {
-          const authUser = mapSupabaseUser(session.user);
+          let authUser = mapSupabaseUser(session.user);
           if (isCurrent) {
             setUser(authUser);
+          }
+          if (typeof supabase.auth.getUserIdentities === 'function') {
+            try {
+              const { data: idData } = await supabase.auth.getUserIdentities();
+              if (idData?.identities && isCurrent) {
+                const refreshed = mapSupabaseUser(session.user, idData.identities);
+                authUser = {
+                  ...authUser,
+                  identities: refreshed.identities,
+                  githubUsername: refreshed.githubUsername,
+                };
+                setUser(authUser);
+              }
+            } catch {
+              // Gracefully continue with session identities
+            }
           }
           await syncUserProfile(session.user, authUser);
         } else {
@@ -220,7 +277,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           setUser(authUser);
         }
 
-        if (event === 'SIGNED_IN') {
+        if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
           void syncUserProfile(session.user, authUser);
         }
       } else {
@@ -456,6 +513,150 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       };
     }
   };
+
+  /**
+   * Initiate GitHub OAuth sign-in flow via Supabase.
+   * Redirects user to GitHub OAuth authorization screen, then back to /dashboard.
+   */
+  const signInWithGitHub = async (staySignedInParam?: boolean) => {
+    try {
+      if (typeof staySignedInParam === 'boolean') {
+        handleSetStaySignedIn(staySignedInParam);
+      }
+
+      if (!isSupabaseConfigured) {
+        return {
+          success: false,
+          message:
+            'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in apps/web/.env.local.',
+        };
+      }
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
+
+      if (error) {
+        return { success: false, message: error.message };
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'GitHub sign-in failed',
+      };
+    }
+  };
+
+  /**
+   * Link GitHub identity to the currently authenticated Supabase user.
+   * Redirects user to GitHub OAuth authorization screen, then back to /profile.
+   */
+  const linkGitHubIdentity = async (redirectToParam?: string) => {
+    try {
+      if (!isSupabaseConfigured) {
+        return {
+          success: false,
+          message:
+            'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in apps/web/.env.local.',
+        };
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        return {
+          success: false,
+          message: 'You must be signed in to link a GitHub account.',
+        };
+      }
+
+      const redirectTo = redirectToParam || `${window.location.origin}/profile`;
+
+      const { data, error } = await supabase.auth.linkIdentity({
+        provider: 'github',
+        options: {
+          redirectTo,
+        },
+      });
+
+      if (error) {
+        return {
+          success: false,
+          message: error.message || 'Failed to start GitHub account linking.',
+        };
+      }
+
+      return {
+        success: true,
+        url: data?.url ?? null,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err.message || 'An unexpected error occurred while linking GitHub.',
+      };
+    }
+  };
+
+  /**
+   * Refreshes the linked identities list for the active user from Supabase Auth.
+   */
+  const refreshIdentities = useCallback(async (): Promise<LinkedIdentity[]> => {
+    try {
+      if (!isSupabaseConfigured) return [];
+
+      let fetchedIdentities: any[] | null = null;
+
+      if (typeof supabase.auth.getUserIdentities === 'function') {
+        const { data, error } = await supabase.auth.getUserIdentities();
+        if (!error && data?.identities) {
+          fetchedIdentities = data.identities;
+        }
+      }
+
+      if (!fetchedIdentities && typeof supabase.auth.getUser === 'function') {
+        const { data, error } = await supabase.auth.getUser();
+        if (!error && data?.user?.identities) {
+          fetchedIdentities = data.user.identities;
+        }
+      }
+
+      if (fetchedIdentities) {
+        const mappedIdentities: LinkedIdentity[] = fetchedIdentities.map((id: any) => ({
+          id: id.id || id.identity_id || '',
+          identityId: id.identity_id || id.id || '',
+          provider: id.provider || '',
+          username: extractGitHubUsername(id) || undefined,
+          email: id.identity_data?.email || id.email || undefined,
+          createdAt: id.created_at || undefined,
+        }));
+
+        const githubUsername = getVerifiedGitHubUsername(fetchedIdentities) || undefined;
+
+        if (mountedRef.current) {
+          setUser((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              identities: mappedIdentities,
+              githubUsername: githubUsername || prev.githubUsername,
+            };
+          });
+        }
+        return mappedIdentities;
+      }
+    } catch (err) {
+      console.warn('Failed to refresh user identities:', err);
+    }
+    return [];
+  }, []);
 
   const signOut = async () => {
     resetSyncState();
@@ -706,6 +907,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         signIn,
         signUp,
         signInWithGoogle,
+        signInWithGitHub,
+        linkGitHubIdentity,
+        refreshIdentities,
         signOut,
         deleteAccount,
         resetPasswordForEmail,

@@ -3,7 +3,16 @@ import { MemoryRouter } from 'react-router';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { useAuthForm } from './useAuthForm';
 
-const auth = { signIn: vi.fn(), signUp: vi.fn(), signInWithGoogle: vi.fn(), resetPasswordForEmail: vi.fn(), user: null, staySignedIn: false, setStaySignedIn: vi.fn() };
+const auth = {
+  signIn: vi.fn(),
+  signUp: vi.fn(),
+  signInWithGoogle: vi.fn(),
+  signInWithGitHub: vi.fn(),
+  resetPasswordForEmail: vi.fn(),
+  user: null,
+  staySignedIn: false,
+  setStaySignedIn: vi.fn(),
+};
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
 
 const wrapper = ({ children }: { children: React.ReactNode }) => <MemoryRouter>{children}</MemoryRouter>;
@@ -13,6 +22,7 @@ beforeEach(() => {
   auth.signIn.mockReset();
   auth.signUp.mockReset();
   auth.signInWithGoogle.mockReset();
+  auth.signInWithGitHub.mockReset();
   auth.setStaySignedIn.mockReset();
 });
 
@@ -110,4 +120,31 @@ it('passes staySignedIn to signInWithGoogle during continueWithGoogle', async ()
   });
 
   expect(auth.signInWithGoogle).toHaveBeenCalledWith(true);
+});
+
+it('passes staySignedIn to signInWithGitHub during continueWithGitHub', async () => {
+  auth.signInWithGitHub.mockResolvedValue({ success: true });
+  const { result } = renderHook(() => useAuthForm(), { wrapper });
+
+  act(() => {
+    result.current.handleStaySignedInChange(true);
+  });
+
+  await act(async () => {
+    await result.current.continueWithGitHub();
+  });
+
+  expect(auth.signInWithGitHub).toHaveBeenCalledWith(true);
+});
+
+it('sets error when continueWithGitHub fails', async () => {
+  auth.signInWithGitHub.mockResolvedValue({ success: false, message: 'GitHub OAuth error' });
+  const { result } = renderHook(() => useAuthForm(), { wrapper });
+
+  await act(async () => {
+    await result.current.continueWithGitHub();
+  });
+
+  expect(result.current.error).toBe('GitHub OAuth error');
+  expect(result.current.githubLoading).toBe(false);
 });

@@ -3,12 +3,12 @@ import { ArrowRight, Loader2, Lock, Mail, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field } from '../../components/Field';
 import { PasswordStrengthMeter } from '../../components/PasswordStrengthMeter';
-import { GoogleButton } from './GoogleButton';
+import { OAuthButtons } from './GoogleButton';
 import type { AuthForm } from './useAuthForm';
 
 export const SignUpForm: React.FC<{ form: AuthForm }> = ({ form }) => (
   <>
-    <GoogleButton loading={form.googleLoading} disabled={form.loading || form.googleLoading} onClick={form.continueWithGoogle} caption="or create account with email" />
+    <OAuthButtons form={form} caption="or create account with email" />
     <form onSubmit={form.submit} className="flex flex-col gap-4">
       <Field id="signup-name" label="Full Name" icon={<User />} type="text" placeholder="Jane Doe" required value={form.name} onChange={(e) => form.setName(e.target.value)} />
       <Field id="signup-email" label="Email address" icon={<Mail />} type="email" placeholder="name@company.com" required value={form.email} onChange={(e) => form.setEmail(e.target.value)} />
@@ -21,7 +21,7 @@ export const SignUpForm: React.FC<{ form: AuthForm }> = ({ form }) => (
         {form.confirmPassword.length > 0 && !form.passwordsMatch && <span className="text-xs text-destructive">Passwords do not match.</span>}
       </div>
 
-      <Button type="submit" disabled={form.loading || form.googleLoading || !form.isSignUpValid}>
+      <Button type="submit" disabled={form.loading || form.googleLoading || form.githubLoading || !form.isSignUpValid}>
         {form.loading ? (
           <>
             <Loader2 className="animate-spin motion-reduce:animate-none" />
