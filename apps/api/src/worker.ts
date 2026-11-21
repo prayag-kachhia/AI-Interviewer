@@ -6,6 +6,7 @@ import {
 import { handleSessionEnded } from './services/feedback.service';
 import { handleInsightsRefresh } from './services/insights.service';
 import { purgeExpiredSessions } from './services/retention.service';
+import { handleGithubAnalyze } from './services/github.service';
 
 const IDLE_POLL_MS = 1000;
 
@@ -22,6 +23,9 @@ export async function handleJob(job: Job): Promise<void> {
       console.log(`[retention] purged ${result.count} expired sessions`);
       break;
     }
+    case 'github.analyze':
+      await handleGithubAnalyze(job);
+      break;
     default:
       throw new Error(`Unknown job type: ${job.type}`);
   }
@@ -60,6 +64,8 @@ export async function runWorker(
             console.log(`[${workerId}] feedback written for session ${j.sessionId}`);
           } else if (j.type === 'insights.refresh') {
             console.log(`[${workerId}] insights refreshed for session ${j.sessionId ?? j.id}`);
+          } else if (j.type === 'github.analyze') {
+            console.log(`[${workerId}] github analysis completed for user ${(j.payload as any)?.userId}`);
           }
         },
         jobType

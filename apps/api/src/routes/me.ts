@@ -28,6 +28,7 @@ router.get('/export', authenticate, async (req, res) => {
       updatedAt: true,
       resumes: true,
       improvementPlan: true,
+      githubProfile: true,
       sessions: {
         orderBy: { createdAt: 'desc' },
         include: {
@@ -65,6 +66,7 @@ router.get('/export', authenticate, async (req, res) => {
     },
     resumes: user.resumes,
     improvementPlan: user.improvementPlan,
+    githubProfile: user.githubProfile,
     sessions: user.sessions,
   });
 });
