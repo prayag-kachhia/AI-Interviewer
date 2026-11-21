@@ -6,7 +6,7 @@
 
 ## Context
 
-Mock interview evaluation involves calling Google Gemini (via `@google/genai`), which takes multiple seconds (up to the 12-second evaluation timeout). Executing long-running LLM inferences directly inside the synchronous HTTP request/response cycle introduces latency, risks HTTP connection timeouts, and exposes background execution to container restarts and scaling events.
+Mock interview evaluation involves calling Google Gemini (via `@google/genai`), which takes multiple seconds (up to the evaluation timeout: 12 seconds when this was written, 60 seconds since 18 Nov; see the update note below). Executing long-running LLM inferences directly inside the synchronous HTTP request/response cycle introduces latency, risks HTTP connection timeouts, and exposes background execution to container restarts and scaling events.
 
 A dedicated background task execution strategy is required to evaluate session feedback, extract topic insights, and clean up historical session data according to retention policies.
 
@@ -53,4 +53,11 @@ With the introduction of topic weaknesses and retention requirements, the queue 
 - All asynchronous processing remains durable, retryable, and resilient to application restarts.
 - The `jobs` table cleanly accommodates multi-tenant and system-wide asynchronous workflows via the optional `sessionId` and JSON `payload`.
 - Worker loops in `apps/api/src/worker.ts` and `apps/api/src/server.ts` dispatch claimed jobs by `job.type` to dedicated service handlers.
+
+## Update, 18 Nov 2026
+
+The evaluation timeout is now **60 seconds** (`EVALUATION_TIMEOUT_MS`). Per-answer feedback makes
+Gemini's output grow with every answer, and full-length interviews (10–20 answers) were failing
+the 12-second deadline every time. The API also scales to zero now; the queue's design is what
+makes that safe, since jobs survive a stopped instance. See [ADR-0015](0015-scale-to-zero.md).
 

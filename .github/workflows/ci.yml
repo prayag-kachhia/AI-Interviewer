@@ -90,3 +90,65 @@ jobs:
           done
           docker logs api
           exit 1
+
+  # The golden path in a real browser (P-14): sign in, upload a resume, a typed interview with
+  # two answers, end it, read the feedback. Runs against this job's own Postgres, with Gemini
+  # replaced by apps/web/e2e/fake-gemini.ts. Sign-in uses the real Supabase project with a
+  # dedicated test account (E2E_EMAIL / E2E_PASSWORD secrets) and the public anon key.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: interview_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/interview_e2e
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install (also runs prisma generate)
+        run: bun install --frozen-lockfile
+
+      - name: Apply migrations to the e2e database
+        run: bun run --filter @interview/api db:migrate
+
+      - name: Install Chromium
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the golden path
+        working-directory: apps/web
+        run: npx playwright test
+
+      - name: Keep the trace if it failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7

@@ -1,96 +1,81 @@
-# AI-Interviewer
+# AI Interviewer
 
-AI interview practice platform (IT314, DA-IICT). Bun workspace monorepo, TypeScript end to end.
+Spoken mock interviews with written feedback (IT314, DA-IICT). A candidate signs in, uploads a
+resume, picks a role and holds a 15-minute interview with an AI interviewer, by voice or by
+typing. When it ends, they get a score per rubric category, strengths, improvements and feedback
+on each answer, plus a history, a progress graph and an improvement guide.
 
-## Setup
+**Live:** https://ai-interviewer-it314.web.app
 
-Requires [Bun](https://bun.com) 1.4 or later and [Node.js](https://nodejs.org) 22 LTS. The API runs
-on Bun; Vite, Vitest and the Prisma CLI run on Node. You also need the team Supabase project's URL
-and keys: ask the lead, and never paste them in chat or commit them.
+## Quick start
+
+Requires [Bun](https://bun.com) (the version in `.bun-version`) and [Node.js](https://nodejs.org)
+24. The API runs on Bun; Vite, Vitest and the Prisma CLI run on Node. Ask the lead for the
+development values; never paste them in chat or commit them.
 
 ```bash
 bun install                                     # also runs `prisma generate` for apps/api
 cp apps/api/.env.example apps/api/.env          # Supabase URL + service-role key, DATABASE_URL, GEMINI_API_KEY
-cp apps/web/.env.example apps/web/.env.local    # Supabase URL + anon (publishable) key
+cp apps/web/.env.example apps/web/.env.local    # Supabase URL + anon key, API URL
 bun run dev        # API on http://localhost:3000, web on http://localhost:5173
 ```
 
-Replace every placeholder in both files. The API does not start without `SUPABASE_URL`, and the web
-app shows a blank page without `VITE_SUPABASE_URL`.
-
-Open http://localhost:5173. You should land on the sign-in screen. Sign in or sign up with Supabase,
-then pick a role to start an interview. http://localhost:3000/health answers `status: ok` when the
-API is up.
+Open http://localhost:5173 for the landing page, then sign up. http://localhost:3000/health
+answers `status: ok` when the API is up.
 
 Before opening a PR:
 
 ```bash
 bun run typecheck  # Bun (API) and Vite (web) don't check types, so this is required
-bun run test       # Vitest (API and web)
+bun run test       # every API and web test; Gemini is always mocked
 ```
 
-After changing `apps/api/prisma/schema.prisma`, run `bun run --filter @interview/api db:generate`.
-`bun run --filter @interview/api db:migrate` applies the committed migrations (`prisma migrate deploy`).
+More, including the database tests, the end-to-end test and changing the schema:
+[docs/guides/local-setup.md](docs/guides/local-setup.md).
 
-## Environment
-
-- `apps/api/.env` holds server-only secrets. `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` and
-  `GEMINI_API_KEY` must never reach the browser.
-- `apps/web/.env.local`: only `VITE_`-prefixed variables reach the browser. It holds the Supabase URL,
-  the anon (publishable) key and `VITE_API_URL` (default `http://localhost:3000/api`), nothing secret.
-- Only the `.env.example` files are committed.
-
-## Layout
+## How it's built
 
 ```
-packages/contracts   @interview/contracts — Zod schemas + inferred types (roles, sessions, turns, feedback)
-apps/api             Express 5 + Prisma 7 on Supabase Postgres, run by Bun; tests with Vitest + Supertest
-  src/routes         one file per resource: /api/auth, /api/resume, /api/sessions (feedback too) → src/services
-  src/services       logic, database and the Gemini calls (resume, briefing, evaluator, interviewer)
-  src/worker.ts      the feedback job worker; runs inside the API process
-  src/middleware     auth.ts validates the Supabase access token and links it to a users row
-  prisma/            schema.prisma and the committed migrations
-apps/web             React 19 + Vite + react-router
-  src/lib            supabase.ts (sign-in only), api.ts (every API call; attaches the token), voice adapters
-  src/screens        one folder per screen: the component, its hook and its tests
+packages/contracts   Zod schemas shared by both apps (roles, sessions, turns, feedback)
+apps/api             Express 5 + Prisma 7 on Supabase Postgres, run by Bun
+  src/routes         auth, resume, sessions, feedback, insights, me (export), admin
+  src/services       logic, database, and every Gemini call (resume, briefing, interviewer, evaluator, insights)
+  src/worker.ts      the job worker (grading, insights, daily cleanup); runs inside the API
+apps/web             React 19 + Vite + Tailwind CSS v4, three themes
+  src/screens        one folder per screen: component, hook, tests
+  src/lib            api.ts (every API call), the Gemini Live and browser-speech voice adapters
+  e2e/               the Playwright golden-path test
 ```
+
+- **Voice:** Gemini Live, with the audio going straight from the browser to Google using a
+  single-use token from our API. It falls back to the browser's own speech, and there is a typed mode.
+- **Grading:** a Postgres-backed job queue; Gemini returns structured JSON that is checked
+  against each role's rubric.
+- **Deploy:** every merge to `main` deploys the API to Cloud Run and the web app to Firebase
+  Hosting.
+
+## Documentation
+
+| Read | For |
+|---|---|
+| [docs/codebase-guide.md](docs/codebase-guide.md) | How everything fits together, where to change things, likely evaluation questions |
+| [docs/guides/](docs/guides/) | Local setup, how voice works, adding a role |
+| [docs/operations.md](docs/operations.md) | Deploys, settings, secrets, costs, fixing production |
+| [docs/design.md](docs/design.md) | The architecture: views, diagrams, quality attributes |
+| [docs/adr/](docs/adr/) | Why the hard-to-reverse choices were made |
+| [docs/requirements.md](docs/requirements.md) | Requirements and where each is built (traceability) |
+| [docs/evaluation-benchmark.md](docs/evaluation-benchmark.md) | How feedback quality and consistency were measured |
+| [docs/final-sprints.md](docs/final-sprints.md) | The plan: every task and its owner |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Workflow, PR standard and review |
 
 ## Rules
 
-Full workflow, PR standard and review process: [CONTRIBUTING.md](CONTRIBUTING.md).
-New to the code? Read [docs/codebase-guide.md](docs/codebase-guide.md) first.
-Current plan, tasks and owners: [docs/final-sprints.md](docs/final-sprints.md). Requirements and where each is built: [docs/requirements.md](docs/requirements.md).
-
-- **Sign-in is Supabase only.** The browser signs in with Supabase and sends the access token as
-  `Authorization: Bearer <token>`; `apps/api/src/middleware/auth.ts` validates it. There is no other
-  login or token.
-- **One definition per shape.** New request/response shapes shared by API and web go in
-  `packages/contracts`. Don't add a second copy of a shape that already exists in
-  `apps/api/src/types` or `apps/web/src/types`. Change a contract in the same PR as the code that needs it.
-- **Database changes are new Prisma migrations** in `apps/api/prisma/migrations`. Never edit a
-  committed migration.
-- **The browser never sees provider API keys or the Supabase service-role key**, and never queries
-  Supabase tables directly.
-- **Never commit** `.env` files, `*.db`, `dist/` or `node_modules/`.
-- Mark placeholder code `STUB` with the owning slice named.
+- **Sign-in is Supabase only.** The browser sends the access token as
+  `Authorization: Bearer <token>`; `apps/api/src/middleware/auth.ts` checks it.
+- **Another user's data answers 404, never 403**, so ids can't be probed.
+- **One definition per shape:** shapes shared by API and web go in `packages/contracts`.
+- **Database changes are new Prisma migrations**, created against a local Postgres. Never edit a
+  committed one, and never run `prisma migrate dev` against the shared database.
+- **The browser never sees provider API keys or the Supabase service-role key.**
+- **Never commit** `.env` files, `dist/` or `node_modules/`.
 - Conventional Commits scoped by module: `feat(sessions): …`.
-
-## Status
-
-Done:
-- Supabase sign-in (email and Google), the token check and account deletion
-- resume upload and analysis
-- resume-aware interview sessions, with a history list and deleting an interview
-- the live interview screen, with transcript turns and ending the session
-- the interviewer briefing: role, resume, three timed phases and guardrails, locked into the voice token
-- the server-side next-question endpoint for typed mode
-- the job queue and feedback worker, with per-role rubrics, structured output and a retry for failed feedback
-- the results screen: scores, strengths, improvements, a quote per category, and the transcript
-- the Gemini Live adapter, with session resumption
-- shared contracts, and CI and deploy on every PR and merge
-
-The live screen still uses the browser's built-in speech recognition and synthesis; wiring the
-Gemini Live adapter into the room is planned (VI-8).
-
-Not yet done: past questions in the briefing, the interview countdown and the reconnect banner (open
-PRs); a protected `main`; CODEOWNERS; a lint gate and Prettier.

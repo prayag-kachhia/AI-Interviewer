@@ -1,6 +1,6 @@
 # Sprint 3 and 4 plan
 
-> **Superseded by [final-sprints.md](final-sprints.md).** Sections 5–7 (how to start, test locally and
+> **Superseded by [final-sprints.md](../final-sprints.md).** Sections 5–7 (how to start, test locally and
 > brief an AI assistant) still apply; the owners, tasks and dates below do not.
 
 This plan replaces the old Sprint 2 issues. It covers everything until the final evaluation, so
@@ -38,7 +38,7 @@ smaller add-on.
 4. **Done = it works on the live site.** Passing tests alone is not done.
 5. **Stay in your own files.** Section 8 lists them. If you must change someone else's file, agree
    it with them first. Section 4 lists the places where two people meet.
-6. The rules in [CONTRIBUTING.md](../CONTRIBUTING.md) still apply. In particular, never run
+6. The rules in [CONTRIBUTING.md](../../CONTRIBUTING.md) still apply. In particular, never run
    `prisma migrate dev` or `prisma migrate reset` against the shared database, and never commit a
    `.env` file.
 
@@ -177,7 +177,7 @@ Never edit a migration that is already on `main`.
 
 ## 7. How to give your AI assistant the context it needs
 
-The repo has an [`AGENTS.md`](../AGENTS.md) at the top level, with the project's layout, rules and
+The repo has an [`AGENTS.md`](../../AGENTS.md) at the top level, with the project's layout, rules and
 commands. Codex, Cursor and GitHub Copilot read it automatically. For Claude Code, create a local
 `CLAUDE.md` containing the line `@AGENTS.md`. It's in `.gitignore`, so it stays on your machine.
 If your tool is a chat window, paste `AGENTS.md` in first.

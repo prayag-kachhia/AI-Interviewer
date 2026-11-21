@@ -1,5 +1,11 @@
 import { getVoiceToken } from './api';
-import { base64Decode, base64Encode, PCM_CAPTURE_PROCESSOR, PlaybackQueue } from './audio';
+import {
+  base64Decode,
+  base64Encode,
+  getPreferredMicId,
+  PCM_CAPTURE_PROCESSOR,
+  PlaybackQueue,
+} from './audio';
 import pcmCaptureWorkletUrl from './pcmCaptureWorklet.ts?worker&url';
 import { TranscriptAccumulator } from './transcriptAccumulator';
 import type { VoiceAdapterCallbacks, VoiceSessionAdapter } from './voiceAdapter';
@@ -49,10 +55,13 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
   private isMuted = false;
   private isDeliberateClose = false;
   private isSessionClosed = false;
+  private turnCompletePendingPlayback = false;
   private accumulator: TranscriptAccumulator | null = null;
   private resumptionHandle: string | null = null;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastCandidateInputTime: number | null = null;
+  private hasRecordedAiAudioForTurn = false;
 
   async connect(sessionId: string, callbacks: VoiceAdapterCallbacks): Promise<void> {
     this.cleanupAudioAndSocket();
@@ -61,12 +70,15 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     this.isDeliberateClose = false;
     this.isSessionClosed = false;
     this.reconnectAttempts = 0;
+    this.lastCandidateInputTime = null;
+    this.hasRecordedAiAudioForTurn = false;
     this.accumulator = new TranscriptAccumulator({
       onTurn: (turn) => {
         this.callbacks?.onTranscript({
           speaker: turn.speaker,
           text: turn.text,
           isFinal: true,
+          ...(turn.latencyMs !== undefined && turn.latencyMs !== null ? { latencyMs: turn.latencyMs } : {}),
         });
       },
       onPartialUpdate: (speaker, partialText) => {
@@ -104,23 +116,52 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
       }
       if (this.abandoned()) return;
 
-      const audioOutCtx = new AudioContext({ sampleRate: 24000 });
+      const audioOutCtx = new AudioContext();
       this.audioOutCtx = audioOutCtx;
-      this.playbackQueue = new PlaybackQueue(audioOutCtx, 24000);
+      const playbackQueue = new PlaybackQueue(audioOutCtx, 24000, () => {
+        if (
+          this.playbackQueue === playbackQueue &&
+          this.turnCompletePendingPlayback &&
+          !this.isDeliberateClose
+        ) {
+          this.turnCompletePendingPlayback = false;
+          this.callbacks?.onStateChange('LISTENING');
+        }
+      });
+      this.playbackQueue = playbackQueue;
       if (audioOutCtx.state === 'suspended') {
         await audioOutCtx.resume();
         if (this.abandoned()) return;
       }
 
-      const micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      const preferredDeviceId = getPreferredMicId();
+      let micStream: MediaStream;
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: 16000,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            ...(preferredDeviceId ? { deviceId: { exact: preferredDeviceId } } : {}),
+          },
+        });
+      } catch (err) {
+        if (preferredDeviceId && err instanceof DOMException && err.name === 'OverconstrainedError') {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              channelCount: 1,
+              sampleRate: 16000,
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true,
+            },
+          });
+        } else {
+          throw err;
+        }
+      }
       this.micStream = micStream;
       if (this.abandoned()) return;
 
@@ -136,6 +177,14 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
           },
           inputAudioTranscription: {},
           outputAudioTranscription: {},
+          // Give candidates breathing room for short thinking pauses mid-answer without cutting them off.
+          realtimeInputConfig: {
+            automaticActivityDetection: {
+              disabled: false,
+              endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
+              silenceDurationMs: 2000,
+            },
+          },
         };
         if (this.resumptionHandle) {
           setup.sessionResumption = { handle: this.resumptionHandle };
@@ -184,9 +233,12 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
 
     // FR-14: the candidate spoke over the interviewer, so cut its audio off and flush the partial AI turn.
     if (serverContent.interrupted) {
+      this.turnCompletePendingPlayback = false;
       this.playbackQueue?.stop();
       this.accumulator?.flushTurn();
+      this.hasRecordedAiAudioForTurn = false;
       if (serverContent.inputTranscription?.text) {
+        this.lastCandidateInputTime = Date.now();
         this.accumulator?.handleChunk('CANDIDATE', serverContent.inputTranscription.text);
       }
       this.callbacks?.onStateChange('LISTENING');
@@ -194,16 +246,33 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
 
     if (serverContent.inputTranscription?.text) {
+      this.turnCompletePendingPlayback = false;
+      this.lastCandidateInputTime = Date.now();
+      this.hasRecordedAiAudioForTurn = false;
       this.accumulator?.handleChunk('CANDIDATE', serverContent.inputTranscription.text);
       this.callbacks?.onStateChange('LISTENING');
     }
 
-    if (serverContent.outputTranscription?.text) {
-      this.accumulator?.handleChunk('AI', serverContent.outputTranscription.text);
-    }
-
     if (serverContent.modelTurn?.parts) {
+      this.turnCompletePendingPlayback = false;
       this.callbacks?.onStateChange('AI_SPEAKING');
+
+      // VI-7 (NFR-01): Time from end of candidate's turn to first AI audio chunk
+      if (!this.hasRecordedAiAudioForTurn) {
+        const hasAudio = serverContent.modelTurn.parts.some((p) => Boolean(p.inlineData?.data));
+        if (hasAudio) {
+          this.hasRecordedAiAudioForTurn = true;
+          // Flush the candidate turn first if still buffered
+          this.accumulator?.flushIfSpeaker('CANDIDATE');
+
+          if (this.lastCandidateInputTime !== null) {
+            const latencyMs = Math.max(0, Math.round(Date.now() - this.lastCandidateInputTime));
+            this.accumulator?.setTurnLatency(latencyMs);
+            this.lastCandidateInputTime = null;
+          }
+        }
+      }
+
       for (const part of serverContent.modelTurn.parts) {
         if (part.inlineData?.data) {
           this.playbackQueue?.enqueue(base64Decode(part.inlineData.data));
@@ -211,9 +280,19 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
       }
     }
 
+    if (serverContent.outputTranscription?.text) {
+      this.accumulator?.handleChunk('AI', serverContent.outputTranscription.text);
+    }
+
     if (serverContent.turnComplete) {
       this.accumulator?.flushTurn();
-      this.callbacks?.onStateChange('LISTENING');
+      this.hasRecordedAiAudioForTurn = false;
+      if ((this.playbackQueue?.pendingCount ?? 0) > 0) {
+        this.turnCompletePendingPlayback = true;
+      } else {
+        this.turnCompletePendingPlayback = false;
+        this.callbacks?.onStateChange('LISTENING');
+      }
     }
   }
 
@@ -357,6 +436,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
       cancelAnimationFrame(this.animationFrameId);
       this.animationFrameId = null;
     }
+    this.turnCompletePendingPlayback = false;
     this.playbackQueue?.stop();
     this.playbackQueue = null;
     if (this.workletNode) {
@@ -384,5 +464,7 @@ export class GeminiLiveVoiceAdapter implements VoiceSessionAdapter {
     }
 
     this.callbacks?.onAudioLevel?.(0);
+    this.lastCandidateInputTime = null;
+    this.hasRecordedAiAudioForTurn = false;
   }
 }

@@ -56,3 +56,11 @@ RH-10 restyles History and removes all of these.
 - **CSS Modules per screen.** Scoped, but each screen re-implements buttons and cards, and the themes still need shared variables.
 - **CSS-in-JS (styled-components, Emotion).** It adds a runtime cost and a different model from the shadcn components.
 - **A full component library (MUI, Chakra UI).** Quick to start, but hard to bend into the Swiss and Haute designs, and a much larger dependency.
+
+## Update, 19 Nov 2026
+
+RH-10 (#311) restyled the History page and removed the interim pieces listed above: `legacy.css`
+and its `legacy` layer are gone (the layer order is now `theme, base, components, utilities`), as
+are the `@source not inline('container')` line and the `data-theme` attribute. Tailwind and the
+theme variables are now the only styling system.
+

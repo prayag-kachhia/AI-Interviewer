@@ -7,7 +7,7 @@ interview, ends it, and sees feedback written by an LLM. The transcript is store
 fixes only; nothing merges after Sun 4 Oct.
 
 Every task below becomes a GitHub issue (Task template) with one assignee. Proof in the PR is
-screenshots or a screen recording — see [CONTRIBUTING.md](../CONTRIBUTING.md).
+screenshots or a screen recording — see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## Teams and owners
 

@@ -42,7 +42,8 @@ export function formatClock(totalSeconds: number): string {
 
 export const DEFAULT_TIME_LIMIT_MIN = 15;
 const THINKING_SILENCE_MS = 9000;
-const THINKING_AUDIO_THRESHOLD = 0.03;
+// Ambient room/fan noise under AGC sits around 0.03–0.09; normal speech reads ~0.15–0.50.
+const THINKING_AUDIO_THRESHOLD = 0.12;
 const THINKING_PROMPT_CUE = '[the candidate is thinking; offer brief encouragement]';
 export const WRAP_UP_CUE = '2 minutes remain; start wrapping up';
 export const WRAP_UP_THRESHOLD_SECONDS = 120;
@@ -162,7 +163,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
   }, [role]);
 
   const persistTurnToServer = useCallback(
-    (speaker: 'AI' | 'CANDIDATE', text: string): Promise<TurnData | null> => {
+    (speaker: 'AI' | 'CANDIDATE', text: string, latencyMs?: number | null): Promise<TurnData | null> => {
       const trimmed = text.trim();
       if (!sessionId || !startedAtRef.current || statusRef.current !== 'LIVE' || !trimmed) {
         return Promise.resolve(null);
@@ -177,7 +178,10 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
             return null;
           }
           setError('');
-          const res = await postTurn(sessionId, speaker, trimmed);
+          const res =
+            latencyMs !== undefined && latencyMs !== null
+              ? await postTurn(sessionId, speaker, trimmed, latencyMs)
+              : await postTurn(sessionId, speaker, trimmed);
           if (res?.success && res.data) {
             const savedTurn = res.data;
             setTurns((prev) => {
@@ -272,7 +276,7 @@ export function useInterview(timeLimitMin = DEFAULT_TIME_LIMIT_MIN) {
       if (event.speaker === 'AI') {
         markAiQuestionActive();
         setCurrentAiQuestion(event.text);
-        await persistTurnToServer('AI', event.text);
+        await persistTurnToServer('AI', event.text, event.latencyMs);
         return;
       }
 

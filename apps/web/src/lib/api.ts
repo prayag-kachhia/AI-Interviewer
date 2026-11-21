@@ -67,14 +67,19 @@ export const getMe = async (): Promise<{ success: boolean; data: any }> => {
   return data;
 };
 
+
 export const deleteUserAccount = async (): Promise<{
   success: boolean;
   message: string;
-  deletedResumesCount?: number;
 }> => {
-  const { data } = await api.delete('/auth/account');
-  return data;
+  await api.delete<void>('/auth/account');
+
+  return {
+    success: true,
+    message: 'Account deleted successfully',
+  };
 };
+
 // Download the authenticated user's personal data export.
 export const exportMyData = async (): Promise<Blob> => {
   const { data } = await api.get<Blob>('/me/export', {
@@ -121,11 +126,13 @@ export const getTurns = async (sessionId: string): Promise<TurnsListResponse> =>
 export const postTurn = async (
   sessionId: string,
   speaker: TurnSpeaker,
-  text: string
+  text: string,
+  latencyMs?: number | null
 ): Promise<TurnResponse> => {
   const { data } = await api.post<TurnResponse>(`/sessions/${sessionId}/turns`, {
     speaker,
     text,
+    ...(latencyMs !== undefined ? { latencyMs } : {}),
   });
   return data;
 };

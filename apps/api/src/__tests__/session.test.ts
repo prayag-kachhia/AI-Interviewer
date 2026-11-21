@@ -825,6 +825,57 @@ describe('Live Session — LS2 (create session) & LS4 (turns, end session)', () 
       expect(res.body.success).toBe(false);
       expect(prisma.turn.create).not.toHaveBeenCalled();
     });
+
+    // VI-7 (Issue #146, NFR-01): response time measurement tests
+    it('accepts and stores valid latencyMs on AI turns (VI-7, NFR-01)', async () => {
+      (prisma.session.findFirst as any).mockResolvedValueOnce({
+        id: 'sess-latency',
+        userId: AUTH_USER.id,
+        role: 'software-engineer',
+        status: 'LIVE',
+        startedAt: new Date(Date.now() - 30_000),
+        endedAt: null,
+      });
+      (prisma.turn.count as any).mockResolvedValueOnce(2);
+      (prisma.turn.create as any).mockImplementationOnce(async ({ data }: any) => ({
+        id: 'turn-lat-1',
+        ...data,
+        createdAt: new Date(),
+      }));
+
+      const res = await request(app)
+        .post('/api/sessions/sess-latency/turns')
+        .set('Authorization', authHeader())
+        .send({ speaker: 'AI', text: 'Can you tell me about indexing?', latencyMs: 1450 });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.latencyMs).toBe(1450);
+      expect(prisma.turn.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            speaker: 'AI',
+            latencyMs: 1450,
+          }),
+        })
+      );
+    });
+
+    it('rejects invalid latencyMs values with 400 (negative, above 60000, non-integer)', async () => {
+      const invalidValues = [-1, 60001, 12.5, 'fast', {}];
+
+      for (const val of invalidValues) {
+        const res = await request(app)
+          .post('/api/sessions/sess-1/turns')
+          .set('Authorization', authHeader())
+          .send({ speaker: 'AI', text: 'Invalid latency', latencyMs: val });
+
+        expect(res.status).toBe(400);
+        expect(res.body.success).toBe(false);
+        expect(res.body.message).toContain('latencyMs must be an integer between 0 and 60000');
+      }
+      expect(prisma.turn.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /api/sessions/:id/end (LS4)', () => {

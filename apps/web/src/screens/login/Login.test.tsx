@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { axe } from "vitest-axe";
+import { useState } from "react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act, fireEvent } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router";
 import { Login } from "./Login";
@@ -925,6 +926,173 @@ describe("Login Screen - Stay Signed In (FR-05 / Issue #198)", () => {
     );
     expect(getStaySignedIn()).toBe(true);
     expect(localStorage.getItem(STAY_SIGNED_IN_KEY)).toBe("true");
+  });
+
+  it("returns success and clears local auth state when sign-out fails after account deletion", async () => {
+    const mockUser = {
+      id: "delete-user-123",
+      email: "delete@example.com",
+      user_metadata: { full_name: "Delete User" },
+    };
+
+    mockGetSession.mockResolvedValueOnce({
+      data: {
+        session: { user: mockUser, access_token: "mock-token" },
+      },
+      error: null,
+    });
+
+    mockSignOut.mockRejectedValueOnce(
+      new Error("Sign out failed")
+    );
+    const api = await import("../../lib/api");
+
+    vi.mocked(api.getMe).mockResolvedValueOnce({
+      success: true,
+      data: {
+        id: "delete-user-123",
+        email: "delete@example.com",
+        name: "Delete User",
+      },
+    });
+
+    vi.mocked(api.deleteUserAccount).mockResolvedValueOnce({
+      success: true,
+      message: "Account deleted successfully",
+    });
+
+    const TestAuthConsumer = () => {
+      const { user, deleteAccount } = useAuth();
+      const [result, setResult] = useState("");
+
+      return (
+        <div>
+          {user && <span data-testid="user-email">{user.email}</span>}
+          <button
+            onClick={async () => {
+              const response = await deleteAccount();
+              setResult(
+                response.success ? "Deletion successful" : "Deletion failed"
+              );
+            }}
+          >
+            Delete account
+          </button>
+          <span data-testid="delete-result">{result}</span>
+        </div>
+      );
+    };
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <TestAuthConsumer />
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    expect(await screen.findByTestId("user-email")).toHaveTextContent(
+      "delete@example.com"
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /delete account/i }));
+    });
+
+    expect(api.deleteUserAccount).toHaveBeenCalledTimes(1);
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+
+    expect(screen.getByTestId("delete-result")).toHaveTextContent(
+      "Deletion successful"
+    );
+
+    expect(screen.queryByTestId("user-email")).not.toBeInTheDocument();
+  });
+
+  it("preserves authentication state and does not sign out when backend account deletion fails", async () => {
+    const mockUser = {
+      id: "delete-fail-user",
+      email: "delete-fail@example.com",
+      user_metadata: { full_name: "Delete Fail User" },
+    };
+
+    mockGetSession.mockResolvedValueOnce({
+      data: {
+        session: { user: mockUser, access_token: "mock-token" },
+      },
+      error: null,
+    });
+
+    const api = await import("../../lib/api");
+
+    vi.mocked(api.getMe).mockResolvedValueOnce({
+      success: true,
+      data: {
+        id: "delete-fail-user",
+        email: "delete-fail@example.com",
+        name: "Delete Fail User",
+      },
+    });
+
+    vi.mocked(api.deleteUserAccount).mockRejectedValueOnce({
+      response: {
+        status: 500,
+        data: { message: "Internal server error during deletion" },
+      },
+    });
+
+    const TestAuthConsumer = () => {
+      const { user, deleteAccount } = useAuth();
+      const [result, setResult] = useState("");
+
+      return (
+        <div>
+          {user && <span data-testid="user-email">{user.email}</span>}
+          <button
+            onClick={async () => {
+              const response = await deleteAccount();
+              setResult(
+                response.success ? "Deletion successful" : `Failed: ${response.message}`
+              );
+            }}
+          >
+            Delete account
+          </button>
+          <span data-testid="delete-result">{result}</span>
+        </div>
+      );
+    };
+
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <MemoryRouter initialEntries={["/login"]}>
+            <TestAuthConsumer />
+          </MemoryRouter>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+
+    expect(await screen.findByTestId("user-email")).toHaveTextContent(
+      "delete-fail@example.com"
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /delete account/i }));
+    });
+
+    expect(api.deleteUserAccount).toHaveBeenCalledTimes(1);
+    expect(mockSignOut).not.toHaveBeenCalled();
+
+    expect(screen.getByTestId("delete-result")).toHaveTextContent(
+      "Failed: Internal server error during deletion"
+    );
+
+    expect(screen.getByTestId("user-email")).toHaveTextContent(
+      "delete-fail@example.com"
+    );
   });
 
   it("has no accessibility violations in Sign In view", async () => {

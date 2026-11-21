@@ -6,7 +6,7 @@ name: Deploy
 #
 # GitHub signs in to Google Cloud with Workload Identity Federation: no key is stored in
 # GitHub, and Google only accepts tokens from this repository's main branch.
-# One-time setup and the repository variables are described in docs/sprint-2.md.
+# Settings, secrets and costs: docs/operations.md. The original one-time setup: docs/archive/sprint-2.md.
 
 on:
   push:

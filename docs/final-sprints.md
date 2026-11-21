@@ -54,7 +54,7 @@ The lead also reviews any change to `packages/contracts`, `prisma/`, a `package.
 
 **Sprints:** Sprint 4 is days 1–7 (most of it falls in the vacation). Sprint 5 is days 8–15. Estimates assume AI coding agents.
 
-**Database changes:** create your migration after pulling the latest `main`, against a local Postgres (see `docs/sprint-3.md` §6). Never run `prisma migrate dev` against the shared database.
+**Database changes:** create your migration after pulling the latest `main`, against a local Postgres (see `docs/guides/local-setup.md`). Never run `prisma migrate dev` against the shared database.
 
 ## 3. Decisions
 
@@ -151,7 +151,7 @@ The remaining primitives the sprint's screens need.
 
 A session records what the candidate chose, and the interviewer briefing uses it.
 
-- Migration: `Session` gains `company String?`, `level String?` (entry / mid / senior), `focus String?` and `mode String @default("voice")` (voice / typed). Create it against a local Postgres (docs/sprint-3.md §6).
+- Migration: `Session` gains `company String?`, `level String?` (entry / mid / senior), `focus String?` and `mode String @default("voice")` (voice / typed). Create it against a local Postgres (docs/archive/sprint-3.md §6).
 - Contracts: a CreateSession input schema, plus a `focuses` list on each role in `ROLES`.
 - `POST /api/sessions` validates the input (400 for an unknown focus, level or mode) and `createSession` stores it.
 - `briefingFor` passes company, level and focus to the briefing (add `company` and `level` to `BriefingInput`).
@@ -1108,7 +1108,7 @@ Graders can trace every requirement to code, tests and status.
 The repo explains itself and records who did what.
 
 - README: status, setup and deploy (#44).
-- docs/user-guide.md: refresh Sprint1_Documentation §2 for the final product.
+- docs/user-guide.md: refresh archive/Sprint1_Documentation.md §2 for the final product.
 - docs/contributions.md: merged PRs per person.
 - An AI-use disclosure.
 - **Done when:** The docs match the frozen product.

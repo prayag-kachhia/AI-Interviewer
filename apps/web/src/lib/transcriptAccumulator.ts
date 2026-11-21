@@ -3,6 +3,7 @@ import type { TurnSpeaker } from '../types';
 export interface FinishedTurn {
   speaker: TurnSpeaker;
   text: string;
+  latencyMs?: number | null;
 }
 
 export interface TranscriptAccumulatorOptions {
@@ -22,11 +23,28 @@ export class TranscriptAccumulator {
 
   private currentSpeaker: TurnSpeaker | null = null;
   private currentBuffer = '';
+  private currentLatencyMs: number | null = null;
 
   constructor(options: TranscriptAccumulatorOptions) {
     this.onTurn = options.onTurn;
     this.onPartialUpdate = options.onPartialUpdate;
     this.isSessionEnded = options.isSessionEnded;
+  }
+
+  /**
+   * Sets response latency for the currently accumulating AI turn.
+   */
+  public setTurnLatency(latencyMs: number | null): void {
+    this.currentLatencyMs = latencyMs;
+  }
+
+  /**
+   * Flush the current turn only if it belongs to the given speaker.
+   */
+  public flushIfSpeaker(speaker: TurnSpeaker): void {
+    if (this.currentSpeaker === speaker) {
+      this.flushTurn();
+    }
   }
 
   /**
@@ -55,9 +73,11 @@ export class TranscriptAccumulator {
   public flushTurn(): void {
     const textToPost = this.currentBuffer.trim();
     const speakerToPost = this.currentSpeaker;
+    const latencyToPost = this.currentLatencyMs;
 
     this.currentBuffer = '';
     this.currentSpeaker = null;
+    this.currentLatencyMs = null;
     this.onPartialUpdate?.(null, '');
 
     if (!speakerToPost || textToPost.length === 0) {
@@ -71,6 +91,7 @@ export class TranscriptAccumulator {
     this.onTurn({
       speaker: speakerToPost,
       text: textToPost,
+      ...(latencyToPost !== null && latencyToPost !== undefined ? { latencyMs: latencyToPost } : {}),
     });
   }
 
@@ -80,6 +101,7 @@ export class TranscriptAccumulator {
   public reset(): void {
     this.currentBuffer = '';
     this.currentSpeaker = null;
+    this.currentLatencyMs = null;
     this.onPartialUpdate?.(null, '');
   }
 }

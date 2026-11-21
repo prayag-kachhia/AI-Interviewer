@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   floatTo16BitPCM,
   pcm16ToFloat,
@@ -6,6 +6,10 @@ import {
   base64Decode,
   downsampleBuffer,
   PlaybackQueue,
+  PREFERRED_MIC_STORAGE_KEY,
+  getPreferredMicId,
+  setPreferredMicId,
+  clearPreferredMicId,
 } from "./audio";
 
 describe("audio helpers (Issue #81)", () => {
@@ -196,6 +200,63 @@ describe("audio helpers (Issue #81)", () => {
       // Trigger playback finished
       mockCtx._sources[0].onended?.();
       expect(queue.pendingCount).toBe(0);
+    });
+
+    it("fires onDrained only after the final queued source finishes naturally (Issue #296)", () => {
+      const mockCtx = createMockAudioContext();
+      const onDrained = vi.fn();
+      const queue = new PlaybackQueue(mockCtx as unknown as AudioContext, 24000, onDrained);
+
+      queue.enqueue(new Float32Array(2400));
+      queue.enqueue(new Float32Array(2400));
+      expect(queue.pendingCount).toBe(2);
+
+      // First chunk finishes — second chunk is still playing, so onDrained must not fire yet.
+      mockCtx._sources[0].onended?.();
+      expect(queue.pendingCount).toBe(1);
+      expect(onDrained).not.toHaveBeenCalled();
+
+      // Final chunk finishes — queue is drained.
+      mockCtx._sources[1].onended?.();
+      expect(queue.pendingCount).toBe(0);
+      expect(onDrained).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not fire onDrained when stop() clears sources on interruption", () => {
+      const mockCtx = createMockAudioContext();
+      const onDrained = vi.fn();
+      const queue = new PlaybackQueue(mockCtx as unknown as AudioContext, 24000, onDrained);
+
+      queue.enqueue(new Float32Array(2400));
+      queue.stop();
+
+      expect(queue.pendingCount).toBe(0);
+      expect(mockCtx._sources[0].onended).toBeNull();
+      expect(onDrained).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("preferred microphone storage helpers (VI-4, #143)", () => {
+    beforeEach(() => {
+      sessionStorage.clear();
+    });
+
+    it("returns null when no mic is saved in sessionStorage", () => {
+      expect(getPreferredMicId()).toBeNull();
+    });
+
+    it("saves and retrieves preferred microphone deviceId", () => {
+      setPreferredMicId("test-mic-device-123");
+      expect(sessionStorage.getItem(PREFERRED_MIC_STORAGE_KEY)).toBe("test-mic-device-123");
+      expect(getPreferredMicId()).toBe("test-mic-device-123");
+    });
+
+    it("clears stored preferred microphone deviceId", () => {
+      setPreferredMicId("test-mic-device-123");
+      expect(getPreferredMicId()).toBe("test-mic-device-123");
+      clearPreferredMicId();
+      expect(getPreferredMicId()).toBeNull();
+      expect(sessionStorage.getItem(PREFERRED_MIC_STORAGE_KEY)).toBeNull();
     });
   });
 });

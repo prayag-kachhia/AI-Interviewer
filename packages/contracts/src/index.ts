@@ -129,6 +129,7 @@ export const Turn = z.object({
   text: z.string(),
   timestampSec: z.number(),
   turnIndex: z.number().int(),
+  latencyMs: z.number().int().min(0).max(60000).nullable().optional(),
   createdAt: z.string(),
 });
 export type Turn = z.infer<typeof Turn>;
