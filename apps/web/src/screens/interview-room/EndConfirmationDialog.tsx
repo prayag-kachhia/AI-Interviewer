@@ -40,7 +40,7 @@ export const EndConfirmationDialog: React.FC<EndConfirmationDialogProps> = ({
   return (
     <dialog
       ref={dialogRef}
-      className="m-auto max-w-md w-[calc(100%-2rem)] p-6 rounded-xl border border-border bg-card text-card-foreground shadow-2xl backdrop:bg-black/60 backdrop:backdrop-blur-xs outline-none"
+      className="m-auto max-w-md sm:max-w-lg w-[calc(100%-2rem)] p-6 rounded-xl border border-border bg-card text-card-foreground shadow-2xl backdrop:bg-black/60 backdrop:backdrop-blur-xs outline-none"
       aria-labelledby="end-dialog-title"
       aria-describedby="end-dialog-desc"
       onCancel={(e) => {
@@ -107,7 +107,7 @@ export const EndConfirmationDialog: React.FC<EndConfirmationDialogProps> = ({
             </div>
           </fieldset>
 
-          <div className="flex justify-end items-center gap-2.5 mt-2">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:items-center mt-2">
             <Button type="button" variant="outline" onClick={onClose}>
               Continue Interview
             </Button>
