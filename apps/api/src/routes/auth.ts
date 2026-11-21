@@ -63,28 +63,33 @@ router.delete('/account', authenticate, async (req, res) => {
     return;
   }
 
-  // Step 1: Delete the Prisma user.
-  // Related resumes, sessions, turns, feedback and jobs
-  // are deleted automatically through onDelete: Cascade.
-  await prisma.user.delete({
-    where: { id: userId },
-  });
+  try {
+    await prisma.$transaction(async (tx) => {
+      // User relations are configured with onDelete: Cascade.
+      // deleteMany also avoids a Prisma "record not found" error if
+      // the local record has already been removed or on repeated retries.
+      await tx.user.deleteMany({
+        where: { id: userId },
+      });
 
-  // Step 2: Delete the Supabase Auth user.
-  const { error } = await supabase.auth.admin.deleteUser(supabaseUserId);
+      // Delete Supabase Auth user last. If this fails, throwing causes
+      // Prisma to roll back the application-data deletion.
+      const { error } = await supabase.auth.admin.deleteUser(supabaseUserId);
 
-  if (error) {
-    console.error('Supabase Auth user deletion failed:', error);
+      if (error) {
+        throw error;
+      }
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    console.error('Account deletion failed:', error);
 
     res.status(500).json({
       success: false,
-      message: 'Application data deleted, but Supabase account deletion failed',
+      message: 'Failed to delete account. Please try again.',
     });
-    return;
   }
-
-  // Step 3: Return HTTP 204 No Content.
-  res.status(204).send();
 });
 
 export default router;

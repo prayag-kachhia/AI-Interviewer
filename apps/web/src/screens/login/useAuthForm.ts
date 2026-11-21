@@ -24,7 +24,7 @@ function oauthError(search: string, hash: string): string {
 export function useAuthForm() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { signIn, signUp, signInWithGoogle, resetPasswordForEmail, user, staySignedIn: authStaySignedIn, setStaySignedIn: authSetStaySignedIn } = useAuth();
+  const { signIn, signUp, signInWithGoogle, signInWithGitHub, resetPasswordForEmail, user, staySignedIn: authStaySignedIn, setStaySignedIn: authSetStaySignedIn } = useAuth();
 
   const [mode, setMode] = useState<Mode>(() => location.state?.mode || 'signin');
   const [staySignedIn, setStaySignedIn] = useState<boolean>(() => authStaySignedIn ?? getStaySignedIn());
@@ -44,6 +44,7 @@ export function useAuthForm() {
   const [successMsg, setSuccessMsg] = useState(() => location.state?.message || '');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [githubLoading, setGithubLoading] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
 
   const strengthResult = checkPasswordStrength(password, email);
@@ -111,6 +112,22 @@ export function useAuthForm() {
     }
   };
 
+  const continueWithGitHub = async () => {
+    setError('');
+    setSuccessMsg('');
+    setGithubLoading(true);
+    try {
+      const res = await signInWithGitHub(staySignedIn);
+      if (!res.success) {
+        setError(res.message || 'Failed to start GitHub sign-in');
+        setGithubLoading(false);
+      }
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred during GitHub sign-in');
+      setGithubLoading(false);
+    }
+  };
+
   const createAccount = async (normalizedEmail: string) => {
     if (!name.trim()) return setError('Please provide your full name.');
     if (strengthResult.strength !== 'strong') return setError('Password does not meet all security requirements.');
@@ -150,8 +167,8 @@ export function useAuthForm() {
     mode, switchMode, forgot, showForgot, unverifiedEmail,
     name, setName, email, setEmail, password, setPassword, confirmPassword, setConfirmPassword,
     strengthResult, passwordsMatch, isSignUpValid,
-    error, successMsg, loading, googleLoading, forgotLoading,
-    submit, sendResetLink, continueWithGoogle,
+    error, successMsg, loading, googleLoading, githubLoading, forgotLoading,
+    submit, sendResetLink, continueWithGoogle, continueWithGitHub,
     staySignedIn, handleStaySignedInChange,
   };
 }

@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
-import { test, expect, vi, afterEach } from 'vitest';
 import { axe } from 'vitest-axe';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { test, expect, vi, afterEach } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { Profile } from './Profile';
 import * as api from '../../lib/api';
@@ -11,11 +11,22 @@ vi.mock('../../lib/api', () => ({
   exportMyData: vi.fn(),
 }));
 
+let mockAuthUser: any = {
+  id: 'u1',
+  name: 'John Candidate',
+  email: 'john@example.com',
+  identities: [],
+};
 const mockDeleteAccount = vi.fn();
+const mockLinkGitHubIdentity = vi.fn().mockResolvedValue({ success: true, url: 'https://github.com/login/oauth/authorize' });
+const mockRefreshIdentities = vi.fn().mockResolvedValue([]);
+
 vi.mock('../../context/AuthContext', () => ({
   useAuth: () => ({
-    user: { id: 'u1', name: 'John Candidate', email: 'john@example.com' },
+    user: mockAuthUser,
     deleteAccount: mockDeleteAccount,
+    linkGitHubIdentity: mockLinkGitHubIdentity,
+    refreshIdentities: mockRefreshIdentities,
   }),
 }));
 
@@ -32,6 +43,14 @@ afterEach(() => {
   vi.restoreAllMocks();
   mockNavigate.mockReset();
   mockDeleteAccount.mockReset();
+  mockLinkGitHubIdentity.mockReset();
+  mockRefreshIdentities.mockReset();
+  mockAuthUser = {
+    id: 'u1',
+    name: 'John Candidate',
+    email: 'john@example.com',
+    identities: [],
+  };
 });
 
 test('given no profile exists, displays "No Profile Found"', async () => {
@@ -168,37 +187,131 @@ const renderWithoutResume = async () => {
   await screen.findByText('No Profile Found');
 };
 
-test('given the user confirms account deletion, deletes and goes to login', async () => {
-  mockDeleteAccount.mockResolvedValueOnce({ success: true });
+test('Delete Account button opens the confirmation dialog with permanent warning and user email', async () => {
   await renderWithoutResume();
 
   fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+  const dialog = await screen.findByRole('alertdialog');
+  expect(within(dialog).getByRole('heading', { name: /Confirm Account Deletion/i })).toBeInTheDocument();
+  expect(within(dialog).getByText(/This action is/i)).toBeInTheDocument();
+  expect(within(dialog).getByText(/irreversible/i)).toBeInTheDocument();
+  expect(within(dialog).getByText(/john@example\.com/)).toBeInTheDocument();
+  expect(within(dialog).getByText(/All uploaded PDF resumes/i)).toBeInTheDocument();
+});
+
+test('dialog requires typing exact DELETE to enable deletion action', async () => {
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+  const deleteButton = await screen.findByRole('button', { name: /yes, delete everything/i });
+  const input = screen.getByLabelText(/type DELETE to confirm account deletion/i);
+
+  // Initially disabled
+  expect(deleteButton).toBeDisabled();
+
+  // Incorrect confirmation keeps deletion disabled
+  fireEvent.change(input, { target: { value: 'delete' } });
+  expect(deleteButton).toBeDisabled();
+
+  fireEvent.change(input, { target: { value: 'DELET' } });
+  expect(deleteButton).toBeDisabled();
+
+  fireEvent.change(input, { target: { value: 'DELETE ' } });
+  expect(deleteButton).toBeDisabled();
+
+  // Exact DELETE enables deletion
+  fireEvent.change(input, { target: { value: 'DELETE' } });
+  expect(deleteButton).not.toBeDisabled();
+});
+
+test('Cancel button closes the dialog and resets confirmation input', async () => {
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+  const input = await screen.findByLabelText(/type DELETE to confirm account deletion/i);
+  fireEvent.change(input, { target: { value: 'DELETE' } });
+
+  fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  expect(mockDeleteAccount).not.toHaveBeenCalled();
+
+  // Reopening starts fresh
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+  const reopenedInput = await screen.findByLabelText(/type DELETE to confirm account deletion/i);
+  expect(reopenedInput).toHaveValue('');
+  expect(screen.getByRole('button', { name: /yes, delete everything/i })).toBeDisabled();
+});
+
+test('successful deletion calls deleteAccount and navigates to /login with success message', async () => {
+  mockDeleteAccount.mockResolvedValueOnce({ success: true, message: 'Account deleted' });
+  await renderWithoutResume();
+
+  fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+
+  fireEvent.change(screen.getByLabelText(/type DELETE to confirm account deletion/i), {
+    target: { value: 'DELETE' },
+  });
+
   fireEvent.click(await screen.findByRole('button', { name: /yes, delete everything/i }));
 
-  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/login', expect.anything()));
+  await waitFor(() =>
+    expect(mockNavigate).toHaveBeenCalledWith('/login', {
+      state: {
+        message: 'Your account and all associated data have been permanently deleted.',
+        mode: 'signin',
+      },
+    })
+  );
   expect(mockDeleteAccount).toHaveBeenCalledTimes(1);
 });
 
-test('given account deletion fails, keeps the dialog open and shows the error', async () => {
-  mockDeleteAccount.mockResolvedValueOnce({ success: false, message: 'Server said no' });
+test('failed deletion displays error, keeps user signed in, and does not navigate', async () => {
+  mockDeleteAccount.mockResolvedValueOnce({ success: false, message: 'Database transaction rolled back' });
   await renderWithoutResume();
 
   fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+  fireEvent.change(screen.getByLabelText(/type DELETE to confirm account deletion/i), {
+    target: { value: 'DELETE' },
+  });
+
   fireEvent.click(await screen.findByRole('button', { name: /yes, delete everything/i }));
 
-  expect(await screen.findByText('Server said no')).toBeInTheDocument();
+  expect(await screen.findByText('Database transaction rolled back')).toBeInTheDocument();
   expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
-test('given the user cancels, nothing is deleted', async () => {
+test('loading state prevents duplicate deletion submissions while in progress', async () => {
+  let resolvePromise: (value: { success: boolean }) => void = () => {};
+  const pendingPromise = new Promise<{ success: boolean }>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  mockDeleteAccount.mockReturnValueOnce(pendingPromise);
   await renderWithoutResume();
 
   fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
-  fireEvent.click(await screen.findByRole('button', { name: /cancel/i }));
+  fireEvent.change(screen.getByLabelText(/type DELETE to confirm account deletion/i), {
+    target: { value: 'DELETE' },
+  });
 
-  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
-  expect(mockDeleteAccount).not.toHaveBeenCalled();
+  const deleteBtn = await screen.findByRole('button', { name: /yes, delete everything/i });
+
+  // First click triggers deleteAccount
+  fireEvent.click(deleteBtn);
+  expect(mockDeleteAccount).toHaveBeenCalledTimes(1);
+
+  // Subsequent click while in flight is ignored
+  fireEvent.click(deleteBtn);
+  expect(mockDeleteAccount).toHaveBeenCalledTimes(1);
+
+  // Resolve the deletion
+  resolvePromise({ success: true });
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/login', expect.anything()));
 });
 
 test('given data export fails, shows the error message', async () => {
@@ -228,7 +341,7 @@ test('has no accessibility violations in populated profile state', async () => {
         experience: ['Software Engineer at Tech Corp'],
         projects: ['AI Interviewer'],
         certifications: ['AWS Certified Solutions Architect'],
-        achievements: ['Dean\'s List'],
+        achievements: ["Dean's List"],
         languages: ['English', 'Spanish'],
       },
     },
@@ -271,4 +384,196 @@ test('has no accessibility violations when delete dialog is open', async () => {
   await screen.findByRole('alertdialog');
 
   expect(await axe(container)).toHaveNoViolations();
+});
+
+test('existing user with no GitHub identity sees Connect GitHub button and Not connected status', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'John Candidate',
+    email: 'john@example.com',
+    identities: [{ provider: 'google', identity_data: { email: 'john@example.com' } }],
+  };
+  await renderWithoutResume();
+
+  expect(screen.getByRole('button', { name: /connect github/i })).toBeInTheDocument();
+  expect(screen.getByText(/Link your GitHub account to verify your developer identity/i)).toBeInTheDocument();
+});
+
+test('clicking Connect GitHub invokes linkIdentity via linkGitHubIdentity with provider github', async () => {
+  await renderWithoutResume();
+
+  const connectBtn = screen.getByRole('button', { name: /connect github/i });
+  fireEvent.click(connectBtn);
+
+  expect(mockLinkGitHubIdentity).toHaveBeenCalledTimes(1);
+});
+
+test('existing linked GitHub identity displays its verified username', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'John Candidate',
+    email: 'john@example.com',
+    identities: [
+      {
+        provider: 'github',
+        identity_data: { user_name: 'vismay-solanki' },
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.getByText('(@vismay-solanki)')).toBeInTheDocument();
+  expect(screen.getByText('Connected as @vismay-solanki')).toBeInTheDocument();
+});
+
+test('GitHub username comes from identity data, never arbitrary user display name', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'Unverified Display Name',
+    email: 'john@example.com',
+    identities: [
+      {
+        provider: 'github',
+        identity_data: {
+          user_name: 'actual-github-handle',
+          name: 'Unverified Display Name',
+        },
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.getByText('(@actual-github-handle)')).toBeInTheDocument();
+  expect(screen.queryByText('(@Unverified Display Name)')).not.toBeInTheDocument();
+});
+
+test('a non-GitHub identity cannot be displayed as GitHub', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'Google Only Candidate',
+    email: 'googleuser@example.com',
+    identities: [
+      {
+        provider: 'google',
+        identity_data: { user_name: 'google_user', email: 'googleuser@example.com' },
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.getByRole('button', { name: /connect github/i })).toBeInTheDocument();
+  expect(screen.queryByText('(@google_user)')).not.toBeInTheDocument();
+});
+
+test('missing GitHub username is handled safely without throwing', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'Candidate',
+    email: 'user@example.com',
+    identities: [
+      {
+        provider: 'github',
+        identity_data: {},
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.queryByRole('button', { name: /connect github/i })).not.toBeInTheDocument();
+  expect(screen.getAllByText('Connected').length).toBeGreaterThanOrEqual(1);
+});
+
+test('already-connected GitHub account displays connected status instead of Connect button', async () => {
+  mockAuthUser = {
+    id: 'u1',
+    name: 'Linked Candidate',
+    email: 'linked@example.com',
+    githubUsername: 'octocat',
+    identities: [
+      {
+        provider: 'github',
+        identity_data: { user_name: 'octocat' },
+      },
+    ],
+  };
+  await renderWithoutResume();
+
+  expect(screen.queryByRole('button', { name: /connect github/i })).not.toBeInTheDocument();
+  expect(screen.getByText('(@octocat)')).toBeInTheDocument();
+});
+
+test('linking errors are displayed correctly in an Alert', async () => {
+  mockLinkGitHubIdentity.mockResolvedValueOnce({
+    success: false,
+    message: 'Identity is already linked to another user',
+  });
+  await renderWithoutResume();
+
+  const connectBtn = screen.getByRole('button', { name: /connect github/i });
+  fireEvent.click(connectBtn);
+
+  expect(await screen.findByText('Identity is already linked to another user')).toBeInTheDocument();
+});
+
+test('duplicate submissions are prevented while linking is in progress', async () => {
+  let resolvePromise: (val: any) => void = () => {};
+  mockLinkGitHubIdentity.mockImplementationOnce(
+    () => new Promise((resolve) => { resolvePromise = resolve; })
+  );
+  await renderWithoutResume();
+
+  const connectBtn = screen.getByRole('button', { name: /connect github/i });
+
+  fireEvent.click(connectBtn);
+  expect(mockLinkGitHubIdentity).toHaveBeenCalledTimes(1);
+
+  expect(connectBtn).toBeDisabled();
+
+  fireEvent.click(connectBtn);
+  expect(mockLinkGitHubIdentity).toHaveBeenCalledTimes(1);
+
+  resolvePromise({ success: true });
+});
+
+test('existing user identity remains unchanged during linking', async () => {
+  mockAuthUser = {
+    id: 'user-keep-id',
+    name: 'Original Candidate',
+    email: 'original@example.com',
+    identities: [],
+  };
+  await renderWithoutResume();
+
+  const connectBtn = screen.getByRole('button', { name: /connect github/i });
+  fireEvent.click(connectBtn);
+
+  expect(mockAuthUser.id).toBe('user-keep-id');
+  expect(mockAuthUser.email).toBe('original@example.com');
+});
+
+test('identity-refresh effect does not repeatedly execute when user state changes', async () => {
+  const { rerender } = render(
+    <MemoryRouter>
+      <Profile />
+    </MemoryRouter>
+  );
+
+  await waitFor(() => {
+    expect(mockRefreshIdentities).toHaveBeenCalledTimes(1);
+  });
+
+  // Simulate user state change in AuthContext
+  mockAuthUser = {
+    ...mockAuthUser,
+    name: 'Updated Name',
+    githubUsername: 'new-octocat',
+  };
+
+  rerender(
+    <MemoryRouter>
+      <Profile />
+    </MemoryRouter>
+  );
+
+  expect(mockRefreshIdentities).toHaveBeenCalledTimes(1);
 });

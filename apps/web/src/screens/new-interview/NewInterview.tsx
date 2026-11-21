@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { MicCheck } from './MicCheck';
 
 const LEVELS: { value: Level; label: string }[] = [
   { value: 'entry', label: 'Entry' },
@@ -212,6 +213,8 @@ export const NewInterview: React.FC = () => {
               ))}
             </RadioGroup>
           </Section>
+
+          {mode === 'voice' && <MicCheck />}
         </div>
 
         <Card className="lg:sticky lg:top-28">

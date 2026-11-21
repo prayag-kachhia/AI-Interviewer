@@ -2,7 +2,7 @@ import React from 'react';
 import { ArrowRight, Loader2, Lock, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field } from '../../components/Field';
-import { GoogleButton } from './GoogleButton';
+import { OAuthButtons } from './GoogleButton';
 import type { AuthForm } from './useAuthForm';
 
 const ForgotPasswordForm: React.FC<{ form: AuthForm }> = ({ form }) => (
@@ -35,7 +35,7 @@ export const SignInForm: React.FC<{ form: AuthForm }> = ({ form }) => {
   if (form.forgot) return <ForgotPasswordForm form={form} />;
   return (
     <>
-      <GoogleButton loading={form.googleLoading} disabled={form.loading || form.googleLoading} onClick={form.continueWithGoogle} caption="or continue with email" />
+      <OAuthButtons form={form} caption="or continue with email" />
       <form onSubmit={form.submit} className="flex flex-col gap-4">
         <Field id="signin-email" label="Email address" icon={<Mail />} type="email" placeholder="name@company.com" required value={form.email} onChange={(e) => form.setEmail(e.target.value)} />
         <Field
@@ -67,7 +67,7 @@ export const SignInForm: React.FC<{ form: AuthForm }> = ({ form }) => {
             Stay signed in
           </label>
         </div>
-        <Button type="submit" disabled={form.loading || form.googleLoading}>
+        <Button type="submit" disabled={form.loading || form.googleLoading || form.githubLoading}>
           {form.loading ? (
             <>
               <Loader2 className="animate-spin motion-reduce:animate-none" />

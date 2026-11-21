@@ -27,7 +27,9 @@ vi.mock('../db', () => ({
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -211,6 +213,42 @@ describe('Supabase Authentication & Account Management', () => {
   });
 
   describe('DELETE /api/auth/account', () => {
+    const authenticatedUser = {
+      id: 'local-user-a',
+      supabaseUserId: 'supabase-user-a',
+      email: 'user-a@example.com',
+      name: 'User A',
+    };
+
+    const tx = {
+      user: {
+        deleteMany: vi.fn(),
+      },
+    };
+
+    beforeEach(() => {
+      __getUserMock.mockResolvedValue({
+        data: {
+          user: {
+            id: authenticatedUser.supabaseUserId,
+            email: authenticatedUser.email,
+          },
+        },
+        error: null,
+      });
+
+      (prisma.user.findUnique as any).mockResolvedValue(authenticatedUser);
+
+      (prisma.$transaction as any).mockImplementation(
+        async (callback: (transaction: typeof tx) => Promise<void>) => {
+          return callback(tx);
+        }
+      );
+
+      tx.user.deleteMany.mockResolvedValue({ count: 1 });
+      __deleteUserMock.mockResolvedValue({ data: {}, error: null });
+    });
+
     it('deletes a user with resumes and sessions, then deletes the Supabase user', async () => {
       __getUserMock.mockResolvedValueOnce({
         data: { user: { id: 'supabase-del', email: 'delete@example.com' } },
@@ -224,10 +262,6 @@ describe('Supabase Authentication & Account Management', () => {
         email: 'delete@example.com',
       });
 
-      (prisma.user.delete as any).mockResolvedValueOnce({
-        id: 'user-to-delete',
-      });
-
       const res = await request(app)
         .delete('/api/auth/account')
         .set('Authorization', 'Bearer valid-token');
@@ -235,13 +269,192 @@ describe('Supabase Authentication & Account Management', () => {
       expect(res.status).toBe(204);
       expect(res.text).toBe('');
 
-      expect(prisma.user.delete).toHaveBeenCalledWith({
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.user.deleteMany).toHaveBeenCalledWith({
         where: { id: 'user-to-delete' },
       });
-
       expect(__deleteUserMock).toHaveBeenCalledWith('supabase-del');
+    });
 
-      expect(prisma.user.delete).toHaveBeenCalledBefore(__deleteUserMock);
+    it('rejects requests without authentication with 401', async () => {
+      const response = await request(app).delete('/api/auth/account');
+
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({
+        success: false,
+        message: 'Authentication required',
+      });
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(__deleteUserMock).not.toHaveBeenCalled();
+    });
+
+    it('successfully deletes the authenticated user account and returns 204', async () => {
+      const response = await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(204);
+      expect(response.body).toEqual({});
+
+      expect(tx.user.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'local-user-a' },
+      });
+
+      expect(__deleteUserMock).toHaveBeenCalledWith('supabase-user-a');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes only the authenticated user ID and Supabase user ID', async () => {
+      const response = await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(204);
+
+      expect(tx.user.deleteMany).toHaveBeenCalledWith({
+        where: { id: authenticatedUser.id },
+      });
+      expect(tx.user.deleteMany).not.toHaveBeenCalledWith({
+        where: { id: 'other-user-id' },
+      });
+
+      expect(__deleteUserMock).toHaveBeenCalledWith(authenticatedUser.supabaseUserId);
+      expect(__deleteUserMock).not.toHaveBeenCalledWith('other-supabase-id');
+    });
+
+    it('uses a Prisma transaction for atomic local deletion', async () => {
+      await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(typeof (prisma.$transaction as any).mock.calls[0][0]).toBe('function');
+    });
+
+    it('rolls back the transaction and returns HTTP 500 when Supabase deletion fails', async () => {
+      const supabaseError = new Error('Supabase Auth service unavailable');
+      __deleteUserMock.mockResolvedValueOnce({
+        data: null,
+        error: supabaseError,
+      });
+
+      let transactionAborted = false;
+      (prisma.$transaction as any).mockImplementationOnce(
+        async (callback: (transaction: typeof tx) => Promise<void>) => {
+          try {
+            await callback(tx);
+          } catch (err) {
+            transactionAborted = true;
+            throw err;
+          }
+        }
+      );
+
+      const response = await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({
+        success: false,
+        message: 'Failed to delete account. Please try again.',
+      });
+
+      expect(transactionAborted).toBe(true);
+      expect(tx.user.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'local-user-a' },
+      });
+      expect(__deleteUserMock).toHaveBeenCalledWith('supabase-user-a');
+    });
+
+    it('does not target other users records during deletion', async () => {
+      const response = await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(204);
+
+      expect(tx.user.deleteMany).toHaveBeenCalledWith({
+        where: { id: authenticatedUser.id },
+      });
+      expect(tx.user.deleteMany).not.toHaveBeenCalledWith({
+        where: { id: 'unrelated-user' },
+      });
+    });
+
+    it('handles missing local user record without throwing uncontrolled errors', async () => {
+      tx.user.deleteMany.mockResolvedValueOnce({ count: 0 });
+
+      const response = await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(204);
+      expect(tx.user.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'local-user-a' },
+      });
+      expect(__deleteUserMock).toHaveBeenCalledWith('supabase-user-a');
+    });
+
+    it('supports successful retry after a previously failed deletion attempt', async () => {
+      // Attempt 1: Supabase fails
+      __deleteUserMock.mockResolvedValueOnce({
+        data: null,
+        error: new Error('Temporary gateway error'),
+      });
+
+      const firstResponse = await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(firstResponse.status).toBe(500);
+
+      // Attempt 2: Retry succeeds
+      __deleteUserMock.mockResolvedValueOnce({
+        data: {},
+        error: null,
+      });
+
+      const retryResponse = await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(retryResponse.status).toBe(204);
+      expect(tx.user.deleteMany).toHaveBeenCalledTimes(2);
+      expect(__deleteUserMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('repeated local cleanup does not produce an unnecessary record-not-found failure', async () => {
+      tx.user.deleteMany.mockResolvedValue({ count: 0 });
+
+      const response = await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(204);
+      expect(tx.user.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'local-user-a' },
+      });
+    });
+
+    it('uses the authenticated Supabase ID when the local user link is missing', async () => {
+      (prisma.user.findUnique as any).mockResolvedValueOnce({
+        id: 'local-user-a',
+        supabaseUserId: null,
+        email: 'user-a@example.com',
+        name: 'User A',
+      });
+
+      const response = await request(app)
+        .delete('/api/auth/account')
+        .set('Authorization', 'Bearer valid-token');
+
+      expect(response.status).toBe(204);
+      expect(tx.user.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'local-user-a' },
+      });
+      expect(__deleteUserMock).toHaveBeenCalledWith('supabase-user-a');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     });
   });
 });

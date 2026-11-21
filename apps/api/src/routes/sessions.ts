@@ -70,7 +70,7 @@ router.get('/:id/turns', authenticate, async (req, res) => {
 router.post('/:id/turns', authenticate, async (req, res) => {
   const userId = req.user!.id;
   const id = req.params.id as string;
-  const { speaker, text } = req.body ?? {};
+  const { speaker, text, latencyMs } = req.body ?? {};
 
   if (speaker !== 'AI' && speaker !== 'CANDIDATE') {
     res.status(400).json({ success: false, message: 'speaker must be "AI" or "CANDIDATE"' });
@@ -80,8 +80,14 @@ router.post('/:id/turns', authenticate, async (req, res) => {
     res.status(400).json({ success: false, message: 'text is required' });
     return;
   }
+  if (latencyMs !== undefined && latencyMs !== null) {
+    if (typeof latencyMs !== 'number' || !Number.isInteger(latencyMs) || latencyMs < 0 || latencyMs > 60000) {
+      res.status(400).json({ success: false, message: 'latencyMs must be an integer between 0 and 60000' });
+      return;
+    }
+  }
 
-  const turn = await addTurn(id, userId, speaker, text.trim());
+  const turn = await addTurn(id, userId, speaker, text.trim(), latencyMs ?? null);
   res.status(201).json({ success: true, data: turn });
 });
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BrowserWebSpeechVoiceAdapter, type VoiceAdapterCallbacks } from './voiceAdapter';
+import { setPreferredMicId } from './audio';
 
 interface MockSpeechRecognitionResult {
   isFinal: boolean;
@@ -115,6 +116,7 @@ describe('BrowserWebSpeechVoiceAdapter', () => {
   const originalSpeechSynthesisDesc = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
 
   beforeEach(() => {
+    sessionStorage.clear();
     MockSpeechRecognition.instances = [];
     MockUtterance.instances = [];
     vi.clearAllMocks();
@@ -313,5 +315,39 @@ describe('BrowserWebSpeechVoiceAdapter', () => {
     await speaking;
 
     expect(recognition.start).not.toHaveBeenCalled();
+  });
+
+  it('requests preferred microphone deviceId when present in sessionStorage', async () => {
+    setPreferredMicId('fallback-mic-789');
+    const adapter = new BrowserWebSpeechVoiceAdapter();
+    const callbacks = makeCallbacks();
+    await adapter.connect('s-pref', callbacks);
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledWith({
+      audio: { deviceId: { exact: 'fallback-mic-789' } },
+    });
+  });
+
+  it('falls back to default microphone if preferred device triggers OverconstrainedError', async () => {
+    setPreferredMicId('unplugged-mic');
+    const getUserMedia = vi.fn()
+      .mockRejectedValueOnce(new DOMException('Overconstrained', 'OverconstrainedError'))
+      .mockResolvedValueOnce(micStream);
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia },
+      configurable: true,
+    });
+
+    const adapter = new BrowserWebSpeechVoiceAdapter();
+    const callbacks = makeCallbacks();
+    await adapter.connect('s-fallback', callbacks);
+
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(getUserMedia).toHaveBeenNthCalledWith(1, {
+      audio: { deviceId: { exact: 'unplugged-mic' } },
+    });
+    expect(getUserMedia).toHaveBeenNthCalledWith(2, {
+      audio: true,
+    });
   });
 });
