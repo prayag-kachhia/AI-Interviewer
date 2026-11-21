@@ -88,6 +88,7 @@ This document is the official Software Requirements Specification (SRS) and Requ
 | **FR-31** | The system shall allow the platform owner to add, edit, or remove an interview role and its interviewer briefing without a code change. | Should |
 | **FR-32** | The system shall report to the platform owner the number of sessions run, their durations, and the resulting infrastructure cost over a chosen period. | Should |
 | **FR-33** | The system shall show the Placement Cell anonymous, aggregate cohort statistics (interviews per role per week, completion rate, average score per category), shall never reveal an individual candidate’s identity, transcript or scores, and shall hide any group of fewer than 5 candidates. **Dropped on 18 Nov 2026 (see §6).** | Could |
+| **FR-34** | The system shall let a candidate compare their uploaded resume with a pasted job description and see a fit score with gaps and suggestions, visible only to them. | Could |
 
 ---
 
@@ -221,7 +222,11 @@ Every requirement maps to code, tests, and current delivery status.
 | **FR-31** | Should | Add/edit roles without code change | #172 | — | — | Deferred | Out of scope for MVP; roles defined in shared contracts |
 | **FR-32** | Should | Owner dashboard reporting session count, duration, cost | #201 | `apps/web/src/screens/admin/AdminDashboard.tsx`, `apps/api/src/services/admin.service.ts` | `apps/api/src/__tests__/admin.test.ts`, `apps/web/src/screens/admin/AdminDashboard.test.tsx` | Partial | Reports users, interviews per day, feedback counts and average score by role; durations and cost are not reported yet (S-8, #166) |
 | **FR-33** | Could | Aggregate cohort statistics for the Placement Cell, no individual data | #274 | — | — | Dropped | Dropped by the team on 18 Nov 2026; RJ-13 (#274) closed as not planned |
+
+| **FR-34** | Could | Compare uploaded resume with pasted job description (fit score, gaps, suggestions) | #292, #293, #294 | `packages/contracts/src/index.ts`, `apps/api/src/services/resume-match.keywords.ts` | `packages/contracts/src/__tests__/contracts.test.ts`, `apps/api/src/__tests__/resume-match.test.ts` | In Progress | RJ-14 contract, table & keyword scorer (#292) |
+
 | **NFR-01** | Must | Spoken response within 5 seconds for ≥95% of turns | #146 | `apps/web/src/lib/geminiLiveAdapter.ts`, `apps/api/scripts/latency.ts` | `apps/web/src/lib/geminiLiveAdapter.test.ts`, `apps/api/src/__tests__/latency-script.test.ts` | Done | Measured via `latencyMs` in `GeminiLiveVoiceAdapter` and `scripts/latency.ts`; p50 = 1.42 s, p95 = 2.15 s against 5.0 s threshold (VI-7) |
+
 | **NFR-02** | Should | Barge-in interruption stops audio within 500 ms | #105, #110, #141 | `apps/web/src/lib/geminiLiveAdapter.ts`, `apps/web/src/screens/interview-room/useInterview.ts` | `apps/web/src/lib/geminiLiveAdapter.test.ts`, `apps/web/src/lib/__tests__/transcriptAccumulator.test.ts`, `apps/web/src/screens/interview-room/InterviewRoom.test.tsx` | In Progress | Live adapter wired into room (`ADR-0014`); client stops playback immediately on `interrupted`; 50-event live timing measurement in test report |
 | **NFR-03** | Must | Structured feedback within 15 seconds for ≥95% of sessions | #86, #122 | `apps/api/src/services/evaluator.service.ts`, `apps/api/src/worker.ts` | `apps/api/src/__tests__/evaluator.test.ts`, `apps/api/src/__tests__/evaluate-cli.test.ts` | Partial | Background worker, benchmarked. Since per-answer feedback, a full-length interview (10+ answers) takes longer than 15 s to grade, so the Gemini timeout is 60 s (it was 12 s, which made those jobs fail). Short sessions still meet 15 s; making long ones fit needs a faster evaluation call. |
 | **NFR-04** | Must | Retain transcript on evaluation failure & allow retry | #92, #129 | `apps/api/src/services/feedback.service.ts`, `apps/api/src/routes/feedback.ts`, `apps/api/src/worker.ts` | `apps/api/src/__tests__/feedback.test.ts` | Done | Transcript never cleared on job error |
