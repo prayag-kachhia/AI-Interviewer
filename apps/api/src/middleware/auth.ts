@@ -2,6 +2,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from '@supabase/supabase-js';
 import prisma from '../db';
+import { extractVerifiedGitHubLogin } from '../services/github.service';
 
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
@@ -117,6 +118,7 @@ export const createAuthMiddleware = (options: AuthenticateOptions = {}) => {
           user.user_metadata?.name ||
           'Candidate',
         isEmailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
+        githubUsername: extractVerifiedGitHubLogin(user),
       };
 
       next();
