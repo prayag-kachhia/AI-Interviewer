@@ -2,6 +2,8 @@ import { GoogleGenAI } from '@google/genai';
 import { AppError } from '../errors';
 import { getOwnedSession, addTurn, listTurns, SessionEndedError } from './session.service';
 import { briefingFor } from './briefing.service';
+import type { EvaluationUsageMetadata } from './evaluator.service';
+import { recordNextQuestionUsage } from './feedback.service';
 
 export const NEXT_QUESTION_TIMEOUT_MS = 15_000;
 const DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -12,8 +14,13 @@ export class InterviewerTimeoutError extends AppError {
   }
 }
 
+export interface GenerateQuestionResult {
+  text: string;
+  usageMetadata?: EvaluationUsageMetadata;
+}
+
 export interface NextQuestionOptions {
-  generate?: (prompt: string) => Promise<string>;
+  generate?: (prompt: string) => Promise<string | GenerateQuestionResult>;
   timeoutMs?: number;
   remainingSeconds?: number;
 }
@@ -48,7 +55,7 @@ ${
 - Return ONLY the question text. Do NOT include prefixes like 'Interviewer:', quotation marks, or markdown bullet points.`;
 }
 
-async function callGemini(prompt: string, timeoutMs: number): Promise<string> {
+async function callGemini(prompt: string, timeoutMs: number): Promise<GenerateQuestionResult> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured');
@@ -67,7 +74,18 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<string> {
       },
     });
 
-    return response.text ?? '';
+    const usageMetadata: EvaluationUsageMetadata | undefined = response.usageMetadata
+      ? {
+          promptTokenCount: response.usageMetadata.promptTokenCount,
+          candidatesTokenCount: response.usageMetadata.candidatesTokenCount,
+          totalTokenCount: response.usageMetadata.totalTokenCount,
+        }
+      : undefined;
+
+    return {
+      text: response.text ?? '',
+      ...(usageMetadata ? { usageMetadata } : {}),
+    };
   } catch (err) {
     // The abort signal rejects with a TimeoutError or AbortError once the time is up.
     if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
@@ -100,7 +118,13 @@ export async function generateNextQuestion(
   const timeoutMs = options.timeoutMs ?? NEXT_QUESTION_TIMEOUT_MS;
 
   const generate = options.generate ?? ((p: string) => callGemini(p, timeoutMs));
-  const rawQuestion = await generate(prompt);
+  const rawResponse = await generate(prompt);
+
+  const rawQuestion = typeof rawResponse === 'string' ? rawResponse : rawResponse.text;
+  const usageMetadata =
+    typeof rawResponse === 'object' && rawResponse !== null
+      ? rawResponse.usageMetadata
+      : undefined;
 
   const questionText = rawQuestion
     .trim()
@@ -110,6 +134,16 @@ export async function generateNextQuestion(
 
   if (!questionText) {
     throw new Error('Generated question was empty');
+  }
+
+  if (usageMetadata) {
+    try {
+      await recordNextQuestionUsage(sessionId, usageMetadata);
+    } catch (err) {
+      console.warn(
+        `[interviewer.service] Failed to record next-question token usage for session ${sessionId}: ${(err as Error).message}`
+      );
+    }
   }
 
   return addTurn(sessionId, userId, 'AI', questionText);

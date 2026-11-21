@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
 import app from '../server';
 import prisma from '../db';
-import { handleSessionEnded } from '../services/feedback.service';
+import {
+  handleSessionEnded,
+  saveFeedback,
+  recordNextQuestionUsage,
+  mergeNextQuestionUsage,
+  mergeEvaluatorUsage,
+} from '../services/feedback.service';
 import { evaluateTranscript } from '../services/evaluator.service';
 import { isTransientError, processNextJob } from '../services/job-queue.service';
 
@@ -19,7 +25,7 @@ vi.mock('../db', () => ({
     user: { findUnique: vi.fn() },
     session: { findFirst: vi.fn(), findUniqueOrThrow: vi.fn() },
     turn: { update: vi.fn(), updateMany: vi.fn(), delete: vi.fn(), deleteMany: vi.fn() },
-    feedback: { findUnique: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
+    feedback: { findUnique: vi.fn(), upsert: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
     job: { create: vi.fn(), update: vi.fn() },
     $transaction: vi.fn(),
   },
@@ -614,5 +620,311 @@ describe('Retry Feedback Evaluation (Issue #92)', () => {
     expect(prisma.turn.updateMany).not.toHaveBeenCalled();
     expect(prisma.turn.delete).not.toHaveBeenCalled();
     expect(prisma.turn.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('Feedback Token Usage (S-8 / NFR-16)', () => {
+  it('saveFeedback persists usage when supplied', async () => {
+    const mockUsage = {
+      promptTokens: 1000,
+      outputTokens: 500,
+      totalTokens: 1500,
+      evaluator: { promptTokens: 1000, outputTokens: 500, totalTokens: 1500 },
+    };
+    (prisma.feedback.upsert as any).mockResolvedValueOnce({
+      id: 'fb-1',
+      sessionId: 'sess-1',
+      status: 'ready',
+      usage: mockUsage,
+    });
+
+    await saveFeedback({
+      sessionId: 'sess-1',
+      status: 'ready',
+      summary: 'Great job',
+      usage: mockUsage,
+    });
+
+    expect(prisma.feedback.upsert).toHaveBeenCalledWith({
+      where: { sessionId: 'sess-1' },
+      create: {
+        sessionId: 'sess-1',
+        status: 'ready',
+        summary: 'Great job',
+        scores: [],
+        error: null,
+        usage: mockUsage,
+      },
+      update: {
+        status: 'ready',
+        summary: 'Great job',
+        scores: [],
+        error: null,
+        usage: mockUsage,
+      },
+    });
+  });
+
+  it('handleSessionEnded merges evaluator usageMetadata with existing nextQuestion usage', async () => {
+    (prisma.session.findUniqueOrThrow as any).mockResolvedValueOnce({ ...SESSION, turns: TURNS });
+
+    const existingNqUsage = {
+      promptTokens: 800,
+      outputTokens: 150,
+      totalTokens: 950,
+      nextQuestion: { promptTokens: 800, outputTokens: 150, totalTokens: 950, callCount: 2 },
+    };
+
+    (prisma.feedback.findUnique as any).mockResolvedValueOnce({
+      usage: existingNqUsage,
+    });
+
+    vi.mocked(evaluateTranscript).mockResolvedValueOnce({
+      summary: 'Solid evaluation',
+      scores: [{ category: 'Problem Solving & Algorithms', score: 4, comment: 'Good approach', strengths: ['Clear explanation'], improvements: ['Could go deeper'], quote: 'I used binary search' }],
+      usageMetadata: { promptTokenCount: 1200, candidatesTokenCount: 400, totalTokenCount: 1600 },
+    });
+
+    (prisma.feedback.upsert as any).mockResolvedValueOnce({});
+
+    await handleSessionEnded({ id: 'job-1', type: 'session.ended', sessionId: 'sess-1', attempts: 1 } as any);
+
+    expect(prisma.feedback.upsert).toHaveBeenCalledWith({
+      where: { sessionId: 'sess-1' },
+      create: expect.objectContaining({
+        status: 'ready',
+        usage: {
+          promptTokens: 2000, // 1200 + 800
+          outputTokens: 550, // 400 + 150
+          totalTokens: 2550,
+          evaluator: { promptTokens: 1200, outputTokens: 400, totalTokens: 1600 },
+          nextQuestion: { promptTokens: 800, outputTokens: 150, totalTokens: 950, callCount: 2 },
+        },
+      }),
+      update: expect.objectContaining({
+        status: 'ready',
+        usage: {
+          promptTokens: 2000,
+          outputTokens: 550,
+          totalTokens: 2550,
+          evaluator: { promptTokens: 1200, outputTokens: 400, totalTokens: 1600 },
+          nextQuestion: { promptTokens: 800, outputTokens: 150, totalTokens: 950, callCount: 2 },
+        },
+      }),
+    });
+  });
+
+  it('recordNextQuestionUsage updates usage for LIVE session when feedback already exists', async () => {
+    const existingFeedback = {
+      sessionId: 'sess-1',
+      status: 'pending',
+      usage: {
+        promptTokens: 400,
+        outputTokens: 80,
+        totalTokens: 480,
+        nextQuestion: { promptTokens: 400, outputTokens: 80, totalTokens: 480, callCount: 1 },
+      },
+    };
+
+    const txMock = {
+      session: { findUnique: vi.fn().mockResolvedValue({ status: 'LIVE' }) },
+      feedback: {
+        findUnique: vi.fn().mockResolvedValue(existingFeedback),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn(),
+      },
+    };
+    (prisma.$transaction as any).mockImplementationOnce((fn: any) => fn(txMock));
+
+    await recordNextQuestionUsage('sess-1', { promptTokenCount: 450, candidatesTokenCount: 90 });
+
+    expect(txMock.feedback.updateMany).toHaveBeenCalledWith({
+      where: { sessionId: 'sess-1', status: 'pending' },
+      data: {
+        usage: {
+          promptTokens: 850,
+          outputTokens: 170,
+          totalTokens: 1020,
+          nextQuestion: { promptTokens: 850, outputTokens: 170, totalTokens: 1020, callCount: 2 },
+        },
+      },
+    });
+    expect(txMock.feedback.create).not.toHaveBeenCalled();
+  });
+
+  it('recordNextQuestionUsage creates pending feedback record when none exists on LIVE session', async () => {
+    const txMock = {
+      session: { findUnique: vi.fn().mockResolvedValue({ status: 'LIVE' }) },
+      feedback: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        updateMany: vi.fn(),
+        create: vi.fn().mockResolvedValue({}),
+      },
+    };
+    (prisma.$transaction as any).mockImplementationOnce((fn: any) => fn(txMock));
+
+    await recordNextQuestionUsage('sess-1', { promptTokenCount: 500, candidatesTokenCount: 100 });
+
+    expect(txMock.feedback.create).toHaveBeenCalledWith({
+      data: {
+        sessionId: 'sess-1',
+        status: 'pending',
+        usage: {
+          promptTokens: 500,
+          outputTokens: 100,
+          totalTokens: 600,
+          nextQuestion: { promptTokens: 500, outputTokens: 100, totalTokens: 600, callCount: 1 },
+        },
+      },
+    });
+    expect(txMock.feedback.updateMany).not.toHaveBeenCalled();
+  });
+
+  // Concurrency & race condition tests
+  it('concurrency: recordNextQuestionUsage discards write if session has transitioned to ENDED', async () => {
+    const txMock = {
+      session: { findUnique: vi.fn().mockResolvedValue({ status: 'ENDED' }) },
+      feedback: {
+        findUnique: vi.fn(),
+        updateMany: vi.fn(),
+        create: vi.fn(),
+      },
+    };
+    (prisma.$transaction as any).mockImplementationOnce((fn: any) => fn(txMock));
+
+    await recordNextQuestionUsage('sess-ended', { promptTokenCount: 500, candidatesTokenCount: 100 });
+
+    expect(txMock.feedback.findUnique).not.toHaveBeenCalled();
+    expect(txMock.feedback.updateMany).not.toHaveBeenCalled();
+    expect(txMock.feedback.create).not.toHaveBeenCalled();
+  });
+
+  it('concurrency: recordNextQuestionUsage discards write if feedback is already ready (evaluation complete)', async () => {
+    const txMock = {
+      session: { findUnique: vi.fn().mockResolvedValue({ status: 'LIVE' }) },
+      feedback: {
+        findUnique: vi.fn().mockResolvedValue({ status: 'ready', usage: {} }),
+        updateMany: vi.fn(),
+        create: vi.fn(),
+      },
+    };
+    (prisma.$transaction as any).mockImplementationOnce((fn: any) => fn(txMock));
+
+    await recordNextQuestionUsage('sess-ready', { promptTokenCount: 500, candidatesTokenCount: 100 });
+
+    expect(txMock.feedback.updateMany).not.toHaveBeenCalled();
+    expect(txMock.feedback.create).not.toHaveBeenCalled();
+  });
+
+  it('concurrency: simultaneous concurrent recordNextQuestionUsage calls serialize and preserve all increments (S-8 review)', async () => {
+    // Stateful mock storage simulating database row state with mutex locking on session
+    let feedbackRecord: any = null;
+    let lockQueue = Promise.resolve();
+
+    (prisma.$transaction as any).mockImplementation(async (callback: any) => {
+      // Serialize transactions under the row lock
+      const previousLock = lockQueue;
+      let releaseLock: () => void;
+      lockQueue = new Promise((resolve) => {
+        releaseLock = resolve;
+      });
+
+      await previousLock;
+      try {
+        const tx = {
+          $queryRaw: vi.fn().mockResolvedValue([{ id: 'sess-concurrent', status: 'LIVE' }]),
+          session: {
+            findUnique: vi.fn().mockResolvedValue({ status: 'LIVE' }),
+          },
+          feedback: {
+            findUnique: vi.fn().mockImplementation(async () => {
+              return feedbackRecord ? { ...feedbackRecord } : null;
+            }),
+            updateMany: vi.fn().mockImplementation(async ({ data }: any) => {
+              if (feedbackRecord && feedbackRecord.status === 'pending') {
+                feedbackRecord.usage = data.usage;
+                return { count: 1 };
+              }
+              return { count: 0 };
+            }),
+            create: vi.fn().mockImplementation(async ({ data }: any) => {
+              feedbackRecord = {
+                sessionId: data.sessionId,
+                status: data.status,
+                usage: data.usage,
+              };
+              return feedbackRecord;
+            }),
+          },
+        };
+        return await callback(tx);
+      } finally {
+        releaseLock!();
+      }
+    });
+
+    // Fire 3 simultaneous usage updates
+    await Promise.all([
+      recordNextQuestionUsage('sess-concurrent', { promptTokenCount: 100, candidatesTokenCount: 20 }),
+      recordNextQuestionUsage('sess-concurrent', { promptTokenCount: 200, candidatesTokenCount: 40 }),
+      recordNextQuestionUsage('sess-concurrent', { promptTokenCount: 300, candidatesTokenCount: 60 }),
+    ]);
+
+    expect(feedbackRecord).not.toBeNull();
+    expect(feedbackRecord.status).toBe('pending');
+    // Verify all 3 increments are accumulated without any lost updates
+    expect(feedbackRecord.usage).toEqual({
+      promptTokens: 600, // 100 + 200 + 300
+      outputTokens: 120, // 20 + 40 + 60
+      totalTokens: 720,
+      nextQuestion: {
+        promptTokens: 600,
+        outputTokens: 120,
+        totalTokens: 720,
+        callCount: 3,
+      },
+    });
+  });
+
+  it('concurrency: race between endSession and in-flight usage write discards usage write (S-8 review)', async () => {
+    let sessionStatus = 'LIVE';
+    let lockQueue = Promise.resolve();
+
+    (prisma.$transaction as any).mockImplementation(async (callback: any) => {
+      const previousLock = lockQueue;
+      let releaseLock: () => void;
+      lockQueue = new Promise((resolve) => {
+        releaseLock = resolve;
+      });
+
+      await previousLock;
+      try {
+        const tx = {
+          $queryRaw: vi.fn().mockImplementation(async () => {
+            return [{ id: 'sess-race', status: sessionStatus }];
+          }),
+          feedback: {
+            findUnique: vi.fn(),
+            updateMany: vi.fn(),
+            create: vi.fn(),
+          },
+        };
+        return await callback(tx);
+      } finally {
+        releaseLock!();
+      }
+    });
+
+    // Simulate endSession running while a usage call is queued
+    const writePromise = recordNextQuestionUsage('sess-race', { promptTokenCount: 500, candidatesTokenCount: 100 });
+
+    // Session ends before lock is acquired by writePromise
+    sessionStatus = 'ENDED';
+
+    await writePromise;
+
+    // Verify nothing was written since session was ENDED by the time lock was acquired
+    expect(prisma.feedback.create).not.toHaveBeenCalled();
+    expect(prisma.feedback.updateMany).not.toHaveBeenCalled();
   });
 });

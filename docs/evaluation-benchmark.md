@@ -389,6 +389,95 @@ Live-site verification: **PENDING** — Post-merge smoke verification of end-to-
 
 ---
 
+## S-8 — Gemini Token Usage & Cost per Interview (NFR-16 / OI-2)
+
+> **Status: Complete.** Migration adds nullable `Feedback.usage` JSONB column. `apps/api/scripts/cost.ts` translates stored and modeled token usage into per-interview costs in USD and INR, with live audio projections and a proposed budget ceiling for OI-2.
+
+### Overview & Data Architecture
+
+To satisfy **NFR-16** (infrastructure cost tracking) and resolve open item **OI-2** (setting a per-session cost ceiling in ₹), token usage from all Gemini interactions during an interview is captured and recorded on the database feedback record:
+
+1. **Question Generation (`generateNextQuestion`)**:
+   - Each call to Gemini Flash during the live interview captures `usageMetadata` (`promptTokenCount`, `candidatesTokenCount`).
+   - `recordNextQuestionUsage(sessionId, usage)` updates the `Feedback.usage` JSON column inside a transaction.
+   - **Concurrency Guard**: If the session has transitioned to `ENDED` or feedback is already `ready`, usage writes are safely discarded to ensure in-flight generation requests never overwrite finalized evaluations or recreate stale pending records.
+
+2. **Transcript Evaluation (`handleSessionEnded`)**:
+   - Background worker processes `session.ended` jobs and calls `evaluateTranscript()`.
+   - `handleSessionEnded` reads any previously accumulated `nextQuestion` tokens on `Feedback.usage`, merges them with the evaluator's `usageMetadata`, and persists the consolidated `Feedback.usage` object.
+
+3. **Schema of `Feedback.usage`**:
+   ```json
+   {
+     "promptTokens": 3250,
+     "outputTokens": 810,
+     "totalTokens": 4060,
+     "evaluator": {
+       "promptTokens": 1450,
+       "outputTokens": 510,
+       "totalTokens": 1960
+     },
+     "nextQuestion": {
+       "promptTokens": 1800,
+       "outputTokens": 300,
+       "totalTokens": 2100,
+       "callCount": 4
+     }
+   }
+   ```
+
+---
+
+### Rate Card & Official Pricing Verification
+
+Rates are verified against Google's official Gemini API pricing documentation:
+- **Official Source**: [https://ai.google.dev/pricing](https://ai.google.dev/pricing) (Google AI Studio / Gemini Developer API)
+
+| Component | Model | Published Rate Card | Classification | Notes |
+|---|---|---|---|---|
+| **Text Evaluation** | `gemini-3.8-flash` | Input: \$0.75 / 1M tok<br>Output: \$3.75 / 1M tok | Published rate | Introductory rates active through 2026-12-31; output includes thinking tokens. |
+| **Next-Question Generation** | `gemini-3.8-flash` | Input: \$0.75 / 1M tok<br>Output: \$3.75 / 1M tok | Published rate | Billed per token processed. |
+| **Live Audio Input** | `gemini-3.8-live` | \$3.00 / 1M audio tokens | Published token rate | Multimodal Live API streaming input rate. |
+| **Live Audio Output** | `gemini-3.8-live` | \$12.00 / 1M audio tokens | Published token rate | Multimodal Live API streaming speech rate. |
+| **15-Min Live Audio Session** | `gemini-3.8-live` | ~\$0.1350 (₹11.34) | **Projected model estimate** | Based on ~10 min candidate speech (~15k audio tok) + ~5 min AI speech (~7.5k audio tok). Token density varies with speech rate and ambient silence; unverified as fixed billing. |
+| **USD to INR Exchange** | Standard | ₹84.00 | Configurable constant | Configurable via `BENCH_USD_TO_INR`. |
+
+---
+
+### Per-Interview Cost Breakdown
+
+Token counts below reflect a representative 15-minute voice interview (modeled on 4 server-generated questions + multi-rubric evaluation with per-answer feedback from benchmark fixtures). Note: Figures represent modeled benchmark simulations rather than live production database measurements:
+
+| Interaction | Prompt Tokens | Output Tokens | Cost (USD) | Cost (INR @ ₹84.00) | Classification / Source |
+|---|---|---|---|---|---|
+| **Transcript Evaluation** (`evaluateTranscript`) | 1 450 | 510 | \$0.003000 | ₹0.2520 | Benchmark Fixture Simulation |
+| **Question Generation** (4 questions) | 1 800 | 300 | \$0.002475 | ₹0.2079 | Benchmark Fixture Simulation |
+| **Subtotal LLM Text / Reasoning** | **3 250** | **810** | **\$0.005475** | **₹0.4599** | **Modeled Benchmark Tokens** |
+| **Candidate Audio** (~10 min listening) | ~15 000 | — | \$0.045000 | ₹3.7800 | Projected Estimate (Published Token Rate) |
+| **Interviewer Audio** (~5 min speaking) | — | ~7 500 | \$0.090000 | ₹7.5600 | Projected Estimate (Published Token Rate) |
+| **Subtotal 15-min Live Audio** | **~15 000** | **~7 500** | **\$0.135000** | **₹11.3400** | **Projected Model Estimate** |
+| **Total Estimated Cost per Completed Interview** | — | — | **\$0.140475** | **₹11.7999 (~₹11.80)** | **Combined Infrastructure Projection** |
+
+---
+
+### Proposed Per-Session Budget Ceiling (OI-2 / NFR-16)
+
+Based on benchmark-modeled LLM tokens and projected 15-minute Live audio costs:
+- **Baseline Estimated Cost**: **₹11.80 per completed interview** (\$0.1405).
+- **Proposed Budget Ceiling (OI-2)**: **₹25.00 per completed interview**.
+- **Headroom Buffer**: **~112% headroom** above the standard 15-minute baseline.
+- **Rationale**:
+  - Accommodates extended interviews up to 25–30 minutes without exceeding budget.
+  - Absorbs transient evaluator retries on temporary 503/429 errors (up to `MAX_ATTEMPTS = 3`).
+  - Accounts for high candidate speaking cadence or noisy environments where audio token sampling density increases.
+- **Enforcement Note**: The ₹25.00 figure serves as a project infrastructure budget and monitoring metric for **NFR-16** audits. It is not an enforced programmatic cutoff that terminates active user sessions. Programmatic quota management is tracked under **S-9 (#167)**.
+
+#### Live-site verification
+
+Live-site verification: **PENDING** — Post-merge smoke verification of token usage recording (`Feedback.usage`) and cost calculation against live Supabase production database on the deployed live site (`ai-interviewer-it314.web.app`) is pending staging/production deployment.
+
+---
+
 ## Broken-prompt regression demo
 
 Running with `--broken-prompt` replaces the rubric instruction in the prompt with  
