@@ -1,5 +1,6 @@
 import type { Job, Prisma } from '../generated/prisma/client';
 import prisma from '../db';
+import { getVerifiedGitHubLoginForUser } from './github.service';
 
 // A job whose worker stopped responding is retried until it has been claimed
 // this many times; after that it is marked failed so it can't loop forever.
@@ -9,6 +10,7 @@ export const JOB_TYPES = {
   SESSION_ENDED: 'session.ended',
   INSIGHTS_REFRESH: 'insights.refresh',
   RETENTION_PURGE: 'retention.purge',
+  GITHUB_ANALYZE: 'github.analyze',
 } as const;
 
 export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES] | (string & {});
@@ -176,7 +178,7 @@ export async function processNextJob(
     const message = err instanceof Error ? err.message : String(err);
     if (isTransientError(err) && job.attempts < MAX_ATTEMPTS) {
       console.warn(
-        `[${workerId}] transient evaluation error for job ${job.id}. ` +
+        `[${workerId}] transient error for job ${job.id} (${job.type}). ` +
         `Attempt ${job.attempts}/${MAX_ATTEMPTS}. Requeuing: ${message}`
       );
       await requeueJob(job.id, message);
@@ -224,4 +226,170 @@ export async function enqueueDailyRetentionPurge(now: Date = new Date()): Promis
       },
     });
   });
+}
+
+/**
+ * 24 hours in milliseconds for GitHub analysis daily refresh protection (FR-10, VM-12).
+ */
+export const DAILY_GITHUB_REFRESH_MS = 24 * 60 * 60 * 1000;
+
+export function isEligibleForDailyGithubRefresh(
+  fetchedAt?: Date | string | null,
+  now: Date = new Date()
+): boolean {
+  if (!fetchedAt) return true;
+  const fetchedTime = fetchedAt instanceof Date ? fetchedAt.getTime() : new Date(fetchedAt).getTime();
+  if (isNaN(fetchedTime)) return true;
+  return now.getTime() - fetchedTime >= DAILY_GITHUB_REFRESH_MS;
+}
+
+/**
+ * Enqueues a `github.analyze` job with daily refresh protection and concurrency control.
+ *
+ * 1. Checks if the user already has a GithubProfile fetched < 24h ago; if so, skips.
+ * 2. Checks if there is already a pending or processing `github.analyze` job for this user; if so, skips.
+ * 3. Uses a PostgreSQL advisory lock on userId to prevent concurrent requests from bypassing the check.
+ */
+export async function maybeEnqueueGithubAnalysis(
+  userId: string,
+  login: string,
+  now: Date = new Date()
+): Promise<{ queued: boolean; reason?: string; job?: Job }> {
+  if (!login || typeof login !== 'string' || login.trim().length === 0) {
+    return { queued: false, reason: 'invalid_login' };
+  }
+
+  const cleanLogin = login.trim();
+  const normalizedLogin = cleanLogin.toLowerCase();
+
+  return prisma.$transaction(async (tx) => {
+    // PostgreSQL advisory transaction lock on userId to serialize concurrent requests for the same user
+    await tx.$queryRaw`
+      SELECT 1::int AS locked
+      FROM (
+        SELECT pg_advisory_xact_lock(195, hashtext(${userId}))
+      ) AS advisory_lock
+    `;
+
+    // 1. Check existing GithubProfile
+    const profile = await tx.githubProfile.findUnique({
+      where: { userId },
+      select: { fetchedAt: true, login: true },
+    });
+
+    const isSameLogin = profile?.login ? profile.login.trim().toLowerCase() === normalizedLogin : false;
+    if (isSameLogin && profile?.fetchedAt && !isEligibleForDailyGithubRefresh(profile.fetchedAt, now)) {
+      return { queued: false, reason: 'recently_fetched' };
+    }
+
+    // 2. Prevent duplicate pending or processing jobs for the same user and same GitHub login
+    let existingJob = await tx.job.findFirst({
+      where: {
+        type: JOB_TYPES.GITHUB_ANALYZE,
+        status: { in: ['pending', 'processing'] },
+        AND: [
+          {
+            payload: {
+              path: ['userId'],
+              equals: userId,
+            },
+          },
+          {
+            payload: {
+              path: ['login'],
+              equals: normalizedLogin,
+            },
+          },
+        ],
+      },
+    });
+
+    if (!existingJob) {
+      // Backward compatibility: check if an active job already exists with legacy mixed-casing payload
+      const candidateJobs = await (tx.job.findMany
+        ? tx.job.findMany({
+            where: {
+              type: JOB_TYPES.GITHUB_ANALYZE,
+              status: { in: ['pending', 'processing'] },
+              AND: [
+                {
+                  payload: {
+                    path: ['userId'],
+                    equals: userId,
+                  },
+                },
+              ],
+            },
+          })
+        : tx.job
+            .findFirst({
+              where: {
+                type: JOB_TYPES.GITHUB_ANALYZE,
+                status: { in: ['pending', 'processing'] },
+                AND: [
+                  {
+                    payload: {
+                      path: ['userId'],
+                      equals: userId,
+                    },
+                  },
+                ],
+              },
+            })
+            .then((j) => (j ? [j] : [])));
+
+      existingJob =
+        candidateJobs.find((j) => {
+          const p = j.payload as { login?: string } | null;
+          return (
+            typeof p?.login === 'string' &&
+            p.login.trim().toLowerCase() === normalizedLogin
+          );
+        }) ?? null;
+    }
+
+    if (existingJob) {
+      return { queued: false, reason: 'already_queued', job: existingJob };
+    }
+
+    // 3. Enqueue the analysis job
+    const job = await tx.job.create({
+      data: {
+        type: JOB_TYPES.GITHUB_ANALYZE,
+        payload: { userId, login: normalizedLogin },
+      },
+    });
+
+    return { queued: true, job };
+  });
+}
+
+/**
+ * Triggers GitHub analysis only if the user has a verified linked GitHub OAuth account.
+ * Rejects unlinked accounts and respects daily refresh limits.
+ */
+export async function triggerGithubAnalysisIfLinked(
+  userId: string,
+  supabaseUserId?: string | null,
+  now: Date = new Date()
+): Promise<{ queued: boolean; reason?: string; job?: Job }> {
+  let targetSupabaseId = supabaseUserId;
+  if (!targetSupabaseId) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { supabaseUserId: true },
+    });
+    targetSupabaseId = user?.supabaseUserId ?? null;
+  }
+
+  if (!targetSupabaseId) {
+    return { queued: false, reason: 'no_github_linked' };
+  }
+
+  const login = await getVerifiedGitHubLoginForUser(targetSupabaseId);
+  if (!login) {
+    return { queued: false, reason: 'no_github_linked' };
+  }
+
+  return maybeEnqueueGithubAnalysis(userId, login, now);
 }
