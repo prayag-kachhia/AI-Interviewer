@@ -82,6 +82,17 @@ describe('GET /api/me/export', () => {
           },
         },
       ],
+      resumeMatches: [
+        {
+          id: 'match-a',
+          resumeId: 'resume-a',
+          jobDescription: 'Frontend Engineer',
+          score: 85,
+          source: 'keywords',
+          result: { categories: [] },
+          createdAt: new Date('2026-01-03T00:00:00.000Z'),
+        },
+      ],
     };
 
     __getUserMock.mockResolvedValueOnce({
@@ -113,6 +124,8 @@ describe('GET /api/me/export', () => {
     expect(response.body.improvementPlan.topics).toContain('Communication');
     expect(response.body.sessions[0].turns[0].text).toBe('User A answer');
     expect(response.body.sessions[0].feedback.summary).toBe('User A feedback');
+    expect(response.body.resumeMatches[0].id).toBe('match-a');
+    expect(response.body.resumeMatches[0].score).toBe(85);
 
     expect(prisma.user.findUnique).toHaveBeenNthCalledWith(
       2,

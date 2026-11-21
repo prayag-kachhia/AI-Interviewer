@@ -37,6 +37,9 @@ router.get('/export', authenticate, async (req, res) => {
           feedback: true,
         },
       },
+      resumeMatches: {
+        orderBy: { createdAt: 'desc' },
+      },
     },
   });
 
@@ -66,6 +69,7 @@ router.get('/export', authenticate, async (req, res) => {
     resumes: user.resumes,
     improvementPlan: user.improvementPlan,
     sessions: user.sessions,
+    resumeMatches: user.resumeMatches,
   });
 });
 

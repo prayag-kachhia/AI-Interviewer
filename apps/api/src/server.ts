@@ -2,6 +2,7 @@ import express, { Express, NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth';
 import resumeRoutes from './routes/resume';
+import resumeMatchRoutes from './routes/resume-match';
 import sessionRoutes from './routes/sessions';
 import feedbackRoutes from './routes/feedback';
 import insightsRoutes from './routes/insights';
@@ -22,6 +23,7 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/resume', resumeRoutes);
+app.use('/api/resume', resumeMatchRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/sessions', feedbackRoutes);
 app.use('/api/insights', insightsRoutes);
