@@ -1,7 +1,20 @@
 import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'crypto';
-import { GitHubRateLimitError } from '../services/github.service';
+
+// Local test-only error class matching the shape expected by job-queue.service
+// to avoid top-level import of github.service (which transitively imports db.ts
+// and requires DATABASE_URL even when the suite is skipped).
+class GitHubRateLimitError extends Error {
+  public readonly status = 429;
+  public readonly resetAt?: Date;
+
+  constructor(message = 'GitHub API rate limit exceeded', resetAt?: Date) {
+    super(message);
+    this.name = 'GitHubRateLimitError';
+    this.resetAt = resetAt;
+  }
+}
 
 // FB2 needs a real Postgres to prove FOR UPDATE SKIP LOCKED. It runs only when
 // TEST_DATABASE_URL points at a disposable database with the migrations
