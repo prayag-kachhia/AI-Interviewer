@@ -84,6 +84,45 @@ export interface AnalyzeContributionsOptions {
 }
 
 /**
+ * Safely parses GitHub rate-limit headers (X-RateLimit-Reset and Retry-After).
+ * Prefers a valid future X-RateLimit-Reset (epoch seconds).
+ * If absent, non-numeric, or not in the future, falls back to Retry-After (seconds or HTTP-date).
+ * Returns undefined if neither produces a valid future Date.
+ */
+export function parseRateLimitHeaders(
+  resetHeader: string | null | undefined,
+  retryAfter: string | null | undefined,
+  nowMs: number = Date.now()
+): Date | undefined {
+  if (resetHeader) {
+    const resetEpochSec = Number(resetHeader);
+    if (Number.isFinite(resetEpochSec) && resetEpochSec > 0) {
+      const candidateMs = resetEpochSec * 1000;
+      if (candidateMs > nowMs) {
+        return new Date(candidateMs);
+      }
+    }
+  }
+
+  if (retryAfter) {
+    const delaySec = Number(retryAfter);
+    if (Number.isFinite(delaySec) && delaySec > 0) {
+      const candidateMs = nowMs + delaySec * 1000;
+      if (candidateMs > nowMs) {
+        return new Date(candidateMs);
+      }
+    } else {
+      const parsedEpoch = Date.parse(retryAfter);
+      if (Number.isFinite(parsedEpoch) && parsedEpoch > nowMs) {
+        return new Date(parsedEpoch);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Handles error responses from GitHub REST API, converting rate limits (403/429)
  * into a typed GitHubRateLimitError with status 429 so the job worker recognizes it as transient.
  */
@@ -105,18 +144,7 @@ export async function handleGitHubErrorResponse(res: Response, contextMsg: strin
     (status === 403 && (remaining === '0' || bodyText.toLowerCase().includes('rate limit')));
 
   if (isRateLimit) {
-    let resetAt: Date | undefined;
-    if (resetHeader) {
-      const resetEpochSec = parseInt(resetHeader, 10);
-      if (!isNaN(resetEpochSec)) {
-        resetAt = new Date(resetEpochSec * 1000);
-      }
-    } else if (retryAfter) {
-      const delaySec = parseInt(retryAfter, 10);
-      if (!isNaN(delaySec)) {
-        resetAt = new Date(Date.now() + delaySec * 1000);
-      }
-    }
+    const resetAt = parseRateLimitHeaders(resetHeader, retryAfter);
     throw new GitHubRateLimitError(`GitHub API rate limit exceeded: ${contextMsg}`, resetAt);
   }
 

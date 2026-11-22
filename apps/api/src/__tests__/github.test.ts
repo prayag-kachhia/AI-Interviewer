@@ -13,6 +13,8 @@ import {
   SupabaseAdminApiError,
   DEFAULT_MAX_CONTRIBUTIONS,
   type GitHubContribution,
+  parseRateLimitHeaders,
+  handleGitHubErrorResponse,
 } from '../services/github.service';
 import {
   JOB_TYPES,
@@ -23,6 +25,8 @@ import {
   processNextJob,
   isTransientError,
   MAX_ATTEMPTS,
+  calculateRateLimitRetryAt,
+  isGitHubRateLimitError,
 } from '../services/job-queue.service';
 import { handleJob } from '../worker';
 import request from 'supertest';
@@ -2286,6 +2290,249 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
       expect(res.body.githubProfile).toEqual({
         login: 'vismay-solanki',
         contributions: [{ repoName: 'facebook/react', stars: 220000 }],
+      });
+    });
+  });
+
+  describe('7. Rate-Limit Backoff & Header Parsing', () => {
+    describe('parseRateLimitHeaders', () => {
+      it('correctly prefers a valid future X-RateLimit-Reset epoch seconds timestamp', () => {
+        const nowMs = 1700000000000;
+        const futureEpochSec = Math.floor(nowMs / 1000) + 120; // 2 minutes in future
+        const result = parseRateLimitHeaders(String(futureEpochSec), '60', nowMs);
+
+        expect(result).toBeInstanceOf(Date);
+        expect(result?.getTime()).toBe(futureEpochSec * 1000);
+      });
+
+      it('falls back to Retry-After seconds if X-RateLimit-Reset is absent, non-numeric, or not in the future', () => {
+        const nowMs = 1700000000000;
+
+        // Absent reset header
+        const res1 = parseRateLimitHeaders(null, '60', nowMs);
+        expect(res1?.getTime()).toBe(nowMs + 60000);
+
+        // Non-numeric reset header
+        const res2 = parseRateLimitHeaders('invalid-epoch', '45', nowMs);
+        expect(res2?.getTime()).toBe(nowMs + 45000);
+
+        // Past reset header
+        const pastEpochSec = Math.floor(nowMs / 1000) - 100;
+        const res3 = parseRateLimitHeaders(String(pastEpochSec), '30', nowMs);
+        expect(res3?.getTime()).toBe(nowMs + 30000);
+      });
+
+      it('supports Retry-After as an HTTP-date', () => {
+        const nowMs = new Date('2026-11-22T10:00:00Z').getTime();
+        const futureHttpDate = 'Sun, 22 Nov 2026 10:05:00 GMT';
+        const result = parseRateLimitHeaders(null, futureHttpDate, nowMs);
+
+        expect(result).toBeInstanceOf(Date);
+        expect(result?.getTime()).toBe(new Date('2026-11-22T10:05:00Z').getTime());
+      });
+
+      it('returns undefined if headers are absent, non-future, negative, or invalid', () => {
+        const nowMs = 1700000000000;
+        expect(parseRateLimitHeaders(null, null, nowMs)).toBeUndefined();
+        expect(parseRateLimitHeaders('', '', nowMs)).toBeUndefined();
+        expect(parseRateLimitHeaders('-10', '-5', nowMs)).toBeUndefined();
+        expect(parseRateLimitHeaders('0', '0', nowMs)).toBeUndefined();
+        expect(parseRateLimitHeaders('invalid', 'not-a-date', nowMs)).toBeUndefined();
+      });
+    });
+
+    describe('calculateRateLimitRetryAt', () => {
+      it('uses valid future resetAt when provided', () => {
+        const now = new Date('2026-11-22T12:00:00Z');
+        const futureResetAt = new Date('2026-11-22T12:15:00Z');
+        const retryAt = calculateRateLimitRetryAt(futureResetAt, 1, now);
+
+        expect(retryAt.getTime()).toBe(futureResetAt.getTime());
+      });
+
+      it('falls back to bounded exponential backoff when resetAt is absent, invalid, or in the past', () => {
+        const now = new Date('2026-11-22T12:00:00Z');
+        const pastResetAt = new Date('2026-11-22T11:59:00Z');
+        const invalidResetAt = new Date(NaN);
+
+        // Attempt 1: 30s
+        expect(calculateRateLimitRetryAt(undefined, 1, now).getTime()).toBe(now.getTime() + 30000);
+        expect(calculateRateLimitRetryAt(pastResetAt, 1, now).getTime()).toBe(now.getTime() + 30000);
+        expect(calculateRateLimitRetryAt(invalidResetAt, 1, now).getTime()).toBe(now.getTime() + 30000);
+
+        // Attempt 2: 60s
+        expect(calculateRateLimitRetryAt(undefined, 2, now).getTime()).toBe(now.getTime() + 60000);
+
+        // Attempt 3: 120s
+        expect(calculateRateLimitRetryAt(undefined, 3, now).getTime()).toBe(now.getTime() + 120000);
+
+        // Attempt 4: 240s
+        expect(calculateRateLimitRetryAt(undefined, 4, now).getTime()).toBe(now.getTime() + 240000);
+
+        // Attempt 5: capped at 300s (5 minutes)
+        expect(calculateRateLimitRetryAt(undefined, 5, now).getTime()).toBe(now.getTime() + 300000);
+
+        // Attempt 10: capped at 300s
+        expect(calculateRateLimitRetryAt(undefined, 10, now).getTime()).toBe(now.getTime() + 300000);
+      });
+    });
+
+    describe('handleGitHubErrorResponse', () => {
+      it('throws GitHubRateLimitError on 429 response with resetAt', async () => {
+        const futureEpochSec = Math.floor(Date.now() / 1000) + 120;
+        const res = new Response('Too Many Requests', {
+          status: 429,
+          headers: {
+            'x-ratelimit-reset': String(futureEpochSec),
+          },
+        });
+
+        await expect(handleGitHubErrorResponse(res, 'test call')).rejects.toThrow(GitHubRateLimitError);
+        try {
+          await handleGitHubErrorResponse(res, 'test call');
+        } catch (err: any) {
+          expect(err).toBeInstanceOf(GitHubRateLimitError);
+          expect(err.status).toBe(429);
+          expect(err.resetAt?.getTime()).toBe(futureEpochSec * 1000);
+        }
+      });
+
+      it('throws GitHubRateLimitError on 403 response when remaining is 0 or body includes rate limit', async () => {
+        const res1 = new Response('forbidden', {
+          status: 403,
+          headers: {
+            'x-ratelimit-remaining': '0',
+            'retry-after': '60',
+          },
+        });
+        await expect(handleGitHubErrorResponse(res1, 'search PRs')).rejects.toThrow(GitHubRateLimitError);
+
+        const res2 = new Response('API rate limit exceeded for IP', {
+          status: 403,
+        });
+        await expect(handleGitHubErrorResponse(res2, 'search PRs')).rejects.toThrow(GitHubRateLimitError);
+      });
+
+      it('throws GitHubAuthError on 401 response', async () => {
+        const res = new Response('Unauthorized', { status: 401 });
+        await expect(handleGitHubErrorResponse(res, 'test call')).rejects.toThrow(GitHubAuthError);
+      });
+
+      it('throws GitHubUserNotFoundError on 404 response', async () => {
+        const res = new Response('Not Found', { status: 404 });
+        await expect(handleGitHubErrorResponse(res, 'test call')).rejects.toThrow(GitHubUserNotFoundError);
+      });
+
+      it('throws GitHubApiError on other error statuses (e.g. 500)', async () => {
+        const res = new Response('Internal Server Error', { status: 500 });
+        await expect(handleGitHubErrorResponse(res, 'test call')).rejects.toThrow(GitHubApiError);
+      });
+    });
+
+    describe('processNextJob with rate limit errors', () => {
+      const mockJob = {
+        id: 'job-rl-mock',
+        type: JOB_TYPES.GITHUB_ANALYZE,
+        sessionId: null,
+        payload: { userId: 'u1', login: 'octocat' },
+        status: 'processing',
+        attempts: 1,
+        availableAt: new Date(),
+        lockedBy: 'worker-1',
+        lockedAt: new Date(),
+        lastError: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      it('schedules delayed retry at resetAt when GitHubRateLimitError has future resetAt', async () => {
+        vi.mocked(prisma.$transaction).mockImplementationOnce(async (cb: any) => {
+          return cb({
+            $executeRaw: vi.fn(),
+            $queryRaw: vi.fn().mockResolvedValueOnce([{ ...mockJob, attempts: 1 }]),
+          });
+        });
+
+        const futureResetAt = new Date(Date.now() + 180000);
+        vi.mocked(prisma.job.update).mockResolvedValueOnce({ ...mockJob, status: 'pending' } as any);
+
+        const result = await processNextJob('worker-test', async () => {
+          throw new GitHubRateLimitError('Rate limit exceeded', futureResetAt);
+        });
+
+        expect(result).toBeNull();
+        expect(prisma.job.update).toHaveBeenCalledWith({
+          where: { id: mockJob.id },
+          data: {
+            status: 'pending',
+            lastError: 'Rate limit exceeded',
+            availableAt: futureResetAt,
+            lockedBy: null,
+            lockedAt: null,
+          },
+        });
+      });
+
+      it('uses bounded exponential backoff when GitHubRateLimitError has no resetAt', async () => {
+        vi.mocked(prisma.$transaction).mockImplementationOnce(async (cb: any) => {
+          return cb({
+            $executeRaw: vi.fn(),
+            $queryRaw: vi.fn().mockResolvedValueOnce([{ ...mockJob, attempts: 1 }]),
+          });
+        });
+
+        vi.mocked(prisma.job.update).mockResolvedValueOnce({ ...mockJob, status: 'pending' } as any);
+
+        const beforeMs = Date.now();
+        const result = await processNextJob('worker-test', async () => {
+          throw new GitHubRateLimitError('Rate limit exceeded without reset');
+        });
+
+        expect(result).toBeNull();
+        expect(prisma.job.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: mockJob.id },
+            data: expect.objectContaining({
+              status: 'pending',
+              lastError: 'Rate limit exceeded without reset',
+              lockedBy: null,
+              lockedAt: null,
+              availableAt: expect.any(Date),
+            }),
+          })
+        );
+
+        const updateCall = vi.mocked(prisma.job.update).mock.calls[0]?.[0];
+        const scheduledAt = (updateCall?.data as any)?.availableAt as Date;
+        expect(scheduledAt.getTime() - beforeMs).toBeGreaterThanOrEqual(28000);
+        expect(scheduledAt.getTime() - beforeMs).toBeLessThanOrEqual(35000);
+      });
+
+      it('marks job failed and rethrows on rate limit when attempts >= MAX_ATTEMPTS', async () => {
+        vi.mocked(prisma.$transaction).mockImplementationOnce(async (cb: any) => {
+          return cb({
+            $executeRaw: vi.fn(),
+            $queryRaw: vi.fn().mockResolvedValueOnce([{ ...mockJob, attempts: MAX_ATTEMPTS }]),
+          });
+        });
+
+        vi.mocked(prisma.job.update).mockResolvedValueOnce({ ...mockJob, status: 'failed' } as any);
+
+        await expect(
+          processNextJob('worker-test', async () => {
+            throw new GitHubRateLimitError('Rate limit exhausted attempts');
+          })
+        ).rejects.toThrow('Rate limit exhausted attempts');
+
+        expect(prisma.job.update).toHaveBeenCalledWith({
+          where: { id: mockJob.id },
+          data: {
+            status: 'failed',
+            lastError: 'Rate limit exhausted attempts',
+            lockedBy: null,
+            lockedAt: null,
+          },
+        });
       });
     });
   });

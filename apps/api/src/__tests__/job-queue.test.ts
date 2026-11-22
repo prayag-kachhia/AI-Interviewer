@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { randomUUID } from 'crypto';
+import { GitHubRateLimitError } from '../services/github.service';
 
 // FB2 needs a real Postgres to prove FOR UPDATE SKIP LOCKED. It runs only when
 // TEST_DATABASE_URL points at a disposable database with the migrations
@@ -174,6 +175,130 @@ describe.skipIf(!TEST_DATABASE_URL)('FB2 — jobs table and worker (needs TEST_D
     expect(row.status).toBe('failed');
     expect(row.attempts).toBe(queue.MAX_ATTEMPTS);
     expect(row.lastError).toBe('429 Resource Exhausted');
+  });
+
+  it('given a GitHub rate-limit error with future resetAt, schedules job at resetAt, cannot be claimed early, and becomes claimable when availableAt is reached', async () => {
+    const type = `test.${runId}.ratelimit.future`;
+    const job = await queue.enqueueJob({ type });
+
+    const futureResetAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes in future
+
+    // 1. Process job, throwing rate limit with future resetAt
+    const result = await queue.processNextJob(
+      'worker-rl-1',
+      async () => {
+        throw new GitHubRateLimitError('GitHub API rate limit exceeded', futureResetAt);
+      },
+      type
+    );
+    expect(result).toBeNull();
+
+    // Verify row in database: status is pending, availableAt is futureResetAt, attempts is 1
+    const rowAfterRateLimit = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(rowAfterRateLimit.status).toBe('pending');
+    expect(rowAfterRateLimit.lockedBy).toBeNull();
+    expect(rowAfterRateLimit.lockedAt).toBeNull();
+    expect(rowAfterRateLimit.attempts).toBe(1);
+    expect(rowAfterRateLimit.availableAt.getTime()).toBe(futureResetAt.getTime());
+    expect(rowAfterRateLimit.lastError).toContain('rate limit exceeded');
+
+    // 2. A pending job with a future availableAt cannot be claimed early
+    const earlyClaim = await queue.claimNextJob('worker-rl-early', type);
+    expect(earlyClaim).toBeNull();
+
+    // 5. Waiting for the scheduled retry does not increment attempts
+    const rowWhileWaiting = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(rowWhileWaiting.attempts).toBe(1);
+
+    // 3. The same job becomes claimable once availableAt is in the past
+    const pastAvailableAt = new Date(Date.now() - 5000);
+    await prisma.job.update({
+      where: { id: job.id },
+      data: { availableAt: pastAvailableAt },
+    });
+
+    // 6. When the job becomes eligible and is claimed, attempts increment exactly once (1 -> 2)
+    const claimedAfterReset = await queue.claimNextJob('worker-rl-ready', type);
+    expect(claimedAfterReset?.id).toBe(job.id);
+    expect(claimedAfterReset?.status).toBe('processing');
+    expect(claimedAfterReset?.attempts).toBe(2);
+    expect(claimedAfterReset?.lockedBy).toBe('worker-rl-ready');
+
+    await queue.completeJob(job.id);
+  });
+
+  it('given a rate-limit error with missing, invalid, or past resetAt, uses bounded exponential fallback', async () => {
+    const type = `test.${runId}.ratelimit.fallback`;
+    const job = await queue.enqueueJob({ type });
+
+    const before = Date.now();
+    // Attempt 1: throws rate limit without resetAt -> fallback should be ~30s
+    await queue.processNextJob(
+      'worker-fb-1',
+      async () => {
+        throw new GitHubRateLimitError('Rate limited without reset');
+      },
+      type
+    );
+
+    const rowAttempt1 = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(rowAttempt1.status).toBe('pending');
+    expect(rowAttempt1.attempts).toBe(1);
+    // 30s fallback: availableAt should be between now + 28s and now + 35s
+    const diff1Sec = (rowAttempt1.availableAt.getTime() - before) / 1000;
+    expect(diff1Sec).toBeGreaterThanOrEqual(28);
+    expect(diff1Sec).toBeLessThanOrEqual(35);
+
+    // Cannot be claimed early
+    expect(await queue.claimNextJob('worker-fb-early', type)).toBeNull();
+
+    // Fast-forward availableAt to past and test Attempt 2 (fallback 60s) with past resetAt
+    await prisma.job.update({
+      where: { id: job.id },
+      data: { availableAt: new Date(Date.now() - 1000) },
+    });
+
+    const beforeAttempt2 = Date.now();
+    await queue.processNextJob(
+      'worker-fb-2',
+      async () => {
+        // past resetAt (should be ignored and fall back to exponential backoff)
+        throw new GitHubRateLimitError('Past reset', new Date(Date.now() - 60000));
+      },
+      type
+    );
+
+    const rowAttempt2 = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(rowAttempt2.status).toBe('pending');
+    expect(rowAttempt2.attempts).toBe(2);
+    // 60s fallback: availableAt should be between now + 58s and now + 65s
+    const diff2Sec = (rowAttempt2.availableAt.getTime() - beforeAttempt2) / 1000;
+    expect(diff2Sec).toBeGreaterThanOrEqual(58);
+    expect(diff2Sec).toBeLessThanOrEqual(65);
+
+    await queue.completeJob(job.id);
+  });
+
+  it('given a rate-limit error when attempts reaches MAX_ATTEMPTS, fails immediately without requeueing', async () => {
+    const type = `test.${runId}.ratelimit.max`;
+    const job = await queue.enqueueJob({ type });
+    // Set attempts to MAX_ATTEMPTS - 1 so the next claim makes it MAX_ATTEMPTS
+    await prisma.job.update({ where: { id: job.id }, data: { attempts: queue.MAX_ATTEMPTS - 1 } });
+
+    await expect(
+      queue.processNextJob(
+        'worker-max',
+        async () => {
+          throw new GitHubRateLimitError('Rate limited at max');
+        },
+        type
+      )
+    ).rejects.toThrow('Rate limited at max');
+
+    const finalRow = await prisma.job.findUniqueOrThrow({ where: { id: job.id } });
+    expect(finalRow.status).toBe('failed');
+    expect(finalRow.attempts).toBe(queue.MAX_ATTEMPTS);
+    expect(finalRow.lastError).toContain('Rate limited at max');
   });
 
   it('saving feedback twice for a session keeps one row', async () => {
