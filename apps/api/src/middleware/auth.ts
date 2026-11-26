@@ -108,6 +108,35 @@ export const createAuthMiddleware = (options: AuthenticateOptions = {}) => {
         }
       }
 
+      const appMetadata = (user as any).app_metadata;
+      const signupProvider =
+        typeof appMetadata?.provider === 'string' && appMetadata.provider.trim().length > 0
+          ? appMetadata.provider.trim().toLowerCase()
+          : null;
+
+      // Fail-safe provider validation:
+      // Require the original app_metadata.providers array to contain ONLY non-empty strings.
+      // Do not silently filter invalid entries and classify the remaining array as GitHub-only.
+      const isValidProvidersArray =
+        Array.isArray(appMetadata?.providers) &&
+        appMetadata.providers.every(
+          (p: unknown): p is string => typeof p === 'string' && p.trim().length > 0
+        );
+
+      const rawProviders: string[] = isValidProvidersArray
+        ? appMetadata.providers.map((p: string) => p.trim().toLowerCase())
+        : [];
+
+      // isGitHubUser is true ONLY when:
+      // 1. the original app_metadata.providers array is valid and contains only non-empty strings;
+      // 2. after normalization, it contains exactly one provider;
+      // 3. that provider is 'github'.
+      const isGitHubUser =
+        isValidProvidersArray &&
+        rawProviders.length === 1 &&
+        rawProviders[0] === 'github';
+      const verifiedLogin = extractVerifiedGitHubLogin(user);
+
       req.user = {
         id: localUser?.id ?? user.id,
         supabaseUserId: localUser?.supabaseUserId ?? user.id,
@@ -118,7 +147,10 @@ export const createAuthMiddleware = (options: AuthenticateOptions = {}) => {
           user.user_metadata?.name ||
           'Candidate',
         isEmailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
-        githubUsername: extractVerifiedGitHubLogin(user),
+        githubUsername: verifiedLogin,
+        provider: signupProvider,
+        providers: rawProviders,
+        isGitHubUser,
       };
 
       next();

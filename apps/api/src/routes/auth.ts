@@ -6,7 +6,7 @@ import { isAdminEmail } from '../services/admin.service';
 import {
   maybeEnqueueGithubAnalysis,
   triggerGithubAnalysisIfLinked,
-} from '../services/job-queue.service';
+} from '../services/github.service';
 
 const router = Router();
 
@@ -50,7 +50,7 @@ router.get('/me', authenticate, async (req, res) => {
     void maybeEnqueueGithubAnalysis(user.id, verifiedLogin).catch((err) => {
       console.warn(`[auth/me] Failed to enqueue github analysis for user ${user.id}:`, err);
     });
-  } else if (user.supabaseUserId) {
+  } else if (req.user?.isGitHubUser && user.supabaseUserId) {
     void triggerGithubAnalysisIfLinked(user.id, user.supabaseUserId).catch((err) => {
       console.warn(`[auth/me] Failed to verify github identity for user ${user.id}:`, err);
     });

@@ -15,22 +15,23 @@ import {
   type GitHubContribution,
   parseRateLimitHeaders,
   handleGitHubErrorResponse,
-} from '../services/github.service';
-import {
-  JOB_TYPES,
   DAILY_GITHUB_REFRESH_MS,
   isEligibleForDailyGithubRefresh,
   maybeEnqueueGithubAnalysis,
   triggerGithubAnalysisIfLinked,
+} from '../services/github.service';
+import { JOB_TYPES } from '../services/job-types';
+import {
   processNextJob,
   isTransientError,
   MAX_ATTEMPTS,
   calculateRateLimitRetryAt,
-  isGitHubRateLimitError,
+  isRateLimitError,
 } from '../services/job-queue.service';
 import { handleJob } from '../worker';
 import request from 'supertest';
 import app from '../server';
+import { createAuthMiddleware } from '../middleware/auth';
 
 const {
   mockGetUser,
@@ -1916,15 +1917,12 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
           $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
           githubProfile: { findUnique: vi.fn().mockResolvedValue(null) },
           job: {
-            findFirst: vi.fn().mockResolvedValue(null),
-            findMany: vi.fn().mockResolvedValue([
-              {
-                id: 'pending-job-vismay',
-                type: JOB_TYPES.GITHUB_ANALYZE,
-                status: 'pending',
-                payload: { userId: 'u-vismay', login: 'Vismay24' },
-              },
-            ]),
+            findFirst: vi.fn().mockResolvedValue({
+              id: 'pending-job-vismay',
+              type: JOB_TYPES.GITHUB_ANALYZE,
+              status: 'pending',
+              payload: { userId: 'u-vismay', login: 'vismay24' },
+            }),
             create: vi.fn().mockImplementation(() => {
               created = true;
               return Promise.resolve({ id: 'new-job', type: JOB_TYPES.GITHUB_ANALYZE });
@@ -1948,15 +1946,12 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
           $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
           githubProfile: { findUnique: vi.fn().mockResolvedValue(null) },
           job: {
-            findFirst: vi.fn().mockResolvedValue(null),
-            findMany: vi.fn().mockResolvedValue([
-              {
-                id: 'processing-job-octocat',
-                type: JOB_TYPES.GITHUB_ANALYZE,
-                status: 'processing',
-                payload: { userId: 'u-octo', login: 'OCTOCAT' },
-              },
-            ]),
+            findFirst: vi.fn().mockResolvedValue({
+              id: 'processing-job-octocat',
+              type: JOB_TYPES.GITHUB_ANALYZE,
+              status: 'processing',
+              payload: { userId: 'u-octo', login: 'octocat' },
+            }),
             create: vi.fn().mockImplementation(() => {
               created = true;
               return Promise.resolve({ id: 'new-job', type: JOB_TYPES.GITHUB_ANALYZE });
@@ -1981,14 +1976,6 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
           githubProfile: { findUnique: vi.fn().mockResolvedValue({ login: 'old-octocat', fetchedAt: new Date() }) },
           job: {
             findFirst: vi.fn().mockResolvedValue(null),
-            findMany: vi.fn().mockResolvedValue([
-              {
-                id: 'old-job-pending-distinct',
-                type: JOB_TYPES.GITHUB_ANALYZE,
-                status: 'pending',
-                payload: { userId: 'u-switch-distinct', login: 'old-octocat' },
-              },
-            ]),
             create: vi.fn().mockImplementation((args) => {
               createdPayload = args.data.payload;
               return Promise.resolve({ id: 'new-job-created-distinct', type: JOB_TYPES.GITHUB_ANALYZE });
@@ -2019,7 +2006,6 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
           },
           job: {
             findFirst: vi.fn().mockResolvedValue(null),
-            findMany: vi.fn().mockResolvedValue([]),
             create: vi.fn().mockImplementation(() => {
               created = true;
               return Promise.resolve({ id: 'job-unexpected', type: JOB_TYPES.GITHUB_ANALYZE });
@@ -2050,6 +2036,7 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
           user: {
             id: 'supa-gh-user',
             email: 'vismay@example.com',
+            app_metadata: { provider: 'github', providers: ['github'] },
             identities: [
               {
                 provider: 'github',
@@ -2104,6 +2091,7 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
           user: {
             id: 'supa-gh-nonblock',
             email: 'nonblock@example.com',
+            app_metadata: { provider: 'github', providers: ['github'] },
             identities: [
               {
                 provider: 'github',
@@ -2162,22 +2150,13 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
           user: {
             id: 'supa-google-only',
             email: 'googleonly@example.com',
+            app_metadata: { provider: 'google', providers: ['google'] },
             identities: [
               {
                 provider: 'google',
                 identity_data: { email: 'googleonly@example.com' },
               },
             ],
-          },
-        },
-        error: null,
-      });
-
-      mockGetUserById.mockResolvedValueOnce({
-        data: {
-          user: {
-            id: 'supa-google-only',
-            identities: [{ provider: 'google', identity_data: { email: 'googleonly@example.com' } }],
           },
         },
         error: null,
@@ -2195,6 +2174,7 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.githubUsername).toBeNull();
+      expect(mockGetUserById).not.toHaveBeenCalled();
 
       await new Promise((resolve) => setImmediate(resolve));
 
@@ -2215,22 +2195,13 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
           user: {
             id: 'supa-stale-user',
             email: 'stale@example.com',
+            app_metadata: { provider: 'google', providers: ['google'] },
             identities: [
               {
                 provider: 'google',
                 identity_data: { email: 'stale@example.com' },
               },
             ],
-          },
-        },
-        error: null,
-      });
-
-      mockGetUserById.mockResolvedValueOnce({
-        data: {
-          user: {
-            id: 'supa-stale-user',
-            identities: [{ provider: 'google', identity_data: { email: 'stale@example.com' } }],
           },
         },
         error: null,
@@ -2252,6 +2223,614 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.githubUsername).toBeNull();
       expect(res.body.data.githubProfile).toBeUndefined();
+      expect(mockGetUserById).not.toHaveBeenCalled();
+    });
+
+    it('GET /api/auth/me for Google signup followed by GitHub linking resolves verified GitHub login without Admin lookup', async () => {
+      const mockUser = {
+        id: 'u-auth-google-signup-gh-linked',
+        supabaseUserId: 'supa-google-signup-gh-linked',
+        email: 'google-first@example.com',
+        name: 'Google First User',
+      };
+
+      // Initial signup was Google (provider: 'google'), later linked GitHub
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-google-signup-gh-linked',
+            email: 'google-first@example.com',
+            app_metadata: { provider: 'google', providers: ['google', 'github'] },
+            identities: [
+              {
+                provider: 'google',
+                identity_data: { email: 'google-first@example.com' },
+              },
+              {
+                provider: 'github',
+                identity_data: { user_name: 'linked-gh-octocat' },
+              },
+            ],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      mockTxJobFindFirst.mockResolvedValue(null);
+      mockTxJobCreate.mockResolvedValue({ id: 'job-google-gh', type: JOB_TYPES.GITHUB_ANALYZE });
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBe('linked-gh-octocat');
+      // Must NOT perform Supabase Admin lookup because verified login is directly extracted from identities
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: JOB_TYPES.GITHUB_ANALYZE,
+            payload: { userId: mockUser.id, login: 'linked-gh-octocat' },
+          }),
+        })
+      );
+    });
+
+    it('GET /api/auth/me for GitHub signup followed by Google linking resolves verified GitHub login without Admin lookup', async () => {
+      const mockUser = {
+        id: 'u-auth-gh-signup-google-linked',
+        supabaseUserId: 'supa-gh-signup-google-linked',
+        email: 'gh-first@example.com',
+        name: 'GitHub First User',
+      };
+
+      // Initial signup was GitHub (provider: 'github'), later linked Google
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-signup-google-linked',
+            email: 'gh-first@example.com',
+            app_metadata: { provider: 'github', providers: ['github', 'google'] },
+            identities: [
+              {
+                provider: 'github',
+                identity_data: { user_name: 'signup-gh-octocat' },
+              },
+              {
+                provider: 'google',
+                identity_data: { email: 'gh-first@example.com' },
+              },
+            ],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      mockTxJobFindFirst.mockResolvedValue(null);
+      mockTxJobCreate.mockResolvedValue({ id: 'job-gh-google', type: JOB_TYPES.GITHUB_ANALYZE });
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBe('signup-gh-octocat');
+      // Must NOT perform Supabase Admin lookup
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: JOB_TYPES.GITHUB_ANALYZE,
+            payload: { userId: mockUser.id, login: 'signup-gh-octocat' },
+          }),
+        })
+      );
+    });
+
+    it('GET /api/auth/me for GitHub sign-in after linking resolves verified GitHub login without Admin lookup', async () => {
+      const mockUser = {
+        id: 'u-auth-gh-after-linking',
+        supabaseUserId: 'supa-gh-after-linking',
+        email: 'gh-after-link@example.com',
+        name: 'GitHub After Linking User',
+      };
+
+      // Multi-provider user signs in with GitHub
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-after-linking',
+            email: 'gh-after-link@example.com',
+            app_metadata: { provider: 'google', providers: ['google', 'github'] },
+            identities: [
+              {
+                provider: 'google',
+                identity_data: { email: 'gh-after-link@example.com' },
+              },
+              {
+                provider: 'github',
+                identity_data: { user_name: 'active-gh-octocat' },
+              },
+            ],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      mockTxJobFindFirst.mockResolvedValue(null);
+      mockTxJobCreate.mockResolvedValue({ id: 'job-active-gh', type: JOB_TYPES.GITHUB_ANALYZE });
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBe('active-gh-octocat');
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: JOB_TYPES.GITHUB_ANALYZE,
+            payload: { userId: mockUser.id, login: 'active-gh-octocat' },
+          }),
+        })
+      );
+    });
+
+    it('GET /api/auth/me for Google sign-in after linking resolves verified GitHub login without Admin lookup', async () => {
+      const mockUser = {
+        id: 'u-auth-google-after-linking',
+        supabaseUserId: 'supa-google-after-linking',
+        email: 'google-after-link@example.com',
+        name: 'Google After Linking User',
+      };
+
+      // User signed in with Google, but has a linked GitHub OAuth identity in token
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-google-after-linking',
+            email: 'google-after-link@example.com',
+            app_metadata: { provider: 'google', providers: ['google', 'github'] },
+            identities: [
+              {
+                provider: 'google',
+                identity_data: { email: 'google-after-link@example.com' },
+              },
+              {
+                provider: 'github',
+                identity_data: { user_name: 'linked-octocat' },
+              },
+            ],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      mockTxJobFindFirst.mockResolvedValue(null);
+      mockTxJobCreate.mockResolvedValue({ id: 'job-gh-linked', type: JOB_TYPES.GITHUB_ANALYZE });
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBe('linked-octocat');
+      // Must NOT perform Supabase Admin lookup because verified login was directly extracted from token
+      expect(mockGetUserById).not.toHaveBeenCalled();
+    });
+
+    it('GET /api/auth/me for Google sign-in after linking without verifiedLogin in token does not perform Admin lookup', async () => {
+      const mockUser = {
+        id: 'u-auth-google-nologin-after-link',
+        supabaseUserId: 'supa-google-nologin-after-link',
+        email: 'google-nologin@example.com',
+        name: 'Google No Login User',
+      };
+
+      // Multi-provider user signs in with Google, but token has empty identities
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-google-nologin-after-link',
+            email: 'google-nologin@example.com',
+            app_metadata: { provider: 'google', providers: ['google', 'github'] },
+            identities: [],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBeNull();
+      // Must NOT perform Supabase Admin lookup because user has multiple providers and did not sign in as GitHub-only
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).not.toHaveBeenCalled();
+    });
+
+    it('GET /api/auth/me for GitHub as the only provider without verifiedLogin in token permits Admin lookup fallback', async () => {
+      const mockUser = {
+        id: 'u-auth-gh-fallback',
+        supabaseUserId: 'supa-gh-fallback',
+        email: 'ghfallback@example.com',
+        name: 'GitHub Fallback User',
+      };
+
+      // User signed in with GitHub as the sole provider, but token response has empty identities (no login in token)
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-fallback',
+            email: 'ghfallback@example.com',
+            app_metadata: { provider: 'github', providers: ['github'] },
+            identities: [],
+          },
+        },
+        error: null,
+      });
+
+      // Admin lookup retrieves full identities
+      mockGetUserById.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-fallback',
+            identities: [{ provider: 'github', identity_data: { user_name: 'admin-fetched-octocat' } }],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      mockTxJobFindFirst.mockResolvedValue(null);
+      mockTxJobCreate.mockResolvedValue({ id: 'job-admin-fetched', type: JOB_TYPES.GITHUB_ANALYZE });
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+
+      // Wait a microtask turn for background un-awaited promise to complete
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Admin lookup was permitted for deterministically GitHub-only user
+      expect(mockGetUserById).toHaveBeenCalledWith('supa-gh-fallback');
+      expect(mockTxJobCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: JOB_TYPES.GITHUB_ANALYZE,
+            payload: { userId: mockUser.id, login: 'admin-fetched-octocat' },
+          }),
+        })
+      );
+    });
+
+    it('GET /api/auth/me with GitHub signup provider but missing providers metadata prohibits Admin fallback', async () => {
+      const mockUser = {
+        id: 'u-auth-gh-missing-providers',
+        supabaseUserId: 'supa-gh-missing-providers',
+        email: 'gh-missing-providers@example.com',
+        name: 'GitHub Missing Providers User',
+      };
+
+      // app_metadata has provider: 'github', but providers array is completely missing
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-missing-providers',
+            email: 'gh-missing-providers@example.com',
+            app_metadata: { provider: 'github' },
+            identities: [],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBeNull();
+      // Admin lookup MUST be prohibited because missing providers cannot be assumed GitHub-only
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).not.toHaveBeenCalled();
+    });
+
+    it('GET /api/auth/me with GitHub signup provider but malformed providers metadata prohibits Admin fallback', async () => {
+      const mockUser = {
+        id: 'u-auth-gh-malformed-providers',
+        supabaseUserId: 'supa-gh-malformed-providers',
+        email: 'gh-malformed-providers@example.com',
+        name: 'GitHub Malformed Providers User',
+      };
+
+      // app_metadata has provider: 'github', but providers is malformed (not an array)
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-malformed-providers',
+            email: 'gh-malformed-providers@example.com',
+            app_metadata: { provider: 'github', providers: 'not-an-array' },
+            identities: [],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBeNull();
+      // Admin lookup MUST be prohibited for malformed providers metadata
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).not.toHaveBeenCalled();
+    });
+
+    it('GET /api/auth/me for GitHub + Google linked providers without verifiedLogin in token prohibits Admin fallback', async () => {
+      const mockUser = {
+        id: 'u-auth-gh-google-multi',
+        supabaseUserId: 'supa-gh-google-multi',
+        email: 'gh-google-multi@example.com',
+        name: 'GitHub Google Multi User',
+      };
+
+      // Both GitHub and Google are linked providers, but token has empty identities
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-google-multi',
+            email: 'gh-google-multi@example.com',
+            app_metadata: { provider: 'github', providers: ['github', 'google'] },
+            identities: [],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBeNull();
+      // Admin lookup MUST be prohibited because multiple providers are linked
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).not.toHaveBeenCalled();
+    });
+
+    it('sets isGitHubUser === false and rawProviders === [] when providers contains null (["github", null])', async () => {
+      const authMiddleware = createAuthMiddleware();
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-null-user',
+            email: 'ghnull@example.com',
+            app_metadata: { provider: 'github', providers: ['github', null] },
+            identities: [],
+          },
+        },
+        error: null,
+      });
+      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+        id: 'u-gh-null',
+        supabaseUserId: 'supa-gh-null-user',
+        email: 'ghnull@example.com',
+        name: 'Null Provider',
+      } as any);
+
+      const req: any = { headers: { authorization: 'Bearer valid-token' } };
+      const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+      const next = vi.fn();
+
+      await authMiddleware(req, res, next);
+      expect(next).toHaveBeenCalled();
+      expect(req.user.isGitHubUser).toBe(false);
+      expect(req.user.providers).toEqual([]);
+    });
+
+    it('sets isGitHubUser === false and rawProviders === [] when providers contains empty string (["github", ""])', async () => {
+      const authMiddleware = createAuthMiddleware();
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-empty-user',
+            email: 'ghempty@example.com',
+            app_metadata: { provider: 'github', providers: ['github', ''] },
+            identities: [],
+          },
+        },
+        error: null,
+      });
+      vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+        id: 'u-gh-empty',
+        supabaseUserId: 'supa-gh-empty-user',
+        email: 'ghempty@example.com',
+        name: 'Empty Provider',
+      } as any);
+
+      const req: any = { headers: { authorization: 'Bearer valid-token' } };
+      const res: any = { status: vi.fn().mockReturnThis(), json: vi.fn() };
+      const next = vi.fn();
+
+      await authMiddleware(req, res, next);
+      expect(next).toHaveBeenCalled();
+      expect(req.user.isGitHubUser).toBe(false);
+      expect(req.user.providers).toEqual([]);
+    });
+
+    it('GET /api/auth/me with providers containing ["github", null] does not silently filter invalid entries and prohibits Admin fallback', async () => {
+      const mockUser = {
+        id: 'u-auth-gh-null-provider',
+        supabaseUserId: 'supa-gh-null-provider',
+        email: 'gh-null@example.com',
+        name: 'GitHub Null Provider User',
+      };
+
+      // providers contains an invalid null element
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-null-provider',
+            email: 'gh-null@example.com',
+            app_metadata: { provider: 'github', providers: ['github', null] },
+            identities: [],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBeNull();
+      // Admin lookup MUST be prohibited because providers array contains invalid elements
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).not.toHaveBeenCalled();
+    });
+
+    it('GET /api/auth/me with providers containing ["github", ""] does not silently filter invalid entries and prohibits Admin fallback', async () => {
+      const mockUser = {
+        id: 'u-auth-gh-empty-str-provider',
+        supabaseUserId: 'supa-gh-empty-str-provider',
+        email: 'gh-empty-str@example.com',
+        name: 'GitHub Empty String Provider User',
+      };
+
+      // providers contains an empty string element
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-gh-empty-str-provider',
+            email: 'gh-empty-str@example.com',
+            app_metadata: { provider: 'github', providers: ['github', ''] },
+            identities: [],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBeNull();
+      // Admin lookup MUST be prohibited because providers array contains empty string
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).not.toHaveBeenCalled();
+    });
+
+    it('GET /api/auth/me with missing or incomplete provider metadata fails safely without Admin lookup', async () => {
+      const mockUser = {
+        id: 'u-auth-no-provider',
+        supabaseUserId: 'supa-no-provider',
+        email: 'noprovider@example.com',
+        name: 'No Provider User',
+      };
+
+      // Incomplete metadata: app_metadata has no provider, identities array is empty
+      mockGetUser.mockResolvedValueOnce({
+        data: {
+          user: {
+            id: 'supa-no-provider',
+            email: 'noprovider@example.com',
+            app_metadata: {},
+            identities: [],
+          },
+        },
+        error: null,
+      });
+
+      vi.mocked(prisma.user.findUnique).mockResolvedValue({
+        ...mockUser,
+        githubProfile: null,
+      } as any);
+
+      const res = await request(app)
+        .get('/api/auth/me')
+        .set('Authorization', 'Bearer valid-supabase-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.githubUsername).toBeNull();
+      // Must NOT perform Supabase Admin lookup
+      expect(mockGetUserById).not.toHaveBeenCalled();
+      expect(mockTxJobCreate).not.toHaveBeenCalled();
     });
 
     it('GET /api/me/export includes githubProfile in data export (VM-9)', async () => {
@@ -2430,6 +3009,19 @@ describe('VM-12 / FR-10 — GitHub Public Contributions Analysis', () => {
     });
 
     describe('processNextJob with rate limit errors', () => {
+      it('correctly identifies rate limit error shapes with isRateLimitError', () => {
+        expect(isRateLimitError(new GitHubRateLimitError('Rate limited'))).toBe(true);
+        expect(isRateLimitError({ name: 'RateLimitError' })).toBe(true);
+        expect(isRateLimitError({ status: 429 })).toBe(true);
+        expect(isRateLimitError({ resetAt: new Date() })).toBe(true);
+        expect(isRateLimitError({ resetAt: new Date(NaN) })).toBe(false);
+        expect(isRateLimitError({ resetAt: new Date('invalid') })).toBe(false);
+        expect(isRateLimitError({ name: 'GitHubRateLimitError', resetAt: new Date(NaN) })).toBe(true);
+        expect(isRateLimitError({ status: 429, resetAt: new Date(NaN) })).toBe(true);
+        expect(isRateLimitError(new Error('Generic failure'))).toBe(false);
+        expect(isRateLimitError(null)).toBe(false);
+      });
+
       const mockJob = {
         id: 'job-rl-mock',
         type: JOB_TYPES.GITHUB_ANALYZE,
