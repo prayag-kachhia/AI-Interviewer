@@ -46,7 +46,7 @@ const TURNS = [
 ];
 const JOB = {
   id: 'job-1', type: 'session.ended', sessionId: 'sess-1', payload: {}, status: 'processing',
-  attempts: 1, lockedBy: 'w', lockedAt: new Date(), lastError: null, createdAt: new Date(), updatedAt: new Date(),
+  attempts: 1, availableAt: new Date(), lockedBy: 'w', lockedAt: new Date(), lastError: null, createdAt: new Date(), updatedAt: new Date(),
 };
 const SCORES = [
   {

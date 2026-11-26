@@ -3,6 +3,10 @@ import { authenticate } from '../middleware/auth';
 import { createClient } from '@supabase/supabase-js';
 import prisma from '../db';
 import { isAdminEmail } from '../services/admin.service';
+import {
+  maybeEnqueueGithubAnalysis,
+  triggerGithubAnalysisIfLinked,
+} from '../services/github.service';
 
 const router = Router();
 
@@ -41,11 +45,26 @@ router.get('/me', authenticate, async (req, res) => {
     return;
   }
 
+  const verifiedLogin = req.user?.githubUsername;
+  if (verifiedLogin) {
+    void maybeEnqueueGithubAnalysis(user.id, verifiedLogin).catch((err) => {
+      console.warn(`[auth/me] Failed to enqueue github analysis for user ${user.id}:`, err);
+    });
+  } else if (req.user?.isGitHubUser && user.supabaseUserId) {
+    void triggerGithubAnalysisIfLinked(user.id, user.supabaseUserId).catch((err) => {
+      console.warn(`[auth/me] Failed to verify github identity for user ${user.id}:`, err);
+    });
+  }
+
   res.status(200).json({
     success: true,
     data: {
-      ...user,
+      id: user.id,
+      supabaseUserId: user.supabaseUserId,
+      name: user.name,
+      email: user.email,
       isAdmin: Boolean(req.user?.isEmailConfirmed) && isAdminEmail(user.email),
+      githubUsername: verifiedLogin ?? null,
     },
   });
 });

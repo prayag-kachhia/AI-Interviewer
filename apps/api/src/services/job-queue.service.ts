@@ -1,22 +1,18 @@
 import type { Job, Prisma } from '../generated/prisma/client';
 import prisma from '../db';
+import { JOB_TYPES, type JobType } from './job-types';
+
+export { JOB_TYPES, type JobType };
 
 // A job whose worker stopped responding is retried until it has been claimed
 // this many times; after that it is marked failed so it can't loop forever.
 export const MAX_ATTEMPTS = 3;
 
-export const JOB_TYPES = {
-  SESSION_ENDED: 'session.ended',
-  INSIGHTS_REFRESH: 'insights.refresh',
-  RETENTION_PURGE: 'retention.purge',
-} as const;
-
-export type JobType = (typeof JOB_TYPES)[keyof typeof JOB_TYPES] | (string & {});
-
 export interface EnqueueJobParams {
   type: JobType;
   sessionId?: string;
   payload?: Prisma.InputJsonObject;
+  availableAt?: Date;
 }
 
 export async function enqueueJob(params: EnqueueJobParams): Promise<Job> {
@@ -25,6 +21,7 @@ export async function enqueueJob(params: EnqueueJobParams): Promise<Job> {
       type: params.type,
       sessionId: params.sessionId ?? null,
       payload: params.payload ?? {},
+      ...(params.availableAt ? { availableAt: params.availableAt } : {}),
     },
   });
 }
@@ -69,7 +66,7 @@ export async function claimNextJob(workerId: string, jobType?: string): Promise<
         FROM jobs
         WHERE (${type}::text IS NULL OR type = ${type}::text)
           AND (
-            status = 'pending'
+            (status = 'pending' AND "availableAt" <= NOW())
             OR (
               status = 'processing'
               AND "lockedAt" < NOW() - INTERVAL '5 minutes'
@@ -110,14 +107,66 @@ export async function failJob(jobId: string, error: string): Promise<void> {
 
 /**
  * Resets a job back to 'pending' with its error so another worker (or this one
- * after an idle backoff) can retry it. Does NOT increment attempts: attempts is
+ * after its availableAt timestamp) can retry it. Does NOT increment attempts: attempts is
  * only incremented when claimed by claimNextJob.
  */
-export async function requeueJob(jobId: string, error: string): Promise<void> {
+export async function requeueJob(jobId: string, error: string, availableAt?: Date): Promise<void> {
   await prisma.job.update({
     where: { id: jobId },
-    data: { status: 'pending', lastError: error, lockedBy: null, lockedAt: null },
+    data: {
+      status: 'pending',
+      lastError: error,
+      ...(availableAt ? { availableAt } : {}),
+      lockedBy: null,
+      lockedAt: null,
+    },
   });
+}
+
+export interface RateLimitErrorLike {
+  name?: string;
+  status?: number;
+  resetAt?: Date;
+  [key: string]: any;
+}
+
+/**
+ * Identifies whether an error represents a rate-limit error with an optional retry/reset timestamp.
+ */
+export function isRateLimitError(err: unknown): err is RateLimitErrorLike {
+  if (!err || typeof err !== 'object') return false;
+  const anyErr = err as any;
+  return (
+    anyErr.name === 'GitHubRateLimitError' ||
+    anyErr.name === 'RateLimitError' ||
+    (anyErr.resetAt instanceof Date && !isNaN(anyErr.resetAt.getTime())) ||
+    anyErr.status === 429
+  );
+}
+
+/**
+ * Calculates the next availableAt date for a rate-limited job.
+ * If resetAt is provided, valid, and in the future, it is used.
+ * Otherwise, falls back to bounded exponential backoff:
+ * 30s * 2^(attempt - 1), capped at 5 minutes (300s).
+ * - attempt 1: 30s
+ * - attempt 2: 60s
+ * - attempt 3: 120s
+ * - ... capped at 300s
+ */
+export function calculateRateLimitRetryAt(
+  resetAt: Date | undefined,
+  attempts: number,
+  now: Date = new Date()
+): Date {
+  const nowMs = now.getTime();
+  if (resetAt instanceof Date && !isNaN(resetAt.getTime()) && resetAt.getTime() > nowMs) {
+    return resetAt;
+  }
+
+  const attemptIndex = Math.max(0, attempts - 1);
+  const backoffSec = Math.min(300, 30 * Math.pow(2, attemptIndex));
+  return new Date(nowMs + backoffSec * 1000);
 }
 
 /**
@@ -175,8 +224,18 @@ export async function processNextJob(
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (isTransientError(err) && job.attempts < MAX_ATTEMPTS) {
+      if (isRateLimitError(err)) {
+        const retryAt = calculateRateLimitRetryAt(err.resetAt, job.attempts);
+        console.warn(
+          `[${workerId}] rate limit for job ${job.id} (${job.type}). ` +
+          `Attempt ${job.attempts}/${MAX_ATTEMPTS}. Scheduling retry at ${retryAt.toISOString()}: ${message}`
+        );
+        await requeueJob(job.id, message, retryAt);
+        return null;
+      }
+
       console.warn(
-        `[${workerId}] transient evaluation error for job ${job.id}. ` +
+        `[${workerId}] transient error for job ${job.id} (${job.type}). ` +
         `Attempt ${job.attempts}/${MAX_ATTEMPTS}. Requeuing: ${message}`
       );
       await requeueJob(job.id, message);

@@ -7,6 +7,10 @@ export interface AuthUser {
   name: string;
   role?: string;
   isEmailConfirmed?: boolean;
+  githubUsername?: string | null;
+  provider?: string | null;
+  providers?: string[];
+  isGitHubUser?: boolean;
 }
 
 // Extend Request type to include user
