@@ -36,6 +36,7 @@ export interface EvaluationInput {
 export interface EvaluationUsageMetadata {
   promptTokenCount?: number;
   candidatesTokenCount?: number;
+  thoughtsTokenCount?: number;
   totalTokenCount?: number;
 }
 
@@ -229,6 +230,7 @@ async function generateWithGemini(
       ? {
         promptTokenCount: response.usageMetadata.promptTokenCount,
         candidatesTokenCount: response.usageMetadata.candidatesTokenCount,
+        thoughtsTokenCount: response.usageMetadata.thoughtsTokenCount,
         totalTokenCount: response.usageMetadata.totalTokenCount,
       }
       : undefined,

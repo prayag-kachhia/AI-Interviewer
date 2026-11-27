@@ -128,6 +128,7 @@ model Feedback {
   summary   String?
   scores    Json?
   error     String?
+  usage     Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 

@@ -2,7 +2,11 @@ import type { Feedback, Job, Prisma } from '../generated/prisma/client';
 import { Feedback as FeedbackContract } from '@interview/contracts';
 import prisma from '../db';
 import { AppError } from '../errors';
-import { evaluateTranscript, type EvaluatorOptions } from './evaluator.service';
+import {
+  evaluateTranscript,
+  type EvaluatorOptions,
+  type EvaluationUsageMetadata,
+} from './evaluator.service';
 import { getOwnedSession } from './session.service';
 import { isTransientError, MAX_ATTEMPTS, enqueueJob } from './job-queue.service';
 
@@ -14,6 +18,24 @@ export class FeedbackRetryConflictError extends AppError {
   }
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  candidatesTokens?: number;
+  thoughtsTokens?: number;
+}
+
+export interface StoredFeedbackUsage {
+  promptTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  candidatesTokens?: number;
+  thoughtsTokens?: number;
+  evaluator?: TokenUsage;
+  nextQuestion?: TokenUsage & { callCount: number };
+}
+
 export interface SaveFeedbackParams {
   sessionId: string;
   status: FeedbackStatus;
@@ -21,6 +43,184 @@ export interface SaveFeedbackParams {
   scores?: Prisma.InputJsonValue;
   perAnswer?: Prisma.InputJsonValue;
   error?: string;
+  usage?: Prisma.InputJsonValue;
+}
+
+/**
+ * Merges next-question token counts into an existing usage JSON object.
+ * Output tokens include both visible response tokens (candidates) and reasoning tokens (thoughts),
+ * matching Google's Gemini output token billing without double-counting.
+ */
+export function mergeNextQuestionUsage(
+  existingUsage: unknown,
+  newTokens: EvaluationUsageMetadata
+): StoredFeedbackUsage {
+  const current = (typeof existingUsage === 'object' && existingUsage !== null
+    ? existingUsage
+    : {}) as StoredFeedbackUsage;
+
+  const prevNQ = current.nextQuestion ?? {
+    promptTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    callCount: 0,
+  };
+
+  const newPrompt = newTokens.promptTokenCount ?? 0;
+  const newCandidates = newTokens.candidatesTokenCount ?? 0;
+  const newThoughts = newTokens.thoughtsTokenCount ?? 0;
+  const newOutput = newCandidates + newThoughts;
+
+  const prevNQThoughts = prevNQ.thoughtsTokens ?? 0;
+  const prevNQCandidates = prevNQ.candidatesTokens ?? (prevNQ.outputTokens - prevNQThoughts);
+
+  const nqPrompt = prevNQ.promptTokens + newPrompt;
+  const nqCandidates = prevNQCandidates + newCandidates;
+  const nqThoughts = prevNQThoughts + newThoughts;
+  const nqOutput = nqCandidates + nqThoughts;
+  const nqTotal = nqPrompt + nqOutput;
+
+  const hasNQThoughts = nqThoughts > 0 || prevNQ.thoughtsTokens !== undefined || newTokens.thoughtsTokenCount !== undefined;
+
+  const nextQuestion: TokenUsage & { callCount: number } = {
+    promptTokens: nqPrompt,
+    outputTokens: nqOutput,
+    totalTokens: nqTotal,
+    callCount: prevNQ.callCount + 1,
+    ...(hasNQThoughts ? { thoughtsTokens: nqThoughts, candidatesTokens: nqCandidates } : {}),
+  };
+
+  const evalUsage = current.evaluator;
+  const totalPrompt = (evalUsage?.promptTokens ?? 0) + nqPrompt;
+  const evalThoughts = evalUsage?.thoughtsTokens ?? 0;
+  const evalCandidates = evalUsage?.candidatesTokens ?? (evalUsage ? evalUsage.outputTokens - evalThoughts : 0);
+  const totalThoughts = evalThoughts + nqThoughts;
+  const totalCandidates = evalCandidates + nqCandidates;
+  const totalOutput = totalCandidates + totalThoughts;
+
+  const hasTopThoughts = totalThoughts > 0 || current.thoughtsTokens !== undefined || hasNQThoughts;
+
+  return {
+    promptTokens: totalPrompt,
+    outputTokens: totalOutput,
+    totalTokens: totalPrompt + totalOutput,
+    ...(hasTopThoughts ? { thoughtsTokens: totalThoughts, candidatesTokens: totalCandidates } : {}),
+    ...(evalUsage ? { evaluator: evalUsage } : {}),
+    nextQuestion,
+  };
+}
+
+/**
+ * Merges transcript evaluator token counts into an existing usage JSON object.
+ * Output tokens include both visible evaluation text and model thinking tokens.
+ */
+export function mergeEvaluatorUsage(
+  existingUsage: unknown,
+  evaluatorTokens: EvaluationUsageMetadata
+): StoredFeedbackUsage {
+  const current = (typeof existingUsage === 'object' && existingUsage !== null
+    ? existingUsage
+    : {}) as StoredFeedbackUsage;
+
+  const evalPrompt = evaluatorTokens.promptTokenCount ?? 0;
+  const evalCandidates = evaluatorTokens.candidatesTokenCount ?? 0;
+  const evalThoughts = evaluatorTokens.thoughtsTokenCount ?? 0;
+  const evalOutput = evalCandidates + evalThoughts;
+  const evalTotal = evalPrompt + evalOutput;
+
+  const hasEvalThoughts = evalThoughts > 0 || evaluatorTokens.thoughtsTokenCount !== undefined;
+
+  const evaluator: TokenUsage = {
+    promptTokens: evalPrompt,
+    outputTokens: evalOutput,
+    totalTokens: evalTotal,
+    ...(hasEvalThoughts ? { thoughtsTokens: evalThoughts, candidatesTokens: evalCandidates } : {}),
+  };
+
+  const nqUsage = current.nextQuestion;
+  const totalPrompt = evalPrompt + (nqUsage?.promptTokens ?? 0);
+  const nqThoughts = nqUsage?.thoughtsTokens ?? 0;
+  const nqCandidates = nqUsage?.candidatesTokens ?? (nqUsage ? nqUsage.outputTokens - nqThoughts : 0);
+  const totalThoughts = evalThoughts + nqThoughts;
+  const totalCandidates = evalCandidates + nqCandidates;
+  const totalOutput = totalCandidates + totalThoughts;
+
+  const hasTopThoughts = totalThoughts > 0 || current.thoughtsTokens !== undefined || hasEvalThoughts;
+
+  return {
+    promptTokens: totalPrompt,
+    outputTokens: totalOutput,
+    totalTokens: totalPrompt + totalOutput,
+    ...(hasTopThoughts ? { thoughtsTokens: totalThoughts, candidatesTokens: totalCandidates } : {}),
+    evaluator,
+    ...(nqUsage ? { nextQuestion: nqUsage } : {}),
+  };
+}
+
+/**
+ * Records token usage from an individual next-question generation call.
+ * Coordinates with endSession inside an atomic transaction:
+ * - Discards write if session is no longer LIVE (ended or deleted).
+ * - Discards write if feedback is already marked ready (prevents overwriting final evaluation).
+ * - If feedback row exists, updates only where status is pending.
+ */
+export async function recordNextQuestionUsage(
+  sessionId: string,
+  usageMetadata: EvaluationUsageMetadata
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    // 1. Synchronize using an exclusive row-level lock on the session row (FOR UPDATE).
+    // This serializes concurrent question updates and synchronizes with endSession.
+    let sessionStatus: string | undefined;
+    if (typeof tx.$queryRaw === 'function') {
+      const lockedSessions = await tx.$queryRaw<Array<{ id: string; status: string }>>`
+        SELECT id, status FROM sessions WHERE id = ${sessionId} FOR UPDATE
+      `;
+      sessionStatus = lockedSessions[0]?.status;
+    } else {
+      const session = await tx.session.findUnique({
+        where: { id: sessionId },
+        select: { status: true },
+      });
+      sessionStatus = session?.status;
+    }
+
+    if (!sessionStatus || sessionStatus !== 'LIVE') {
+      return;
+    }
+
+    // 2. Check existing feedback status (safely serialized under session row lock)
+    const existing = await tx.feedback.findUnique({
+      where: { sessionId },
+      select: { status: true, usage: true },
+    });
+    if (existing && existing.status === 'ready') {
+      return;
+    }
+
+    const updatedUsage = mergeNextQuestionUsage(existing?.usage, usageMetadata);
+
+    if (existing) {
+      // Atomic guard: only update if feedback status is still pending
+      await tx.feedback.updateMany({
+        where: {
+          sessionId,
+          status: 'pending',
+        },
+        data: {
+          usage: updatedUsage as unknown as Prisma.InputJsonValue,
+        },
+      });
+    } else {
+      await tx.feedback.create({
+        data: {
+          sessionId,
+          status: 'pending',
+          usage: updatedUsage as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
+  });
 }
 
 /**
@@ -38,16 +238,26 @@ export async function saveFeedback(params: SaveFeedbackParams): Promise<Feedback
     storedScores = params.scores ?? [];
   }
 
-  const data = {
+  const data: Prisma.FeedbackUncheckedCreateInput = {
+    sessionId: params.sessionId,
     status: params.status,
     summary: params.summary ?? null,
     scores: storedScores,
     error: params.error ?? null,
+    ...(params.usage !== undefined ? { usage: params.usage } : {}),
   };
+  const updateData: Prisma.FeedbackUncheckedUpdateInput = {
+    status: params.status,
+    summary: params.summary ?? null,
+    scores: storedScores,
+    error: params.error ?? null,
+    ...(params.usage !== undefined ? { usage: params.usage } : {}),
+  };
+
   return prisma.feedback.upsert({
     where: { sessionId: params.sessionId },
-    create: { sessionId: params.sessionId, ...data },
-    update: data,
+    create: data,
+    update: updateData,
   });
 }
 
@@ -109,12 +319,23 @@ export async function handleSessionEnded(job: Job, options: EvaluatorOptions = {
       },
       options
     );
+
+    const existingFeedback = await prisma.feedback.findUnique({
+      where: { sessionId: session.id },
+      select: { usage: true },
+    });
+
+    const combinedUsage = evaluation.usageMetadata
+      ? mergeEvaluatorUsage(existingFeedback?.usage, evaluation.usageMetadata)
+      : (existingFeedback?.usage as StoredFeedbackUsage | undefined);
+
     await saveFeedback({
       sessionId: session.id,
       status: 'ready',
       summary: evaluation.summary,
       scores: evaluation.scores,
       perAnswer: evaluation.perAnswer,
+      ...(combinedUsage !== undefined ? { usage: combinedUsage as unknown as Prisma.InputJsonValue } : {}),
     });
     await enqueueJob({
       type: 'insights.refresh',

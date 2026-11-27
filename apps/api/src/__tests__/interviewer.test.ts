@@ -6,6 +6,11 @@ import {
 } from '../services/interviewer.service';
 import { SessionEndedError } from '../services/session.service';
 import { NotFoundError } from '../errors';
+import { recordNextQuestionUsage } from '../services/feedback.service';
+
+vi.mock('../services/feedback.service', () => ({
+  recordNextQuestionUsage: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('../db', () => ({
   default: {
@@ -108,5 +113,56 @@ describe('interviewer.service', () => {
     await expect(
       generateNextQuestion(LIVE_SESSION.id, USER_ID, { generate: mockGenerate })
     ).rejects.toThrow(InterviewerTimeoutError);
+  });
+
+  it('records token usage when generator returns GenerateQuestionResult with usageMetadata (S-8)', async () => {
+    const mockGenerate = vi.fn().mockResolvedValue({
+      text: 'Can you describe your experience with microservices?',
+      usageMetadata: { promptTokenCount: 420, candidatesTokenCount: 85, totalTokenCount: 505 },
+    });
+
+    const result = await generateNextQuestion(LIVE_SESSION.id, USER_ID, {
+      generate: mockGenerate,
+    });
+
+    expect(result.speaker).toBe('AI');
+    expect(result.text).toBe('Can you describe your experience with microservices?');
+    expect(recordNextQuestionUsage).toHaveBeenCalledWith(LIVE_SESSION.id, {
+      promptTokenCount: 420,
+      candidatesTokenCount: 85,
+      totalTokenCount: 505,
+    });
+  });
+
+  it('does not attempt to record usage when generator returns plain string without usageMetadata', async () => {
+    const mockGenerate = vi.fn().mockResolvedValue('What is your favorite design pattern?');
+
+    const result = await generateNextQuestion(LIVE_SESSION.id, USER_ID, {
+      generate: mockGenerate,
+    });
+
+    expect(result.text).toBe('What is your favorite design pattern?');
+    expect(recordNextQuestionUsage).not.toHaveBeenCalled();
+  });
+
+  it('best-effort tracking: continues and saves turn even if recordNextQuestionUsage fails (S-8 review)', async () => {
+    vi.mocked(recordNextQuestionUsage).mockRejectedValueOnce(new Error('DB connection dropped'));
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const mockGenerate = vi.fn().mockResolvedValue({
+      text: 'Tell me about a time you resolved a merge conflict.',
+      usageMetadata: { promptTokenCount: 300, candidatesTokenCount: 50, totalTokenCount: 350 },
+    });
+
+    const result = await generateNextQuestion(LIVE_SESSION.id, USER_ID, {
+      generate: mockGenerate,
+    });
+
+    expect(result.speaker).toBe('AI');
+    expect(result.text).toBe('Tell me about a time you resolved a merge conflict.');
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to record next-question token usage')
+    );
+    warnSpy.mockRestore();
   });
 });

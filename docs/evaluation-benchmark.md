@@ -389,6 +389,135 @@ Live-site verification: **PENDING** — Post-merge smoke verification of end-to-
 
 ---
 
+## S-8 — Gemini Token Usage & Cost per Interview (NFR-16 / OI-2)
+
+> **Status: In Progress (Implementation & Unit/Integration Testing Complete; Live-Site Verification Pending).** Migration adds nullable `Feedback.usage` JSONB column. `apps/api/scripts/cost.ts` translates stored and modeled token usage into per-interview costs in USD and INR, with live audio projections and a proposed budget ceiling for OI-2.
+
+### Overview & Data Architecture
+
+To satisfy **NFR-16** (infrastructure cost tracking) and resolve open item **OI-2** (setting a per-session cost ceiling in ₹), token usage from all Gemini interactions during an interview is captured and recorded on the database feedback record:
+
+1. **Question Generation (`generateNextQuestion`)**:
+   - Each call to Gemini Flash during the live interview captures `usageMetadata` (`promptTokenCount`, `candidatesTokenCount`, and `thoughtsTokenCount` if reasoning/thinking tokens are emitted).
+   - `recordNextQuestionUsage(sessionId, usage)` updates the `Feedback.usage` JSON column inside a transaction.
+   - **Thinking Tokens & Output Accounting**: In Google's Gemini pricing model, billable output tokens include both visible response candidates (`candidatesTokenCount`) and internal reasoning thoughts (`thoughtsTokenCount`). They are accounted for under `outputTokens` without double-counting.
+   - **Concurrency Guard**: If the session has transitioned to `ENDED` or feedback is already `ready`, usage writes are safely discarded to ensure in-flight generation requests never overwrite finalized evaluations or recreate stale pending records.
+
+2. **Transcript Evaluation (`handleSessionEnded`)**:
+   - Background worker processes `session.ended` jobs and calls `evaluateTranscript()`.
+   - `handleSessionEnded` reads any previously accumulated `nextQuestion` tokens on `Feedback.usage`, merges them with the evaluator's `usageMetadata` (including thinking tokens), and persists the consolidated `Feedback.usage` object.
+
+3. **Schema of `Feedback.usage`**:
+   ```json
+   {
+     "promptTokens": 3250,
+     "outputTokens": 810,
+     "totalTokens": 4060,
+     "candidatesTokens": 710,
+     "thoughtsTokens": 100,
+     "evaluator": {
+       "promptTokens": 1450,
+       "outputTokens": 510,
+       "candidatesTokens": 450,
+       "thoughtsTokens": 60,
+       "totalTokens": 1960
+     },
+     "nextQuestion": {
+       "promptTokens": 1800,
+       "outputTokens": 300,
+       "candidatesTokens": 260,
+       "thoughtsTokens": 40,
+       "totalTokens": 2100,
+       "callCount": 4
+     }
+   }
+   ```
+   *Note: `thoughtsTokens` and `candidatesTokens` are optional breakdowns for granular observability. For models or calls without thinking tokens, or legacy records created prior to this addition, `outputTokens` reflects the candidate token count and calculations remain 100% backward-compatible.*
+
+---
+
+### Rate Card & Official Pricing Verification
+
+Rates are verified against Google's official Gemini API pricing documentation:
+- **Official Source**: [https://ai.google.dev/pricing](https://ai.google.dev/pricing) (Google AI Studio / Gemini Developer API)
+
+| Component | Model | Published Rate Card | Classification | Notes |
+|---|---|---|---|---|
+| **Text Evaluation** | `gemini-3.8-flash` | Input: \$0.75 / 1M tok<br>Output: \$3.75 / 1M tok | Published rate | Introductory rates active through 2026-12-31; output includes thinking tokens. |
+| **Next-Question Generation** | `gemini-3.8-flash` | Input: \$0.75 / 1M tok<br>Output: \$3.75 / 1M tok | Published rate | Billed per token processed. |
+| **Live Audio Input** | `gemini-3.8-live` | \$3.00 / 1M audio tokens | Published token rate | Multimodal Live API streaming input rate. |
+| **Live Audio Output** | `gemini-3.8-live` | \$12.00 / 1M audio tokens | Published token rate | Multimodal Live API streaming speech rate. |
+| **15-Min Live Audio Session** | `gemini-3.8-live` | ~\$0.1350 (₹11.34) | **Projected model estimate** | Based on ~10 min candidate speech (~15k audio tok) + ~5 min AI speech (~7.5k audio tok). Token density varies with speech rate and ambient silence; unverified as fixed billing. |
+| **USD to INR Exchange** | Standard | ₹84.00 | Configurable constant | Configurable via `BENCH_USD_TO_INR`. |
+
+---
+
+### Per-Interview Cost Breakdown
+
+Token counts below reflect a representative 15-minute voice interview (modeled on 4 server-generated questions + multi-rubric evaluation with per-answer feedback from benchmark fixtures). Note: Figures represent modeled benchmark simulations rather than live production database measurements:
+
+| Interaction | Prompt Tokens | Output Tokens | Cost (USD) | Cost (INR @ ₹84.00) | Classification / Source |
+|---|---|---|---|---|---|
+| **Transcript Evaluation** (`evaluateTranscript`) | 1 450 | 510 | \$0.003000 | ₹0.2520 | Benchmark Fixture Simulation |
+| **Question Generation** (4 questions) | 1 800 | 300 | \$0.002475 | ₹0.2079 | Benchmark Fixture Simulation |
+| **Subtotal LLM Text / Reasoning** | **3 250** | **810** | **\$0.005475** | **₹0.4599** | **Modeled Benchmark Tokens** |
+| **Candidate Audio** (~10 min listening) | ~15 000 | — | \$0.045000 | ₹3.7800 | Projected Estimate (Published Token Rate) |
+| **Interviewer Audio** (~5 min speaking) | — | ~7 500 | \$0.090000 | ₹7.5600 | Projected Estimate (Published Token Rate) |
+| **Subtotal 15-min Live Audio** | **~15 000** | **~7 500** | **\$0.135000** | **₹11.3400** | **Projected Model Estimate** |
+| **Total Estimated Cost per Completed Interview** | — | — | **\$0.140475** | **₹11.7999 (~₹11.80)** | **Combined Infrastructure Projection** |
+
+---
+
+### Proposed Per-Session Budget Ceiling (OI-2 / NFR-16)
+
+Based on benchmark-modeled LLM tokens and projected 15-minute Live audio costs:
+- **Baseline Estimated Cost**: **₹11.80 per completed interview** (\$0.1405).
+- **Proposed Budget Ceiling (OI-2)**: **₹25.00 per completed interview**.
+- **Headroom Buffer**: **~112% headroom** above the standard 15-minute baseline.
+- **Rationale**:
+  - Accommodates extended interviews up to 25–30 minutes without exceeding budget.
+  - Absorbs transient evaluator retries on temporary 503/429 errors (up to `MAX_ATTEMPTS = 3`).
+  - Accounts for high candidate speaking cadence or noisy environments where audio token sampling density increases.
+- **Enforcement Note**: The ₹25.00 figure serves as a project infrastructure budget and monitoring metric for **NFR-16** audits. It is not an enforced programmatic cutoff that terminates active user sessions. Programmatic quota management is tracked under **S-9 (#167)**.
+
+---
+
+### Database Verification Scenarios (S-8 Review Verification)
+
+The cost script (`apps/api/scripts/cost.ts`) was executed against an isolated, local PostgreSQL test database (`ai_interviewer_test` running in WSL Ubuntu with all 13 Prisma migrations applied). Production Supabase was neither connected to nor modified. Three distinct scenarios were verified:
+
+1. **Scenario A — Real PostgreSQL Query with Seeded Synthetic Eligible Record**:
+   - **Database Setup**: Seeded 1 synthetic user, 1 ended session, and 1 ready feedback record with structured token usage (`Feedback.usage`: 1 500 in / 500 out for evaluation, 2 000 in / 400 out across 4 next-question calls; total 3 500 prompt and 900 output tokens).
+   - **Command**: `DATABASE_URL="postgresql://test_user:****@127.0.0.1:5432/ai_interviewer_test" bun scripts/cost.ts`
+   - **Observed Behavior**: The script connected to `ai_interviewer_test`, successfully executed the Prisma query, and output:
+     `Source : [MEASURED TEST DATABASE DATA] Based on 1 completed interview records`
+   - **Cost Calculation Match**: Measured averages matched independent manual calculations exactly:
+     - Evaluation: \$0.003000 (₹0.2520)
+     - Next-Question: \$0.003000 (₹0.2520)
+     - LLM Text Subtotal: \$0.006000 (₹0.5040)
+     - Grand Total with projected audio: \$0.1410 (₹11.84)
+   - **Exit Code**: `0`.
+
+2. **Scenario B — Real PostgreSQL Query Returning Zero Eligible Records**:
+   - **Database Setup**: The seeded synthetic record was removed; confirmed 0 feedback rows in `ai_interviewer_test`. The database remained running and fully accessible.
+   - **Command**: Same CLI command executed without `--simulate`.
+   - **Observed Behavior**: The database query executed successfully and detected 0 eligible records. It did not invoke `--simulate` mode, but gracefully fell back to displaying modeled benchmark estimates:
+     `Source : [DATABASE QUERY: 0 ELIGIBLE RECORDS] Database query succeeded, but 0 eligible completed interview records with usage were found.`
+     `Fallback Mode : [MODELED ESTIMATE] Displaying modeled token usage from benchmark fixtures (modeled estimates are not measured from database records).`
+   - **Exit Code**: `0`.
+
+3. **Scenario C — Database Failure Handling**:
+   - **Setup**: Configured an unreachable/invalid database endpoint (`DATABASE_URL=postgresql://invalid:invalid@localhost:5433/nonexistent`).
+   - **Command**: CLI executed without `--simulate`.
+   - **Observed Behavior**: The script logged `[Database query error]` and immediately terminated with exit code `1`. It refused to silently fall back to simulation mode upon query failure, ensuring database connection issues are never obscured.
+   - **Exit Code**: `1`.
+
+#### Live-site verification
+
+Live-site verification: **PENDING** — Scenarios A and B verify real PostgreSQL database querying, aggregation, and fallback behavior using an isolated local test database (`ai_interviewer_test`). Smoke verification of live user token usage recording and cost calculation against the live Supabase production database on the deployed site (`ai-interviewer-it314.web.app`) remains pending post-deployment.
+
+---
+
 ## Broken-prompt regression demo
 
 Running with `--broken-prompt` replaces the rubric instruction in the prompt with  
