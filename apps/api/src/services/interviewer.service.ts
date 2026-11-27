@@ -78,6 +78,7 @@ async function callGemini(prompt: string, timeoutMs: number): Promise<GenerateQu
       ? {
           promptTokenCount: response.usageMetadata.promptTokenCount,
           candidatesTokenCount: response.usageMetadata.candidatesTokenCount,
+          thoughtsTokenCount: response.usageMetadata.thoughtsTokenCount,
           totalTokenCount: response.usageMetadata.totalTokenCount,
         }
       : undefined;

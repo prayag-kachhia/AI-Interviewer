@@ -174,9 +174,32 @@ export function calculateLiveAudioEstimate(
 }
 
 export interface InterviewCostSummary {
-  evaluator: { promptTokens: number; outputTokens: number; costUSD: number; costINR: number };
-  nextQuestion: { promptTokens: number; outputTokens: number; callCount: number; costUSD: number; costINR: number };
-  textTotal: { promptTokens: number; outputTokens: number; totalTokens: number; costUSD: number; costINR: number };
+  evaluator: {
+    promptTokens: number;
+    outputTokens: number;
+    candidatesTokens?: number;
+    thoughtsTokens?: number;
+    costUSD: number;
+    costINR: number;
+  };
+  nextQuestion: {
+    promptTokens: number;
+    outputTokens: number;
+    candidatesTokens?: number;
+    thoughtsTokens?: number;
+    callCount: number;
+    costUSD: number;
+    costINR: number;
+  };
+  textTotal: {
+    promptTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    candidatesTokens?: number;
+    thoughtsTokens?: number;
+    costUSD: number;
+    costINR: number;
+  };
   liveAudioEstimate: ReturnType<typeof calculateLiveAudioEstimate>;
   grandTotalUSD: number;
   grandTotalINR: number;
@@ -191,15 +214,25 @@ export function calculateInterviewCost(
 ): InterviewCostSummary {
   const evalPrompt = usage?.evaluator?.promptTokens ?? 0;
   const evalOutput = usage?.evaluator?.outputTokens ?? 0;
+  const evalThoughts = usage?.evaluator?.thoughtsTokens;
+  const evalCandidates = usage?.evaluator?.candidatesTokens ?? (evalThoughts !== undefined ? evalOutput - evalThoughts : undefined);
   const evalCost = calculateTokenCost(evalPrompt, evalOutput, pricing);
 
   const nqPrompt = usage?.nextQuestion?.promptTokens ?? 0;
   const nqOutput = usage?.nextQuestion?.outputTokens ?? 0;
+  const nqThoughts = usage?.nextQuestion?.thoughtsTokens;
+  const nqCandidates = usage?.nextQuestion?.candidatesTokens ?? (nqThoughts !== undefined ? nqOutput - nqThoughts : undefined);
   const nqCallCount = usage?.nextQuestion?.callCount ?? 0;
   const nqCost = calculateTokenCost(nqPrompt, nqOutput, pricing);
 
   const textTotalPrompt = evalPrompt + nqPrompt;
   const textTotalOutput = evalOutput + nqOutput;
+  const totalThoughts = evalThoughts !== undefined || nqThoughts !== undefined
+    ? (evalThoughts ?? 0) + (nqThoughts ?? 0)
+    : undefined;
+  const totalCandidates = evalCandidates !== undefined || nqCandidates !== undefined
+    ? (evalCandidates ?? (evalOutput - (evalThoughts ?? 0))) + (nqCandidates ?? (nqOutput - (nqThoughts ?? 0)))
+    : undefined;
   const textCost = calculateTokenCost(textTotalPrompt, textTotalOutput, pricing);
 
   const liveAudio = calculateLiveAudioEstimate(audioConfig, pricing.usdToInr);
@@ -209,12 +242,24 @@ export function calculateInterviewCost(
   const proposedCeilingINR = 25.0; // Proposed budget ceiling for OI-2 / NFR-16
 
   return {
-    evaluator: { promptTokens: evalPrompt, outputTokens: evalOutput, ...evalCost },
-    nextQuestion: { promptTokens: nqPrompt, outputTokens: nqOutput, callCount: nqCallCount, ...nqCost },
+    evaluator: {
+      promptTokens: evalPrompt,
+      outputTokens: evalOutput,
+      ...(evalThoughts !== undefined ? { thoughtsTokens: evalThoughts, candidatesTokens: evalCandidates } : {}),
+      ...evalCost,
+    },
+    nextQuestion: {
+      promptTokens: nqPrompt,
+      outputTokens: nqOutput,
+      callCount: nqCallCount,
+      ...(nqThoughts !== undefined ? { thoughtsTokens: nqThoughts, candidatesTokens: nqCandidates } : {}),
+      ...nqCost,
+    },
     textTotal: {
       promptTokens: textTotalPrompt,
       outputTokens: textTotalOutput,
       totalTokens: textTotalPrompt + textTotalOutput,
+      ...(totalThoughts !== undefined ? { thoughtsTokens: totalThoughts, candidatesTokens: totalCandidates } : {}),
       ...textCost,
     },
     liveAudioEstimate: liveAudio,
@@ -246,6 +291,20 @@ export function isValidStoredUsage(u: unknown): u is StoredFeedbackUsage {
     return false;
   }
 
+  // Top-level optional thoughtsTokens and candidatesTokens validation
+  if (
+    obj.thoughtsTokens !== undefined &&
+    (typeof obj.thoughtsTokens !== 'number' || !Number.isFinite(obj.thoughtsTokens) || obj.thoughtsTokens < 0)
+  ) {
+    return false;
+  }
+  if (
+    obj.candidatesTokens !== undefined &&
+    (typeof obj.candidatesTokens !== 'number' || !Number.isFinite(obj.candidatesTokens) || obj.candidatesTokens < 0)
+  ) {
+    return false;
+  }
+
   // Nested evaluator must be present with valid token counts
   if (
     !obj.evaluator ||
@@ -260,6 +319,20 @@ export function isValidStoredUsage(u: unknown): u is StoredFeedbackUsage {
     typeof obj.evaluator.totalTokens !== 'number' ||
     !Number.isFinite(obj.evaluator.totalTokens) ||
     obj.evaluator.totalTokens < 0
+  ) {
+    return false;
+  }
+
+  // Evaluator optional thoughtsTokens and candidatesTokens validation
+  if (
+    obj.evaluator.thoughtsTokens !== undefined &&
+    (typeof obj.evaluator.thoughtsTokens !== 'number' || !Number.isFinite(obj.evaluator.thoughtsTokens) || obj.evaluator.thoughtsTokens < 0)
+  ) {
+    return false;
+  }
+  if (
+    obj.evaluator.candidatesTokens !== undefined &&
+    (typeof obj.evaluator.candidatesTokens !== 'number' || !Number.isFinite(obj.evaluator.candidatesTokens) || obj.evaluator.candidatesTokens < 0)
   ) {
     return false;
   }
@@ -281,6 +354,20 @@ export function isValidStoredUsage(u: unknown): u is StoredFeedbackUsage {
     typeof obj.nextQuestion.callCount !== 'number' ||
     !Number.isFinite(obj.nextQuestion.callCount) ||
     obj.nextQuestion.callCount < 0
+  ) {
+    return false;
+  }
+
+  // NextQuestion optional thoughtsTokens and candidatesTokens validation
+  if (
+    obj.nextQuestion.thoughtsTokens !== undefined &&
+    (typeof obj.nextQuestion.thoughtsTokens !== 'number' || !Number.isFinite(obj.nextQuestion.thoughtsTokens) || obj.nextQuestion.thoughtsTokens < 0)
+  ) {
+    return false;
+  }
+  if (
+    obj.nextQuestion.candidatesTokens !== undefined &&
+    (typeof obj.nextQuestion.candidatesTokens !== 'number' || !Number.isFinite(obj.nextQuestion.candidatesTokens) || obj.nextQuestion.candidatesTokens < 0)
   ) {
     return false;
   }
@@ -322,23 +409,50 @@ export function aggregateFeedbackUsage(records: Array<{ usage: unknown }>): {
     (acc, cur) => {
       acc.evalPrompt += cur.evaluator!.promptTokens;
       acc.evalOutput += cur.evaluator!.outputTokens;
+      acc.evalThoughts += cur.evaluator!.thoughtsTokens ?? 0;
+      acc.evalCandidates += cur.evaluator!.candidatesTokens ?? (cur.evaluator!.outputTokens - (cur.evaluator!.thoughtsTokens ?? 0));
+
       acc.nqPrompt += cur.nextQuestion!.promptTokens;
       acc.nqOutput += cur.nextQuestion!.outputTokens;
+      acc.nqThoughts += cur.nextQuestion!.thoughtsTokens ?? 0;
+      acc.nqCandidates += cur.nextQuestion!.candidatesTokens ?? (cur.nextQuestion!.outputTokens - (cur.nextQuestion!.thoughtsTokens ?? 0));
       acc.nqCalls += cur.nextQuestion!.callCount;
+
+      if (cur.evaluator?.thoughtsTokens !== undefined || cur.nextQuestion?.thoughtsTokens !== undefined || cur.thoughtsTokens !== undefined) {
+        acc.hasThoughts = true;
+      }
       return acc;
     },
-    { evalPrompt: 0, evalOutput: 0, nqPrompt: 0, nqOutput: 0, nqCalls: 0 }
+    {
+      evalPrompt: 0,
+      evalOutput: 0,
+      evalThoughts: 0,
+      evalCandidates: 0,
+      nqPrompt: 0,
+      nqOutput: 0,
+      nqThoughts: 0,
+      nqCandidates: 0,
+      nqCalls: 0,
+      hasThoughts: false,
+    }
   );
 
   const n = validRecords.length;
   const avgEvalPrompt = Math.round(sum.evalPrompt / n);
   const avgEvalOutput = Math.round(sum.evalOutput / n);
+  const avgEvalThoughts = Math.round(sum.evalThoughts / n);
+  const avgEvalCandidates = Math.round(sum.evalCandidates / n);
+
   const avgNqPrompt = Math.round(sum.nqPrompt / n);
   const avgNqOutput = Math.round(sum.nqOutput / n);
+  const avgNqThoughts = Math.round(sum.nqThoughts / n);
+  const avgNqCandidates = Math.round(sum.nqCandidates / n);
   const avgNqCalls = Math.round((sum.nqCalls / n) * 10) / 10;
 
   const totalPrompt = avgEvalPrompt + avgNqPrompt;
   const totalOutput = avgEvalOutput + avgNqOutput;
+  const totalThoughts = avgEvalThoughts + avgNqThoughts;
+  const totalCandidates = avgEvalCandidates + avgNqCandidates;
 
   return {
     count: n,
@@ -346,16 +460,19 @@ export function aggregateFeedbackUsage(records: Array<{ usage: unknown }>): {
       promptTokens: totalPrompt,
       outputTokens: totalOutput,
       totalTokens: totalPrompt + totalOutput,
+      ...(sum.hasThoughts ? { thoughtsTokens: totalThoughts, candidatesTokens: totalCandidates } : {}),
       evaluator: {
         promptTokens: avgEvalPrompt,
         outputTokens: avgEvalOutput,
         totalTokens: avgEvalPrompt + avgEvalOutput,
+        ...(sum.hasThoughts ? { thoughtsTokens: avgEvalThoughts, candidatesTokens: avgEvalCandidates } : {}),
       },
       nextQuestion: {
         promptTokens: avgNqPrompt,
         outputTokens: avgNqOutput,
         totalTokens: avgNqPrompt + avgNqOutput,
         callCount: Math.round(avgNqCalls),
+        ...(sum.hasThoughts ? { thoughtsTokens: avgNqThoughts, candidatesTokens: avgNqCandidates } : {}),
       },
     },
     excludedCount,
@@ -489,9 +606,16 @@ async function main() {
   console.log('\n' + '─'.repeat(80));
   console.log(`1. LLM TEXT TOKENS PER INTERVIEW ${isMeasured ? '(Actual Measured Averages)' : '(Modeled Estimate)'}`);
   console.log('─'.repeat(80));
-  console.log(`  • Evaluation (evaluateTranscript)   : ${usageToReport.evaluator?.promptTokens.toLocaleString()} in, ${usageToReport.evaluator?.outputTokens.toLocaleString()} out`);
+  const evalThoughtsStr = usageToReport.evaluator?.thoughtsTokens && usageToReport.evaluator.thoughtsTokens > 0
+    ? ` [incl. ${usageToReport.evaluator.thoughtsTokens.toLocaleString()} thinking tok]`
+    : '';
+  console.log(`  • Evaluation (evaluateTranscript)   : ${usageToReport.evaluator?.promptTokens.toLocaleString()} in, ${usageToReport.evaluator?.outputTokens.toLocaleString()} out${evalThoughtsStr}`);
   console.log(`      Cost : $${cost.evaluator.costUSD.toFixed(6)}  (₹${cost.evaluator.costINR.toFixed(4)})`);
-  console.log(`  • Next-Question (${usageToReport.nextQuestion?.callCount ?? 0} calls/interview) : ${usageToReport.nextQuestion?.promptTokens.toLocaleString()} in, ${usageToReport.nextQuestion?.outputTokens.toLocaleString()} out`);
+
+  const nqThoughtsStr = usageToReport.nextQuestion?.thoughtsTokens && usageToReport.nextQuestion.thoughtsTokens > 0
+    ? ` [incl. ${usageToReport.nextQuestion.thoughtsTokens.toLocaleString()} thinking tok]`
+    : '';
+  console.log(`  • Next-Question (${usageToReport.nextQuestion?.callCount ?? 0} calls/interview) : ${usageToReport.nextQuestion?.promptTokens.toLocaleString()} in, ${usageToReport.nextQuestion?.outputTokens.toLocaleString()} out${nqThoughtsStr}`);
   console.log(`      Cost : $${cost.nextQuestion.costUSD.toFixed(6)}  (₹${cost.nextQuestion.costINR.toFixed(4)})`);
   console.log(`  ──────────────────────────────────────────────────────────────────────────────`);
   console.log(`  Subtotal LLM Text Cost              : $${cost.textTotal.costUSD.toFixed(6)}  (₹${cost.textTotal.costINR.toFixed(4)})`);

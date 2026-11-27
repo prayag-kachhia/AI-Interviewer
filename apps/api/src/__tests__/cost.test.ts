@@ -96,6 +96,56 @@ describe('Cost Script Calculation Functions (S-8 / NFR-16 / OI-2)', () => {
       expect(summary.grandTotalUSD).toBe(summary.liveAudioEstimate.totalCostUSD);
       expect(summary.isWithinProposedCeiling).toBe(true);
     });
+
+    it('calculates interview cost with thinking tokens without double-counting', () => {
+      const usageWithThoughts: StoredFeedbackUsage = {
+        promptTokens: 3250,
+        outputTokens: 900, // candidates (750) + thoughts (150)
+        totalTokens: 4150, // 3250 + 900
+        candidatesTokens: 750,
+        thoughtsTokens: 150,
+        evaluator: {
+          promptTokens: 1450,
+          outputTokens: 550, // 450 cand + 100 thought
+          candidatesTokens: 450,
+          thoughtsTokens: 100,
+          totalTokens: 2000,
+        },
+        nextQuestion: {
+          promptTokens: 1800,
+          outputTokens: 350, // 300 cand + 50 thought
+          candidatesTokens: 300,
+          thoughtsTokens: 50,
+          totalTokens: 2150,
+          callCount: 4,
+        },
+      };
+
+      const summary = calculateInterviewCost(usageWithThoughts);
+
+      // Evaluator: 1450 in @ 0.75/1M ($0.0010875) + 550 out @ 3.75/1M ($0.0020625) = $0.00315
+      expect(summary.evaluator.costUSD).toBeCloseTo(0.00315, 6);
+      expect(summary.evaluator.costINR).toBeCloseTo(0.00315 * 84.0, 4);
+      expect(summary.evaluator.thoughtsTokens).toBe(100);
+      expect(summary.evaluator.candidatesTokens).toBe(450);
+
+      // NextQuestion: 1800 in @ 0.75/1M ($0.00135) + 350 out @ 3.75/1M ($0.0013125) = $0.0026625
+      expect(summary.nextQuestion.costUSD).toBeCloseTo(0.0026625, 6);
+      expect(summary.nextQuestion.costINR).toBeCloseTo(0.0026625 * 84.0, 4);
+      expect(summary.nextQuestion.thoughtsTokens).toBe(50);
+      expect(summary.nextQuestion.candidatesTokens).toBe(300);
+
+      // Text total: 3250 in ($0.0024375) + 900 out ($0.003375) = $0.0058125
+      expect(summary.textTotal.costUSD).toBeCloseTo(0.0058125, 6);
+      expect(summary.textTotal.costINR).toBeCloseTo(0.0058125 * 84.0, 4);
+      expect(summary.textTotal.thoughtsTokens).toBe(150);
+      expect(summary.textTotal.candidatesTokens).toBe(750);
+
+      // Verify no double counting: outputCost is exactly based on outputTokens (candidates + thoughts)
+      const expectedEvalOutputCost = (550 / 1_000_000) * 3.75;
+      const expectedEvalPromptCost = (1450 / 1_000_000) * 0.75;
+      expect(summary.evaluator.costUSD).toBeCloseTo(expectedEvalPromptCost + expectedEvalOutputCost, 6);
+    });
   });
 
   describe('aggregateFeedbackUsage', () => {
@@ -189,6 +239,85 @@ describe('Cost Script Calculation Functions (S-8 / NFR-16 / OI-2)', () => {
       expect(averageUsage.nextQuestion?.promptTokens).toBe(1600); // NOT (1600 + 0 + 1600) / 3
       expect(averageUsage.promptTokens).toBe(3000);
     });
+
+    it('aggregates usage records containing thinking tokens accurately without double-counting', () => {
+      const row1: { usage: StoredFeedbackUsage } = {
+        usage: {
+          promptTokens: 3000,
+          outputTokens: 800, // 650 cand + 150 thought
+          totalTokens: 3800,
+          candidatesTokens: 650,
+          thoughtsTokens: 150,
+          evaluator: { promptTokens: 1400, outputTokens: 500, candidatesTokens: 400, thoughtsTokens: 100, totalTokens: 1900 },
+          nextQuestion: { promptTokens: 1600, outputTokens: 300, candidatesTokens: 250, thoughtsTokens: 50, totalTokens: 1900, callCount: 3 },
+        },
+      };
+      const row2: { usage: StoredFeedbackUsage } = {
+        usage: {
+          promptTokens: 4000,
+          outputTokens: 1000, // 800 cand + 200 thought
+          totalTokens: 5000,
+          candidatesTokens: 800,
+          thoughtsTokens: 200,
+          evaluator: { promptTokens: 1600, outputTokens: 600, candidatesTokens: 500, thoughtsTokens: 100, totalTokens: 2200 },
+          nextQuestion: { promptTokens: 2400, outputTokens: 400, candidatesTokens: 300, thoughtsTokens: 100, totalTokens: 2800, callCount: 5 },
+        },
+      };
+
+      const { count, averageUsage } = aggregateFeedbackUsage([row1, row2]);
+      expect(count).toBe(2);
+      expect(averageUsage.promptTokens).toBe(3500);
+      expect(averageUsage.outputTokens).toBe(900); // (800 + 1000) / 2
+      expect(averageUsage.totalTokens).toBe(4400); // 3500 + 900
+      expect(averageUsage.candidatesTokens).toBe(725); // (650 + 800) / 2
+      expect(averageUsage.thoughtsTokens).toBe(175); // (150 + 200) / 2
+
+      // Evaluator averages
+      expect(averageUsage.evaluator?.promptTokens).toBe(1500);
+      expect(averageUsage.evaluator?.outputTokens).toBe(550);
+      expect(averageUsage.evaluator?.candidatesTokens).toBe(450);
+      expect(averageUsage.evaluator?.thoughtsTokens).toBe(100);
+
+      // NextQuestion averages
+      expect(averageUsage.nextQuestion?.promptTokens).toBe(2000);
+      expect(averageUsage.nextQuestion?.outputTokens).toBe(350);
+      expect(averageUsage.nextQuestion?.candidatesTokens).toBe(275);
+      expect(averageUsage.nextQuestion?.thoughtsTokens).toBe(75);
+
+      // Verify mathematical identity: outputTokens = candidatesTokens + thoughtsTokens
+      expect(averageUsage.outputTokens).toBe(averageUsage.candidatesTokens! + averageUsage.thoughtsTokens!);
+    });
+
+    it('aggregates mixed records (with and without thinking tokens) correctly', () => {
+      const recordWithThoughts = {
+        usage: {
+          promptTokens: 3000,
+          outputTokens: 800,
+          totalTokens: 3800,
+          candidatesTokens: 600,
+          thoughtsTokens: 200,
+          evaluator: { promptTokens: 1400, outputTokens: 500, candidatesTokens: 350, thoughtsTokens: 150, totalTokens: 1900 },
+          nextQuestion: { promptTokens: 1600, outputTokens: 300, candidatesTokens: 250, thoughtsTokens: 50, totalTokens: 1900, callCount: 3 },
+        },
+      };
+      const legacyRecordWithoutThoughts = {
+        usage: {
+          promptTokens: 3000,
+          outputTokens: 600,
+          totalTokens: 3600,
+          evaluator: { promptTokens: 1400, outputTokens: 400, totalTokens: 1800 },
+          nextQuestion: { promptTokens: 1600, outputTokens: 200, totalTokens: 1800, callCount: 3 },
+        },
+      };
+
+      const { count, averageUsage } = aggregateFeedbackUsage([recordWithThoughts, legacyRecordWithoutThoughts]);
+      expect(count).toBe(2);
+      expect(averageUsage.outputTokens).toBe(700); // (800 + 600) / 2
+      expect(averageUsage.thoughtsTokens).toBe(100); // (200 + 0) / 2
+      expect(averageUsage.candidatesTokens).toBe(600); // (600 + 600) / 2
+      expect(averageUsage.evaluator?.thoughtsTokens).toBe(75); // (150 + 0) / 2
+      expect(averageUsage.nextQuestion?.thoughtsTokens).toBe(25); // (50 + 0) / 2
+    });
   });
 
   describe('isValidStoredUsage (S-8 review: usage validation)', () => {
@@ -202,6 +331,31 @@ describe('Cost Script Calculation Functions (S-8 / NFR-16 / OI-2)', () => {
 
     it('accepts a fully-formed valid usage object', () => {
       expect(isValidStoredUsage(validUsage)).toBe(true);
+    });
+
+    it('accepts valid usage object containing optional thoughtsTokens and candidatesTokens', () => {
+      const usageWithThoughts = {
+        ...validUsage,
+        candidatesTokens: 650,
+        thoughtsTokens: 150,
+        evaluator: { ...validUsage.evaluator!, candidatesTokens: 400, thoughtsTokens: 100 },
+        nextQuestion: { ...validUsage.nextQuestion!, candidatesTokens: 250, thoughtsTokens: 50 },
+      };
+      expect(isValidStoredUsage(usageWithThoughts)).toBe(true);
+    });
+
+    it('rejects usage with invalid or negative thoughtsTokens or candidatesTokens', () => {
+      expect(isValidStoredUsage({ ...validUsage, thoughtsTokens: -1 })).toBe(false);
+      expect(isValidStoredUsage({ ...validUsage, thoughtsTokens: 'abc' as any })).toBe(false);
+      expect(isValidStoredUsage({ ...validUsage, candidatesTokens: -5 })).toBe(false);
+      expect(isValidStoredUsage({
+        ...validUsage,
+        evaluator: { ...validUsage.evaluator!, thoughtsTokens: -10 },
+      })).toBe(false);
+      expect(isValidStoredUsage({
+        ...validUsage,
+        nextQuestion: { ...validUsage.nextQuestion!, thoughtsTokens: NaN },
+      })).toBe(false);
     });
 
     it('rejects primitives, arrays, null, and undefined', () => {

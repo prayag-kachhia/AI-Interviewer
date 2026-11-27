@@ -398,13 +398,14 @@ Live-site verification: **PENDING** — Post-merge smoke verification of end-to-
 To satisfy **NFR-16** (infrastructure cost tracking) and resolve open item **OI-2** (setting a per-session cost ceiling in ₹), token usage from all Gemini interactions during an interview is captured and recorded on the database feedback record:
 
 1. **Question Generation (`generateNextQuestion`)**:
-   - Each call to Gemini Flash during the live interview captures `usageMetadata` (`promptTokenCount`, `candidatesTokenCount`).
+   - Each call to Gemini Flash during the live interview captures `usageMetadata` (`promptTokenCount`, `candidatesTokenCount`, and `thoughtsTokenCount` if reasoning/thinking tokens are emitted).
    - `recordNextQuestionUsage(sessionId, usage)` updates the `Feedback.usage` JSON column inside a transaction.
+   - **Thinking Tokens & Output Accounting**: In Google's Gemini pricing model, billable output tokens include both visible response candidates (`candidatesTokenCount`) and internal reasoning thoughts (`thoughtsTokenCount`). They are accounted for under `outputTokens` without double-counting.
    - **Concurrency Guard**: If the session has transitioned to `ENDED` or feedback is already `ready`, usage writes are safely discarded to ensure in-flight generation requests never overwrite finalized evaluations or recreate stale pending records.
 
 2. **Transcript Evaluation (`handleSessionEnded`)**:
    - Background worker processes `session.ended` jobs and calls `evaluateTranscript()`.
-   - `handleSessionEnded` reads any previously accumulated `nextQuestion` tokens on `Feedback.usage`, merges them with the evaluator's `usageMetadata`, and persists the consolidated `Feedback.usage` object.
+   - `handleSessionEnded` reads any previously accumulated `nextQuestion` tokens on `Feedback.usage`, merges them with the evaluator's `usageMetadata` (including thinking tokens), and persists the consolidated `Feedback.usage` object.
 
 3. **Schema of `Feedback.usage`**:
    ```json
@@ -412,19 +413,26 @@ To satisfy **NFR-16** (infrastructure cost tracking) and resolve open item **OI-
      "promptTokens": 3250,
      "outputTokens": 810,
      "totalTokens": 4060,
+     "candidatesTokens": 710,
+     "thoughtsTokens": 100,
      "evaluator": {
        "promptTokens": 1450,
        "outputTokens": 510,
+       "candidatesTokens": 450,
+       "thoughtsTokens": 60,
        "totalTokens": 1960
      },
      "nextQuestion": {
        "promptTokens": 1800,
        "outputTokens": 300,
+       "candidatesTokens": 260,
+       "thoughtsTokens": 40,
        "totalTokens": 2100,
        "callCount": 4
      }
    }
    ```
+   *Note: `thoughtsTokens` and `candidatesTokens` are optional breakdowns for granular observability. For models or calls without thinking tokens, or legacy records created prior to this addition, `outputTokens` reflects the candidate token count and calculations remain 100% backward-compatible.*
 
 ---
 

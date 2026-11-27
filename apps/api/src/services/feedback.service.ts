@@ -22,12 +22,16 @@ export interface TokenUsage {
   promptTokens: number;
   outputTokens: number;
   totalTokens: number;
+  candidatesTokens?: number;
+  thoughtsTokens?: number;
 }
 
 export interface StoredFeedbackUsage {
   promptTokens: number;
   outputTokens: number;
   totalTokens: number;
+  candidatesTokens?: number;
+  thoughtsTokens?: number;
   evaluator?: TokenUsage;
   nextQuestion?: TokenUsage & { callCount: number };
 }
@@ -44,6 +48,8 @@ export interface SaveFeedbackParams {
 
 /**
  * Merges next-question token counts into an existing usage JSON object.
+ * Output tokens include both visible response tokens (candidates) and reasoning tokens (thoughts),
+ * matching Google's Gemini output token billing without double-counting.
  */
 export function mergeNextQuestionUsage(
   existingUsage: unknown,
@@ -60,25 +66,45 @@ export function mergeNextQuestionUsage(
     callCount: 0,
   };
 
-  const nqPrompt = prevNQ.promptTokens + (newTokens.promptTokenCount ?? 0);
-  const nqOutput = prevNQ.outputTokens + (newTokens.candidatesTokenCount ?? 0);
+  const newPrompt = newTokens.promptTokenCount ?? 0;
+  const newCandidates = newTokens.candidatesTokenCount ?? 0;
+  const newThoughts = newTokens.thoughtsTokenCount ?? 0;
+  const newOutput = newCandidates + newThoughts;
+
+  const prevNQThoughts = prevNQ.thoughtsTokens ?? 0;
+  const prevNQCandidates = prevNQ.candidatesTokens ?? (prevNQ.outputTokens - prevNQThoughts);
+
+  const nqPrompt = prevNQ.promptTokens + newPrompt;
+  const nqCandidates = prevNQCandidates + newCandidates;
+  const nqThoughts = prevNQThoughts + newThoughts;
+  const nqOutput = nqCandidates + nqThoughts;
   const nqTotal = nqPrompt + nqOutput;
 
-  const nextQuestion = {
+  const hasNQThoughts = nqThoughts > 0 || prevNQ.thoughtsTokens !== undefined || newTokens.thoughtsTokenCount !== undefined;
+
+  const nextQuestion: TokenUsage & { callCount: number } = {
     promptTokens: nqPrompt,
     outputTokens: nqOutput,
     totalTokens: nqTotal,
     callCount: prevNQ.callCount + 1,
+    ...(hasNQThoughts ? { thoughtsTokens: nqThoughts, candidatesTokens: nqCandidates } : {}),
   };
 
   const evalUsage = current.evaluator;
   const totalPrompt = (evalUsage?.promptTokens ?? 0) + nqPrompt;
-  const totalOutput = (evalUsage?.outputTokens ?? 0) + nqOutput;
+  const evalThoughts = evalUsage?.thoughtsTokens ?? 0;
+  const evalCandidates = evalUsage?.candidatesTokens ?? (evalUsage ? evalUsage.outputTokens - evalThoughts : 0);
+  const totalThoughts = evalThoughts + nqThoughts;
+  const totalCandidates = evalCandidates + nqCandidates;
+  const totalOutput = totalCandidates + totalThoughts;
+
+  const hasTopThoughts = totalThoughts > 0 || current.thoughtsTokens !== undefined || hasNQThoughts;
 
   return {
     promptTokens: totalPrompt,
     outputTokens: totalOutput,
     totalTokens: totalPrompt + totalOutput,
+    ...(hasTopThoughts ? { thoughtsTokens: totalThoughts, candidatesTokens: totalCandidates } : {}),
     ...(evalUsage ? { evaluator: evalUsage } : {}),
     nextQuestion,
   };
@@ -86,6 +112,7 @@ export function mergeNextQuestionUsage(
 
 /**
  * Merges transcript evaluator token counts into an existing usage JSON object.
+ * Output tokens include both visible evaluation text and model thinking tokens.
  */
 export function mergeEvaluatorUsage(
   existingUsage: unknown,
@@ -96,23 +123,35 @@ export function mergeEvaluatorUsage(
     : {}) as StoredFeedbackUsage;
 
   const evalPrompt = evaluatorTokens.promptTokenCount ?? 0;
-  const evalOutput = evaluatorTokens.candidatesTokenCount ?? 0;
+  const evalCandidates = evaluatorTokens.candidatesTokenCount ?? 0;
+  const evalThoughts = evaluatorTokens.thoughtsTokenCount ?? 0;
+  const evalOutput = evalCandidates + evalThoughts;
   const evalTotal = evalPrompt + evalOutput;
+
+  const hasEvalThoughts = evalThoughts > 0 || evaluatorTokens.thoughtsTokenCount !== undefined;
 
   const evaluator: TokenUsage = {
     promptTokens: evalPrompt,
     outputTokens: evalOutput,
     totalTokens: evalTotal,
+    ...(hasEvalThoughts ? { thoughtsTokens: evalThoughts, candidatesTokens: evalCandidates } : {}),
   };
 
   const nqUsage = current.nextQuestion;
   const totalPrompt = evalPrompt + (nqUsage?.promptTokens ?? 0);
-  const totalOutput = evalOutput + (nqUsage?.outputTokens ?? 0);
+  const nqThoughts = nqUsage?.thoughtsTokens ?? 0;
+  const nqCandidates = nqUsage?.candidatesTokens ?? (nqUsage ? nqUsage.outputTokens - nqThoughts : 0);
+  const totalThoughts = evalThoughts + nqThoughts;
+  const totalCandidates = evalCandidates + nqCandidates;
+  const totalOutput = totalCandidates + totalThoughts;
+
+  const hasTopThoughts = totalThoughts > 0 || current.thoughtsTokens !== undefined || hasEvalThoughts;
 
   return {
     promptTokens: totalPrompt,
     outputTokens: totalOutput,
     totalTokens: totalPrompt + totalOutput,
+    ...(hasTopThoughts ? { thoughtsTokens: totalThoughts, candidatesTokens: totalCandidates } : {}),
     evaluator,
     ...(nqUsage ? { nextQuestion: nqUsage } : {}),
   };

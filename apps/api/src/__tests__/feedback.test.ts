@@ -927,4 +927,135 @@ describe('Feedback Token Usage (S-8 / NFR-16)', () => {
     expect(prisma.feedback.create).not.toHaveBeenCalled();
     expect(prisma.feedback.updateMany).not.toHaveBeenCalled();
   });
+
+  describe('Gemini thinking tokens accounting (thoughtsTokenCount)', () => {
+    it('mergeNextQuestionUsage correctly records thinking tokens and computes billable output tokens without double-counting', () => {
+      const result = mergeNextQuestionUsage(null, {
+        promptTokenCount: 500,
+        candidatesTokenCount: 120,
+        thoughtsTokenCount: 80,
+        totalTokenCount: 700,
+      });
+
+      // Output tokens must be candidates + thoughts (120 + 80 = 200)
+      expect(result.nextQuestion?.outputTokens).toBe(200);
+      expect(result.nextQuestion?.candidatesTokens).toBe(120);
+      expect(result.nextQuestion?.thoughtsTokens).toBe(80);
+      expect(result.nextQuestion?.promptTokens).toBe(500);
+      // Total tokens must equal prompt + output (500 + 200 = 700)
+      expect(result.nextQuestion?.totalTokens).toBe(700);
+      expect(result.nextQuestion?.callCount).toBe(1);
+
+      // Top-level usage verification
+      expect(result.promptTokens).toBe(500);
+      expect(result.outputTokens).toBe(200);
+      expect(result.totalTokens).toBe(700);
+      expect(result.candidatesTokens).toBe(120);
+      expect(result.thoughtsTokens).toBe(80);
+
+      // Verify mathematical identity: total = prompt + candidates + thoughts
+      expect(result.totalTokens).toBe(
+        result.promptTokens + result.candidatesTokens! + result.thoughtsTokens!
+      );
+    });
+
+    it('mergeNextQuestionUsage preserves backward-compatible structure when thoughtsTokenCount is absent', () => {
+      const result = mergeNextQuestionUsage(null, {
+        promptTokenCount: 500,
+        candidatesTokenCount: 120,
+        totalTokenCount: 620,
+      });
+
+      expect(result.nextQuestion?.outputTokens).toBe(120);
+      expect(result.nextQuestion?.promptTokens).toBe(500);
+      expect(result.nextQuestion?.totalTokens).toBe(620);
+      expect(result.nextQuestion?.callCount).toBe(1);
+      expect(result.nextQuestion?.thoughtsTokens).toBeUndefined();
+      expect(result.nextQuestion?.candidatesTokens).toBeUndefined();
+
+      expect(result.promptTokens).toBe(500);
+      expect(result.outputTokens).toBe(120);
+      expect(result.totalTokens).toBe(620);
+      expect(result.thoughtsTokens).toBeUndefined();
+      expect(result.candidatesTokens).toBeUndefined();
+    });
+
+    it('mergeNextQuestionUsage accumulates mixed calls (with and without thoughts) accurately', () => {
+      // Call 1 with thoughts
+      const usage1 = mergeNextQuestionUsage(null, {
+        promptTokenCount: 500,
+        candidatesTokenCount: 100,
+        thoughtsTokenCount: 50,
+      });
+
+      // Call 2 without thoughts
+      const usage2 = mergeNextQuestionUsage(usage1, {
+        promptTokenCount: 400,
+        candidatesTokenCount: 80,
+      });
+
+      expect(usage2.nextQuestion?.callCount).toBe(2);
+      expect(usage2.nextQuestion?.promptTokens).toBe(900); // 500 + 400
+      expect(usage2.nextQuestion?.candidatesTokens).toBe(180); // 100 + 80
+      expect(usage2.nextQuestion?.thoughtsTokens).toBe(50); // 50 + 0
+      expect(usage2.nextQuestion?.outputTokens).toBe(230); // 180 + 50
+      expect(usage2.nextQuestion?.totalTokens).toBe(1130); // 900 + 230
+
+      expect(usage2.promptTokens).toBe(900);
+      expect(usage2.outputTokens).toBe(230);
+      expect(usage2.totalTokens).toBe(1130);
+      expect(usage2.candidatesTokens).toBe(180);
+      expect(usage2.thoughtsTokens).toBe(50);
+    });
+
+    it('mergeEvaluatorUsage records thinking tokens alongside candidate tokens', () => {
+      const result = mergeEvaluatorUsage(null, {
+        promptTokenCount: 1400,
+        candidatesTokenCount: 500,
+        thoughtsTokenCount: 150,
+        totalTokenCount: 2050,
+      });
+
+      expect(result.evaluator?.promptTokens).toBe(1400);
+      expect(result.evaluator?.candidatesTokens).toBe(500);
+      expect(result.evaluator?.thoughtsTokens).toBe(150);
+      expect(result.evaluator?.outputTokens).toBe(650); // 500 + 150
+      expect(result.evaluator?.totalTokens).toBe(2050); // 1400 + 650
+
+      expect(result.promptTokens).toBe(1400);
+      expect(result.outputTokens).toBe(650);
+      expect(result.totalTokens).toBe(2050);
+      expect(result.candidatesTokens).toBe(500);
+      expect(result.thoughtsTokens).toBe(150);
+    });
+
+    it('mergeEvaluatorUsage seamlessly merges evaluator thoughts with legacy nextQuestion records', () => {
+      const legacyNqUsage = {
+        promptTokens: 800,
+        outputTokens: 200,
+        totalTokens: 1000,
+        nextQuestion: { promptTokens: 800, outputTokens: 200, totalTokens: 1000, callCount: 2 },
+      };
+
+      const result = mergeEvaluatorUsage(legacyNqUsage, {
+        promptTokenCount: 1200,
+        candidatesTokenCount: 400,
+        thoughtsTokenCount: 100,
+        totalTokenCount: 1700,
+      });
+
+      expect(result.evaluator?.outputTokens).toBe(500); // 400 + 100
+      expect(result.evaluator?.thoughtsTokens).toBe(100);
+      expect(result.evaluator?.candidatesTokens).toBe(400);
+
+      expect(result.promptTokens).toBe(2000); // 1200 + 800
+      expect(result.candidatesTokens).toBe(600); // 400 + 200
+      expect(result.thoughtsTokens).toBe(100); // 100 + 0
+      expect(result.outputTokens).toBe(700); // 600 + 100
+      expect(result.totalTokens).toBe(2700); // 2000 + 700
+
+      // No double counting
+      expect(result.totalTokens).toBe(result.promptTokens + result.outputTokens);
+    });
+  });
 });
