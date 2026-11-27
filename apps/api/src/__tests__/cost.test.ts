@@ -264,6 +264,71 @@ describe('Cost Script Calculation Functions (S-8 / NFR-16 / OI-2)', () => {
         });
       }).toThrow(/Unsupported pricing model "unsupported-gemini-pro"/);
     });
+
+    it('throws error when custom unsupported model has only partial custom rates', () => {
+      expect(() => {
+        resolvePricingConfig({
+          GEMINI_EVAL_MODEL: 'unsupported-gemini-pro',
+          BENCH_INPUT_COST_USD_PER_1M: '1.25',
+          // missing output rate
+        });
+      }).toThrow(/Unsupported pricing model "unsupported-gemini-pro"/);
+
+      expect(() => {
+        resolvePricingConfig({
+          GEMINI_EVAL_MODEL: 'unsupported-gemini-pro',
+          BENCH_OUTPUT_COST_USD_PER_1M: '5.00',
+          // missing input rate
+        });
+      }).toThrow(/Unsupported pricing model "unsupported-gemini-pro"/);
+    });
+
+    it('rejects invalid or non-numeric custom pricing rates without silent fallback', () => {
+      // Non-numeric strings
+      expect(() => {
+        resolvePricingConfig({
+          BENCH_INPUT_COST_USD_PER_1M: 'invalid-rate',
+        });
+      }).toThrow(/Invalid pricing configuration for BENCH_INPUT_COST_USD_PER_1M/);
+
+      expect(() => {
+        resolvePricingConfig({
+          BENCH_OUTPUT_COST_USD_PER_1M: 'abc',
+        });
+      }).toThrow(/Invalid pricing configuration for BENCH_OUTPUT_COST_USD_PER_1M/);
+
+      // Negative values
+      expect(() => {
+        resolvePricingConfig({
+          BENCH_INPUT_COST_USD_PER_1M: '-1.5',
+        });
+      }).toThrow(/Invalid pricing configuration for BENCH_INPUT_COST_USD_PER_1M/);
+
+      expect(() => {
+        resolvePricingConfig({
+          BENCH_OUTPUT_COST_USD_PER_1M: '-0.1',
+        });
+      }).toThrow(/Invalid pricing configuration for BENCH_OUTPUT_COST_USD_PER_1M/);
+
+      // Invalid exchange rates (must be positive finite numbers)
+      expect(() => {
+        resolvePricingConfig({
+          BENCH_USD_TO_INR: '0',
+        });
+      }).toThrow(/Invalid exchange rate configuration for BENCH_USD_TO_INR/);
+
+      expect(() => {
+        resolvePricingConfig({
+          BENCH_USD_TO_INR: '-84.0',
+        });
+      }).toThrow(/Invalid exchange rate configuration for BENCH_USD_TO_INR/);
+
+      expect(() => {
+        resolvePricingConfig({
+          BENCH_USD_TO_INR: 'not-a-number',
+        });
+      }).toThrow(/Invalid exchange rate configuration for BENCH_USD_TO_INR/);
+    });
   });
 
   describe('parseArgs (S-8 review: CLI arguments and --limit)', () => {

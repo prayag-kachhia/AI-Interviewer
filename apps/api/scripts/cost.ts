@@ -71,33 +71,59 @@ export const DEFAULT_LIVE_AUDIO_CONFIG: LiveAudioEstimateConfig = {
   tokensPerSecOutput: 25, // ~25 audio tokens per second
 };
 
+function parsePositiveRate(val: string | undefined, varName: string): number | undefined {
+  if (val === undefined || val.trim() === '') {
+    return undefined;
+  }
+  const num = Number(val);
+  if (!Number.isFinite(num) || num < 0) {
+    throw new Error(
+      `Invalid pricing configuration for ${varName}: "${val}". Must be a non-negative finite number.`
+    );
+  }
+  return num;
+}
+
+function parsePositiveExchangeRate(val: string | undefined, varName: string): number | undefined {
+  if (val === undefined || val.trim() === '') {
+    return undefined;
+  }
+  const num = Number(val);
+  if (!Number.isFinite(num) || num <= 0) {
+    throw new Error(
+      `Invalid exchange rate configuration for ${varName}: "${val}". Must be a positive finite number.`
+    );
+  }
+  return num;
+}
+
 export function resolvePricingConfig(env: NodeJS.ProcessEnv = process.env): PricingConfig {
   const model = env.GEMINI_EVAL_MODEL?.trim() || DEFAULT_PRICING.model;
 
-  const hasCustomInputRate = env.BENCH_INPUT_COST_USD_PER_1M !== undefined && env.BENCH_INPUT_COST_USD_PER_1M.trim() !== '';
-  const hasCustomOutputRate = env.BENCH_OUTPUT_COST_USD_PER_1M !== undefined && env.BENCH_OUTPUT_COST_USD_PER_1M.trim() !== '';
+  const customInputRate = parsePositiveRate(env.BENCH_INPUT_COST_USD_PER_1M, 'BENCH_INPUT_COST_USD_PER_1M');
+  const customOutputRate = parsePositiveRate(env.BENCH_OUTPUT_COST_USD_PER_1M, 'BENCH_OUTPUT_COST_USD_PER_1M');
+  const customUsdToInr = parsePositiveExchangeRate(env.BENCH_USD_TO_INR, 'BENCH_USD_TO_INR');
 
   const known = KNOWN_MODEL_PRICING[model];
-  if (!known && (!hasCustomInputRate || !hasCustomOutputRate)) {
-    throw new Error(
-      `Unsupported pricing model "${model}": no verified rate card available. ` +
-      `Provide custom rates via BENCH_INPUT_COST_USD_PER_1M and BENCH_OUTPUT_COST_USD_PER_1M, ` +
-      `or use supported model: ${Object.keys(KNOWN_MODEL_PRICING).join(', ')}`
-    );
+  if (!known) {
+    if (customInputRate === undefined || customOutputRate === undefined) {
+      throw new Error(
+        `Unsupported pricing model "${model}": no verified rate card available. ` +
+        `Provide custom rates via BENCH_INPUT_COST_USD_PER_1M and BENCH_OUTPUT_COST_USD_PER_1M, ` +
+        `or use supported model: ${Object.keys(KNOWN_MODEL_PRICING).join(', ')}`
+      );
+    }
   }
 
-  const defaultInput = known ? known.inputCostPer1M : DEFAULT_PRICING.inputCostPer1M;
-  const defaultOutput = known ? known.outputCostPer1M : DEFAULT_PRICING.outputCostPer1M;
-
-  const inputCost = hasCustomInputRate ? Number(env.BENCH_INPUT_COST_USD_PER_1M) : defaultInput;
-  const outputCost = hasCustomOutputRate ? Number(env.BENCH_OUTPUT_COST_USD_PER_1M) : defaultOutput;
-  const usdToInr = env.BENCH_USD_TO_INR ? Number(env.BENCH_USD_TO_INR) : DEFAULT_PRICING.usdToInr;
+  const inputCostPer1M = customInputRate !== undefined ? customInputRate : known!.inputCostPer1M;
+  const outputCostPer1M = customOutputRate !== undefined ? customOutputRate : known!.outputCostPer1M;
+  const usdToInr = customUsdToInr !== undefined ? customUsdToInr : DEFAULT_PRICING.usdToInr;
 
   return {
     model,
-    inputCostPer1M: Number.isFinite(inputCost) ? inputCost : defaultInput,
-    outputCostPer1M: Number.isFinite(outputCost) ? outputCost : defaultOutput,
-    usdToInr: Number.isFinite(usdToInr) ? usdToInr : DEFAULT_PRICING.usdToInr,
+    inputCostPer1M,
+    outputCostPer1M,
+    usdToInr,
   };
 }
 
@@ -418,19 +444,26 @@ async function main() {
   if (dbQueried && count > 0) {
     isMeasured = true;
     usageToReport = averageUsage;
-    console.log(`Source                : [MEASURED PRODUCTION DATA] Based on ${count} completed interview records`);
+    const isTestDb = Boolean(
+      process.env.DATABASE_URL?.includes('test') ||
+      process.env.NODE_ENV === 'test'
+    );
+    const sourceLabel = isTestDb ? '[MEASURED TEST DATABASE DATA]' : '[MEASURED DATABASE DATA]';
+    console.log(`Source                : ${sourceLabel} Based on ${count} completed interview records`);
     if (excludedCount > 0) {
       console.log(`                        (${excludedCount} records excluded due to incomplete or malformed usage structures)`);
     }
   } else {
     isMeasured = false;
     if (dbQueried) {
-      console.log(`Source                : [ESTIMATE / SIMULATION MODE] Database query succeeded, but 0 eligible completed`);
+      console.log(`Source                : [DATABASE QUERY: 0 ELIGIBLE RECORDS] Database query succeeded, but 0 eligible completed`);
       console.log(`                        interview records with usage were found.`);
+      console.log(`Fallback Mode         : [MODELED ESTIMATE] Displaying modeled token usage from benchmark fixtures`);
+      console.log(`                        (modeled estimates are not measured from database records).`);
     } else {
-      console.log(`Source                : [ESTIMATE / SIMULATION MODE] Simulation mode active.`);
+      console.log(`Source                : [EXPLICIT SIMULATION MODE] --simulate flag requested.`);
+      console.log(`                        Displaying modeled token usage from benchmark fixtures.`);
     }
-    console.log(`                        Displaying modeled token usage from benchmark fixtures.`);
 
     // Benchmark simulation default (modeled on representative 4-question session + evaluator)
     usageToReport = {

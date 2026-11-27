@@ -391,7 +391,7 @@ Live-site verification: **PENDING** — Post-merge smoke verification of end-to-
 
 ## S-8 — Gemini Token Usage & Cost per Interview (NFR-16 / OI-2)
 
-> **Status: Complete.** Migration adds nullable `Feedback.usage` JSONB column. `apps/api/scripts/cost.ts` translates stored and modeled token usage into per-interview costs in USD and INR, with live audio projections and a proposed budget ceiling for OI-2.
+> **Status: In Progress (Implementation & Unit/Integration Testing Complete; Live-Site Verification Pending).** Migration adds nullable `Feedback.usage` JSONB column. `apps/api/scripts/cost.ts` translates stored and modeled token usage into per-interview costs in USD and INR, with live audio projections and a proposed budget ceiling for OI-2.
 
 ### Overview & Data Architecture
 
@@ -472,9 +472,41 @@ Based on benchmark-modeled LLM tokens and projected 15-minute Live audio costs:
   - Accounts for high candidate speaking cadence or noisy environments where audio token sampling density increases.
 - **Enforcement Note**: The ₹25.00 figure serves as a project infrastructure budget and monitoring metric for **NFR-16** audits. It is not an enforced programmatic cutoff that terminates active user sessions. Programmatic quota management is tracked under **S-9 (#167)**.
 
+---
+
+### Database Verification Scenarios (S-8 Review Verification)
+
+The cost script (`apps/api/scripts/cost.ts`) was executed against an isolated, local PostgreSQL test database (`ai_interviewer_test` running in WSL Ubuntu with all 13 Prisma migrations applied). Production Supabase was neither connected to nor modified. Three distinct scenarios were verified:
+
+1. **Scenario A — Real PostgreSQL Query with Seeded Synthetic Eligible Record**:
+   - **Database Setup**: Seeded 1 synthetic user, 1 ended session, and 1 ready feedback record with structured token usage (`Feedback.usage`: 1 500 in / 500 out for evaluation, 2 000 in / 400 out across 4 next-question calls; total 3 500 prompt and 900 output tokens).
+   - **Command**: `DATABASE_URL="postgresql://test_user:****@127.0.0.1:5432/ai_interviewer_test" bun scripts/cost.ts`
+   - **Observed Behavior**: The script connected to `ai_interviewer_test`, successfully executed the Prisma query, and output:
+     `Source : [MEASURED TEST DATABASE DATA] Based on 1 completed interview records`
+   - **Cost Calculation Match**: Measured averages matched independent manual calculations exactly:
+     - Evaluation: \$0.003000 (₹0.2520)
+     - Next-Question: \$0.003000 (₹0.2520)
+     - LLM Text Subtotal: \$0.006000 (₹0.5040)
+     - Grand Total with projected audio: \$0.1410 (₹11.84)
+   - **Exit Code**: `0`.
+
+2. **Scenario B — Real PostgreSQL Query Returning Zero Eligible Records**:
+   - **Database Setup**: The seeded synthetic record was removed; confirmed 0 feedback rows in `ai_interviewer_test`. The database remained running and fully accessible.
+   - **Command**: Same CLI command executed without `--simulate`.
+   - **Observed Behavior**: The database query executed successfully and detected 0 eligible records. It did not invoke `--simulate` mode, but gracefully fell back to displaying modeled benchmark estimates:
+     `Source : [DATABASE QUERY: 0 ELIGIBLE RECORDS] Database query succeeded, but 0 eligible completed interview records with usage were found.`
+     `Fallback Mode : [MODELED ESTIMATE] Displaying modeled token usage from benchmark fixtures (modeled estimates are not measured from database records).`
+   - **Exit Code**: `0`.
+
+3. **Scenario C — Database Failure Handling**:
+   - **Setup**: Configured an unreachable/invalid database endpoint (`DATABASE_URL=postgresql://invalid:invalid@localhost:5433/nonexistent`).
+   - **Command**: CLI executed without `--simulate`.
+   - **Observed Behavior**: The script logged `[Database query error]` and immediately terminated with exit code `1`. It refused to silently fall back to simulation mode upon query failure, ensuring database connection issues are never obscured.
+   - **Exit Code**: `1`.
+
 #### Live-site verification
 
-Live-site verification: **PENDING** — Post-merge smoke verification of token usage recording (`Feedback.usage`) and cost calculation against live Supabase production database on the deployed live site (`ai-interviewer-it314.web.app`) is pending staging/production deployment.
+Live-site verification: **PENDING** — Scenarios A and B verify real PostgreSQL database querying, aggregation, and fallback behavior using an isolated local test database (`ai_interviewer_test`). Smoke verification of live user token usage recording and cost calculation against the live Supabase production database on the deployed site (`ai-interviewer-it314.web.app`) remains pending post-deployment.
 
 ---
 
